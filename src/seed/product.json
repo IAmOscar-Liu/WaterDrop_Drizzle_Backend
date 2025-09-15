@@ -1,0 +1,485 @@
+{
+  "success": true,
+  "data": {
+    "products": [
+      {
+        "id": "product-1756396046414-wmr8qgls3",
+        "name": "行動電源",
+        "description": "【品名】無憂行 Pocket Pro 自帶線行動電源\n【容量】10000mAh\n【輸出】自帶 Type-C 線、Lightning 線，另附 USB-A 接口\n【功率】支援 PD 20W / QC 18W 雙向快充\n【特點】口袋尺寸，輕巧便攜、隱藏式支架設計、LED 電量顯示、符合國際航空運輸標準。",
+        "price": 200,
+        "stock": 200,
+        "images": [
+          "https://adapi.66556688.xyz/media/products/1756396032717-zwvc3d5c3we.jpg"
+        ],
+        "ad": "https://adapi.66556688.xyz/media/ads/1756396041249-ut4ltgb35ib.mp4",
+        "category": null,
+        "status": "active",
+        "created_at": 1756396046,
+        "updated_at": 1756396046
+      },
+      {
+        "id": "product-1756396011692-zcd3oyg38",
+        "name": "電動曬衣架",
+        "description": "【品名】晴天管家 智能遙控曬衣架\n【功能】遙控升降、LED 照明、智能風乾、恆溫烘乾、紫外線殺菌\n【承重】35kg 超強動態承重\n【材質】航空級鋁合金機身，304 不鏽鋼鋼絲繩\n【特點】遇阻即停安全保護、超靜音電機、伸縮四桿設計，可曬大量衣物及棉被。",
+        "price": 600,
+        "stock": 100,
+        "images": [
+          "https://adapi.66556688.xyz/media/products/1756395997482-mc7r9unv8ek.jpg"
+        ],
+        "ad": "https://adapi.66556688.xyz/media/ads/1756396007011-bovj3qvi7ob.mp4",
+        "category": null,
+        "status": "active",
+        "created_at": 1756396011,
+        "updated_at": 1756396011
+      },
+      {
+        "id": "product-1756395977734-ouiu53h13",
+        "name": "筋膜槍",
+        "description": "【品名】戰神 Thor 強力筋膜槍\n【電機】高扭矩無刷降噪馬達\n【檔位】5 檔變速，1800-3200 轉/分鐘\n【配件】球型頭、U 型頭、圓柱頭等 6 款專業按摩頭\n【特點】AI 智能壓力感應、Type-C 充電、便攜收納盒、10 分鐘智能定時保護。",
+        "price": 888,
+        "stock": 50,
+        "images": [
+          "https://adapi.66556688.xyz/media/products/1756395964200-t2zm1p2koya.jpg"
+        ],
+        "ad": "https://adapi.66556688.xyz/media/ads/1756395973385-jl1eo3ezpbd.mp4",
+        "category": null,
+        "status": "active",
+        "created_at": 1756395977,
+        "updated_at": 1756395977
+      },
+      {
+        "id": "product-1756395946334-72o9lpnxa",
+        "name": "智能體重計",
+        "description": "【品名】纖體管家 Pro 智能體脂計\n【測量數據】18 項身體數據分析 (體重/BMI/體脂率/肌肉量/骨量等)\n【連線】藍牙 5.0 快速連接\n【面板】高強度鋼化玻璃，隱藏式 LED 顯示\n【特點】支援多人數據紀錄、訪客模式、可搭配多款主流健康 App 使用。",
+        "price": 400,
+        "stock": 500,
+        "images": [
+          "https://adapi.66556688.xyz/media/products/1756395926086-c35d6mtvodt.jpg"
+        ],
+        "ad": "https://adapi.66556688.xyz/media/ads/1756395935847-u3tr41e5qs.mp4",
+        "category": null,
+        "status": "active",
+        "created_at": 1756395946,
+        "updated_at": 1756395946
+      },
+      {
+        "id": "product-1756395894969-r54zr3uhq",
+        "name": "便攜顯示器",
+        "description": "【品名】視界線 Ultra-Slim 便攜顯示器\n【尺寸】15.6 吋 IPS 螢幕\n【解析度】1920x1080 Full HD\n【接口】Type-C x2 (影音/供電)、Mini HDMI x1\n【特點】6mm 超薄機身、重量僅 700g、內建立體聲揚聲器、附磁吸式保護套支架。",
+        "price": 10000,
+        "stock": 50,
+        "images": [
+          "https://adapi.66556688.xyz/media/products/1756395878002-y2r93bd3uje.jpg"
+        ],
+        "ad": "https://adapi.66556688.xyz/media/ads/1756395887221-0wh9o0i2ebfb.mp4",
+        "category": null,
+        "status": "active",
+        "created_at": 1756395894,
+        "updated_at": 1756395894
+      },
+      {
+        "id": "product-1756395855317-13ey2vqth",
+        "name": "除濕機",
+        "description": "【品名】乾爽居 智能環保除濕機 (一級能效)\n【除濕力】12 公升/日 (27°C, 60%RH)\n【水箱容量】4L 大容量水箱，支援外接排水管\n【適用坪數】8-15 坪\n【特點】HEPA 濾網空氣清淨、濕度數值顯示、定時開關、萬向輪設計。",
+        "price": 20000,
+        "stock": 100,
+        "images": [
+          "https://adapi.66556688.xyz/media/products/1756395837290-6hmu3ayh6cc.jpg"
+        ],
+        "ad": "https://adapi.66556688.xyz/media/ads/1756395848283-hopk93llc95.mp4",
+        "category": null,
+        "status": "active",
+        "created_at": 1756395855,
+        "updated_at": 1756395855
+      },
+      {
+        "id": "product-1756395819395-kx5r3qtb5",
+        "name": "電動牙刷",
+        "description": "【品名】潔齒師 G2 聲波電動牙刷\n【震動頻率】31,000 次/分鐘\n【模式】清潔、亮白、敏感、護齦 4 種模式\n【續航】感應式充電，滿電可用 30 天\n【特點】杜邦軟毛刷頭、2 分鐘智能計時、30 秒換區提醒、IPX7 全機防水。",
+        "price": 600,
+        "stock": 50,
+        "images": [
+          "https://adapi.66556688.xyz/media/products/1756395795522-7rp3ag6x00m.jpg"
+        ],
+        "ad": "https://adapi.66556688.xyz/media/ads/1756395807455-bjvsppm7hyg.mp4",
+        "category": null,
+        "status": "active",
+        "created_at": 1756395819,
+        "updated_at": 1756395819
+      },
+      {
+        "id": "product-1756395773629-dubynxyk9",
+        "name": "高速吹風機",
+        "description": "【品名】絲麗雅 離子護髮高速吹風機\n【風速】25m/s 強勁氣流\n【溫控】NTC 智能溫控，每秒 100 次偵測，防止過熱\n【模式】三檔風速、四檔溫度自由搭配\n【特點】2 億級負離子釋放、輕量化機身設計、磁吸式風嘴、降噪技術。",
+        "price": 510,
+        "stock": 666,
+        "images": [
+          "https://adapi.66556688.xyz/media/products/1756395752841-82bi2wbn4kq.jpg"
+        ],
+        "ad": "https://adapi.66556688.xyz/media/ads/1756395767141-eyeononp7fp.mp4",
+        "category": null,
+        "status": "active",
+        "created_at": 1756395773,
+        "updated_at": 1756395773
+      },
+      {
+        "id": "product-1756395714925-2feyjle39",
+        "name": "自動感應洗手機",
+        "description": "【品名】淨護家 智能感應泡沫洗手機\n【感應】0.25 秒極速紅外線感應\n【容量】350ml 大容量液體倉，約可使用 400 次\n【電源】Type-C 充電，超長續航 3 個月\n【特點】12:1 氣液比精準起泡、IPX5 防水等級、靜音馬達、適用多種洗手液。",
+        "price": 500,
+        "stock": 100,
+        "images": [
+          "https://adapi.66556688.xyz/media/products/1756395644917-rinzks6ciea.jpg"
+        ],
+        "ad": "https://adapi.66556688.xyz/media/ads/1756395657492-u0h0mot3yg.mp4",
+        "category": null,
+        "status": "active",
+        "created_at": 1756395714,
+        "updated_at": 1756395714
+      },
+      {
+        "id": "product-1756395615905-afkpgl4zl",
+        "name": "氣炸烤箱",
+        "description": "【品名】廚神玩家 All-in-One 氣炸烤箱\n【容量】20L 家庭號大容量\n【功能】氣炸、烘烤、焙烤、乾果、解凍一機多能\n【配件】烤網、烤盤、炸籃、轉叉、取物夾\n【特點】雙層隔熱玻璃門、內置照明燈、可視化烹飪過程、不鏽鋼內膽易清潔。",
+        "price": 5000,
+        "stock": 100,
+        "images": [
+          "https://adapi.66556688.xyz/media/products/1756395570822-xfktye6xib.jpg"
+        ],
+        "ad": "https://adapi.66556688.xyz/media/ads/1756395582761-zhq24pwsf9p.mp4",
+        "category": null,
+        "status": "active",
+        "created_at": 1756395615,
+        "updated_at": 1756395615
+      },
+      {
+        "id": "product-1756392762907-lc01bph33",
+        "name": "智能運動手環",
+        "description": "【品名】脈動 Fit 5 智能運動手環\n【螢幕】1.47 吋 AMOLED 全彩螢幕\n【續航】超長續航 14 天，支援磁吸快充\n【功能】心率血氧監測、睡眠追蹤、90+ 種運動模式、訊息提醒\n【防水】5ATM 等級，游泳佩戴也沒問題。",
+        "price": 5000,
+        "stock": 50,
+        "images": [
+          "https://adapi.66556688.xyz/media/products/1756392755202-y0906uj4mrb.jpg"
+        ],
+        "ad": "https://adapi.66556688.xyz/media/ads/1756392689457-9sskg0wz6gw.mp4",
+        "category": null,
+        "status": "active",
+        "created_at": 1756392762,
+        "updated_at": 1756392762
+      },
+      {
+        "id": "product-1756392662895-r7lifhqvu",
+        "name": "線上外語學習課程",
+        "description": "【課程名稱】環球通外語一對一線上課\n【授課方式】線上真人同步教學\n【課程特色】AI 智能分級、客製化學習教材、24 小時彈性排課、中外教資歷豐富\n【體驗】立即預約，享免費程度分析及一堂體驗課。",
+        "price": 10000,
+        "stock": 1000,
+        "images": [
+          "https://adapi.66556688.xyz/media/products/1756392649641-2mv2p62hzve.jpg"
+        ],
+        "ad": "https://adapi.66556688.xyz/media/ads/1756392659792-arci1b0dfx7.mp4",
+        "category": null,
+        "status": "active",
+        "created_at": 1756392662,
+        "updated_at": 1756392662
+      },
+      {
+        "id": "product-1756392628107-fauj567ce",
+        "name": "香氛擴香石",
+        "description": "【品名】靜謐森林珪藻土擴香石\n【材質】天然珪藻土礦物\n【尺寸】直徑 8cm，高 1.5cm\n【配件】附贈 10ml 天然檜木精油\n【特點】利用珪藻土多孔隙特性物理吸附擴香，安全環保，可重複使用。",
+        "price": 85,
+        "stock": 85,
+        "images": [
+          "https://adapi.66556688.xyz/media/products/1756392611271-z7gd0z0v4ik.jpg"
+        ],
+        "ad": "https://adapi.66556688.xyz/media/ads/1756392623235-bnjaws1dnls.mp4",
+        "category": null,
+        "status": "active",
+        "created_at": 1756392628,
+        "updated_at": 1756392628
+      },
+      {
+        "id": "product-1756392594481-yyegl3zc0",
+        "name": "人體工學辦公椅",
+        "description": "【品名】護脊者全功能人體工學椅\n【材質】高彈力尼龍網布、鋁合金椅腳、靜音 PU 輪\n【調節】3D 扶手、升降頭枕、自適應彈力腰靠、135° 後仰鎖定\n【認證】SGS 認證氣壓棒，安全可靠，最大承重 130kg。",
+        "price": 2000,
+        "stock": 100,
+        "images": [
+          "https://adapi.66556688.xyz/media/products/1756392576110-i1gmqc0vvvb.jpg"
+        ],
+        "ad": "https://adapi.66556688.xyz/media/ads/1756392588353-r6uwcyztmz.mp4",
+        "category": null,
+        "status": "active",
+        "created_at": 1756392594,
+        "updated_at": 1756392594
+      },
+      {
+        "id": "product-1756392556457-x8d59r5d6",
+        "name": "便攜式果汁機",
+        "description": "【品名】活力滿分隨行果汁機\n【容量】380ml\n【電池】USB 充電，滿電約可榨 15 杯\n【材質】食品級 PC 材質杯身，304 不鏽鋼六葉刀頭\n【特點】安全磁感應開關，杯身分離自動斷電，整機防水易清洗。",
+        "price": 110,
+        "stock": 110,
+        "images": [
+          "https://adapi.66556688.xyz/media/products/1756392541973-yde4ergxcvk.jpg"
+        ],
+        "ad": "https://adapi.66556688.xyz/media/ads/1756392553262-ky4efypm64n.mp4",
+        "category": null,
+        "status": "active",
+        "created_at": 1756392556,
+        "updated_at": 1756392556
+      },
+      {
+        "id": "product-1756392518580-zawi2avhh",
+        "name": "保濕修護面膜",
+        "description": "【品名】水漾光潤修護面膜\n【規格】25ml/片，5片/盒\n【主要成分】三重玻尿酸、積雪草萃取、維他命 B5\n【適用膚質】全膚質適用，特別推薦乾燥、敏感肌\n【特點】天絲隱形膜布，輕薄透氣，無添加酒精、香精。",
+        "price": 50,
+        "stock": 50,
+        "images": [
+          "https://adapi.66556688.xyz/media/products/1756392505089-6hw3tkozvfm.jpg"
+        ],
+        "ad": "https://adapi.66556688.xyz/media/ads/1756392514914-f5igktyve8.mp4",
+        "category": null,
+        "status": "active",
+        "created_at": 1756392518,
+        "updated_at": 1756392518
+      },
+      {
+        "id": "product-1756392486387-nz02fpayh",
+        "name": "寵物智能餵食器",
+        "description": "【品名】寵愛家 App 智能餵食器\n【容量】4L 儲糧桶，約可儲存 2kg 寵物乾糧\n【連線】支援 2.4G Wi-Fi，手機 App 遠端操控\n【特點】定時定量餵食計畫、10 秒語音錄製、防卡糧設計、可拆洗不鏽鋼食盆。",
+        "price": 70,
+        "stock": 70,
+        "images": [
+          "https://adapi.66556688.xyz/media/products/1756392472449-apbg2wm6v6p.jpg"
+        ],
+        "ad": "https://adapi.66556688.xyz/media/ads/1756392481191-5swk9uxbdmp.mp4",
+        "category": null,
+        "status": "active",
+        "created_at": 1756392486,
+        "updated_at": 1756392486
+      },
+      {
+        "id": "product-1756392454356-x0mqtdgfd",
+        "name": "多功能料理鍋",
+        "description": "【品名】饗食家多功能料理鍋\n【容量】3L 大容量，適合 2-5 人家庭\n【功率】1200W，加熱迅速均勻\n【配件】附蒸籠、煎盤、深湯鍋\n【特點】三段火力調節、食品級陶瓷釉不沾塗層、雙重溫控安全保護。",
+        "price": 80,
+        "stock": 80,
+        "images": [
+          "https://adapi.66556688.xyz/media/products/1756392441428-s0adzvxxo8.jpg"
+        ],
+        "ad": "https://adapi.66556688.xyz/media/ads/1756392450349-wevgfv9km2.mp4",
+        "category": null,
+        "status": "active",
+        "created_at": 1756392454,
+        "updated_at": 1756392454
+      },
+      {
+        "id": "product-1756392412828-thrui9law",
+        "name": "無線降噪耳機",
+        "description": "【品名】靜界 Pro 無線降噪耳機\n【連線】藍牙 5.3，10米穩定連接\n【續航】單次 8 小時，搭配充電盒共 30 小時\n【特點】ANC 主動降噪技術、通透模式、Hi-Fi 高保真音質、IPX5 防水等級。",
+        "price": 100,
+        "stock": 100,
+        "images": [
+          "https://adapi.66556688.xyz/media/products/1756392397927-fk4gs4jq8g6.jpg"
+        ],
+        "ad": "https://adapi.66556688.xyz/media/ads/1756392408857-tyko57sm9j9.mp4",
+        "category": null,
+        "status": "active",
+        "created_at": 1756392412,
+        "updated_at": 1756392412
+      },
+      {
+        "id": "product-1756392367797-gdile7inx",
+        "name": "手沖咖啡壺",
+        "description": "【品名】時光慢萃手沖咖啡壺\n【容量】600ml（約 2-4人份）\n【材質】高硼矽耐熱玻璃、304 不鏽鋼精密濾網、天然胡桃木握柄\n【特點】V 型壺嘴設計，水流順暢；附贈量匙與清潔刷。",
+        "price": 100,
+        "stock": 100,
+        "images": [
+          "https://adapi.66556688.xyz/media/products/1756392351596-6mrm41l9gkt.jpg"
+        ],
+        "ad": "https://adapi.66556688.xyz/media/ads/1756392362558-7acrv0pg5uf.mp4",
+        "category": null,
+        "status": "active",
+        "created_at": 1756392367,
+        "updated_at": 1756392367
+      },
+      {
+        "id": "product-010",
+        "name": "護手霜禮盒",
+        "description": "天然植物萃取護手霜禮盒，包含玫瑰、薰衣草、茉莉三種香味，滋潤不油膩。",
+        "price": 600,
+        "stock": 120,
+        "images": [
+          "https://adapi.66556688.xyz/media/products/1756389445677-0zx81k4fnm2.jpg",
+          "https://adapi.66556688.xyz/media/products/1756389468992-x248cyf0z98.jpg",
+          "https://adapi.66556688.xyz/media/products/1756389480545-4ucwmjfgeps.jpg"
+        ],
+        "ad": "https://adapi.66556688.xyz/media/ads/1754445080582-ctw98m64k6h.mp4",
+        "category": "美妝保養",
+        "status": "active",
+        "created_at": 1754400900,
+        "updated_at": 1756389725
+      },
+      {
+        "id": "product-009",
+        "name": "行動電源",
+        "description": "大容量行動電源20000mAh，支援快充PD/QC協議，雙USB輸出，LED電量顯示。",
+        "price": 1500,
+        "stock": 45,
+        "images": [
+          "https://adapi.66556688.xyz/media/products/1756388739667-2uhmjrmesn8.jpg",
+          "https://adapi.66556688.xyz/media/products/1756388751106-4im3lhrfq8j.jpeg"
+        ],
+        "ad": "https://adapi.66556688.xyz/media/ads/1756388763003-58je078di9u.mp4",
+        "category": "3C電子",
+        "status": "active",
+        "created_at": 1754400800,
+        "updated_at": 1756388768
+      },
+      {
+        "id": "product-008",
+        "name": "香氛蠟燭",
+        "description": "天然大豆蠟香氛蠟燭，薰衣草香味，燃燒時間約40小時，玻璃容器可重複使用。",
+        "price": 700,
+        "stock": 90,
+        "images": ["/media/products/1756098035655-5l5k0lfgm.jpg"],
+        "ad": null,
+        "category": "生活用品",
+        "status": "active",
+        "created_at": 1754400700,
+        "updated_at": 1756098040
+      },
+      {
+        "id": "product-007",
+        "name": "瑜珈墊",
+        "description": "專業瑜珈墊，厚度6mm，防滑材質，環保TPE材料，附贈收納袋和綁帶。",
+        "price": 990,
+        "stock": 60,
+        "images": [
+          "https://media.example.com/yogamat-1.jpg",
+          "https://media.example.com/yogamat-2.jpg"
+        ],
+        "ad": "https://media.example.com/yogamat-ad.mp4",
+        "category": "運動用品",
+        "status": "active",
+        "created_at": 1754400600,
+        "updated_at": 1754400600
+      },
+      {
+        "id": "product-006",
+        "name": "咖啡豆禮盒",
+        "description": "精選單品咖啡豆禮盒，包含三種不同產區的咖啡豆，適合咖啡愛好者品嚐。",
+        "price": 1290,
+        "stock": 40,
+        "images": [
+          "https://media.example.com/coffee-1.jpg",
+          "https://media.example.com/coffee-2.jpg"
+        ],
+        "ad": "https://media.example.com/coffee-ad.mp4",
+        "category": "食品飲料",
+        "status": "active",
+        "created_at": 1754400500,
+        "updated_at": 1754400500
+      },
+      {
+        "id": "product-005",
+        "name": "無線充電器",
+        "description": "快速無線充電器，支援Qi標準，最大15W輸出，適用於各種支援無線充電的手機。",
+        "price": 790,
+        "stock": 80,
+        "images": [
+          "https://media.example.com/charger-1.jpg",
+          "https://media.example.com/charger-2.jpg"
+        ],
+        "ad": "https://media.example.com/charger-ad.mp4",
+        "category": "3C電子",
+        "status": "active",
+        "created_at": 1754400400,
+        "updated_at": 1754400400
+      },
+      {
+        "id": "product-004",
+        "name": "運動背包",
+        "description": "多功能運動背包，大容量設計，防水材質，適合健身、旅行、日常通勤使用。",
+        "price": 1590,
+        "stock": 75,
+        "images": [
+          "https://media.example.com/backpack-1.jpg",
+          "https://media.example.com/backpack-2.jpg"
+        ],
+        "ad": "https://media.example.com/backpack-ad.mp4",
+        "category": "運動用品",
+        "status": "active",
+        "created_at": 1754400300,
+        "updated_at": 1754400300
+      },
+      {
+        "id": "product-003",
+        "name": "保溫水瓶",
+        "description": "316不鏽鋼保溫瓶，保溫12小時保冷24小時，容量500ml，輕量化設計。",
+        "price": 890,
+        "stock": 100,
+        "images": [
+          "https://media.example.com/bottle-1.jpg",
+          "https://media.example.com/bottle-2.jpg"
+        ],
+        "ad": "https://media.example.com/bottle-ad.mp4",
+        "category": "生活用品",
+        "status": "active",
+        "created_at": 1754400200,
+        "updated_at": 1754400200
+      },
+      {
+        "id": "product-002",
+        "name": "智慧手錶",
+        "description": "多功能智慧手錶，具備健康監測、運動追蹤、訊息通知等功能，防水等級IP68。",
+        "price": 5990,
+        "stock": 30,
+        "images": [
+          "https://media.example.com/smartwatch-1.jpg",
+          "https://media.example.com/smartwatch-2.jpg"
+        ],
+        "ad": "https://media.example.com/smartwatch-ad.mp4",
+        "category": "3C電子",
+        "status": "active",
+        "created_at": 1754400100,
+        "updated_at": 1754400100
+      },
+      {
+        "id": "product-001",
+        "name": "無線藍牙耳機",
+        "description": "高音質無線藍牙耳機，支援主動降噪功能，續航力長達30小時，適合運動和日常使用。",
+        "price": 2990,
+        "stock": 50,
+        "images": [
+          "https://media.example.com/earphones-1.jpg",
+          "https://media.example.com/earphones-2.jpg"
+        ],
+        "ad": "https://media.example.com/earphones-ad.mp4",
+        "category": "3C電子",
+        "status": "active",
+        "created_at": 1754400000,
+        "updated_at": 1754400000
+      },
+      {
+        "id": "a5789472-6589-4a07-a59e-a781d6ad0dd5",
+        "name": "咖啡卷",
+        "description": "123",
+        "price": 99,
+        "stock": 10,
+        "images": [
+          "https://adapi.66556688.xyz/media/products/1754380324026-smz5j4nr4fg.jpg"
+        ],
+        "ad": "https://adapi.66556688.xyz/media/ads/1754380345746-kz9q8uzjk1s.mp4",
+        "category": "測試",
+        "status": "active",
+        "created_at": 1754379403,
+        "updated_at": 1754446571
+      }
+    ],
+    "total": 31,
+    "page": 1,
+    "limit": 50,
+    "totalPages": 1
+  },
+  "timestamp": "2025-09-15T04:42:24.055Z"
+}

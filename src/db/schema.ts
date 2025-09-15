@@ -2,9 +2,12 @@
 import { relations } from "drizzle-orm";
 import {
   boolean,
+  doublePrecision,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -105,6 +108,97 @@ export const treasureBoxTable = pgTable("treasure_boxes", {
   isOpened: boolean("is_opened").default(false).notNull(),
 });
 
+export const categoryTable = pgTable("categories", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+});
+
+export const productTable = pgTable("products", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull(),
+  avatar: text("avatar"),
+  description: text("description").notNull(),
+  price: doublePrecision("price").notNull(),
+  stock: integer("stock").notNull(),
+  images: text("images").array(),
+  status: text("status").default("active").notNull(),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+});
+
+export const advertisementTable = pgTable("advertisements", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  productId: uuid("product_id")
+    .notNull()
+    .references(() => productTable.id)
+    .unique(),
+  title: text("title").notNull(),
+  description: text("description"),
+  video_url: text("video_url").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+});
+
+export const cartItemTable = pgTable(
+  "cart_items",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    quantity: integer("quantity").notNull().default(1),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userTable.id),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => productTable.id),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (t) => ({
+    userProductUnique: uniqueIndex("cart_items_user_product_uk").on(
+      t.userId,
+      t.productId
+    ),
+  })
+);
+
+export const productsToCategoriesTable = pgTable(
+  "products_to_categories",
+  {
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => productTable.id),
+    categoryId: uuid("category_id")
+      .notNull()
+      .references(() => categoryTable.id),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.productId, t.categoryId] }),
+  })
+);
+
 // Relations
 export const usersRelations = relations(userTable, ({ one, many }) => ({
   group: one(groupTable, {
@@ -116,6 +210,7 @@ export const usersRelations = relations(userTable, ({ one, many }) => ({
     references: [userDailyStatTable.userId],
   }),
   treasureBoxes: many(treasureBoxTable),
+  cartItems: many(cartItemTable),
 }));
 
 export const groupsRelations = relations(groupTable, ({ one, many }) => ({
@@ -143,6 +238,54 @@ export const treasureBoxRelations = relations(treasureBoxTable, ({ one }) => ({
   }),
 }));
 
+export const cartItemRelations = relations(cartItemTable, ({ one }) => ({
+  user: one(userTable, {
+    fields: [cartItemTable.userId],
+    references: [userTable.id],
+  }),
+  product: one(productTable, {
+    fields: [cartItemTable.productId],
+    references: [productTable.id],
+  }),
+}));
+
+export const productRelations = relations(productTable, ({ one, many }) => ({
+  advertisement: one(advertisementTable, {
+    fields: [productTable.id],
+    references: [advertisementTable.productId],
+  }),
+  productsToCategories: many(productsToCategoriesTable),
+  cartItems: many(cartItemTable),
+}));
+
+export const advertisementRelations = relations(
+  advertisementTable,
+  ({ one }) => ({
+    product: one(productTable, {
+      fields: [advertisementTable.productId],
+      references: [productTable.id],
+    }),
+  })
+);
+
+export const categoryRelations = relations(categoryTable, ({ many }) => ({
+  productsToCategories: many(productsToCategoriesTable),
+}));
+
+export const productsToCategoriesRelations = relations(
+  productsToCategoriesTable,
+  ({ one }) => ({
+    product: one(productTable, {
+      fields: [productsToCategoriesTable.productId],
+      references: [productTable.id],
+    }),
+    category: one(categoryTable, {
+      fields: [productsToCategoriesTable.categoryId],
+      references: [categoryTable.id],
+    }),
+  })
+);
+
 // Convenient TS types
 export type User = typeof userTable.$inferSelect;
 export type NewUser = typeof userTable.$inferInsert;
@@ -155,3 +298,19 @@ export type NewUserDailyStat = typeof userDailyStatTable.$inferInsert;
 
 export type TreasureBox = typeof treasureBoxTable.$inferSelect;
 export type NewTreasureBox = typeof treasureBoxTable.$inferInsert;
+
+export type Category = typeof categoryTable.$inferSelect;
+export type NewCategory = typeof categoryTable.$inferInsert;
+
+export type Product = typeof productTable.$inferSelect;
+export type NewProduct = typeof productTable.$inferInsert;
+
+export type Advertisement = typeof advertisementTable.$inferSelect;
+export type NewAdvertisement = typeof advertisementTable.$inferInsert;
+
+export type ProductToCategory = typeof productsToCategoriesTable.$inferSelect;
+export type NewProductToCategory =
+  typeof productsToCategoriesTable.$inferInsert;
+
+export type CartItem = typeof cartItemTable.$inferSelect;
+export type NewCartItem = typeof cartItemTable.$inferInsert;
