@@ -1,0 +1,2 @@
+ALTER TABLE "users" ALTER COLUMN "referral_code" SET DEFAULT 'JEF1eS';--> statement-breakpoint
+ALTER TABLE "users" ADD CONSTRAINT "users_group_id_groups_id_fk" FOREIGN KEY ("group_id") REFERENCES "public"."groups"("id") ON DELETE no action ON UPDATE no action;
