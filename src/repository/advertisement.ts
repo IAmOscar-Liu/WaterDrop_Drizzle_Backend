@@ -17,11 +17,11 @@ export async function createAdvertisement(
     .insert(schema.advertisementTable)
     .values(advertisementData)
     .returning();
-  console.log("New advertisement created:", newAd);
+  console.log("New advertisement created:", newAd.id);
   return newAd;
 }
 
-interface ListAdvertisementsParams {
+export interface ListAdvertisementsParams {
   page?: number;
   limit?: number;
   shuffle?: boolean;
@@ -35,7 +35,7 @@ interface ListAdvertisementsParams {
 export async function listAdvertisements({
   page = 1,
   limit = 10,
-  shuffle = true,
+  shuffle = false,
 }: ListAdvertisementsParams) {
   const offset = (page - 1) * limit;
 

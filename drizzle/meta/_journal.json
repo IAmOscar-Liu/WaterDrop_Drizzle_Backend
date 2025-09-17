@@ -57,6 +57,34 @@
       "when": 1757915271741,
       "tag": "0007_low_thanos",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1757923596841,
+      "tag": "0008_glamorous_true_believers",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1757925262703,
+      "tag": "0009_sparkling_freak",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1758037568166,
+      "tag": "0010_motionless_captain_flint",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1758087546803,
+      "tag": "0011_dusty_living_lightning",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,15 @@
-import { and, count, eq, gte, ilike, inArray, lte, or, SQL } from "drizzle-orm";
+import {
+  and,
+  count,
+  eq,
+  gte,
+  ilike,
+  inArray,
+  isNotNull,
+  lte,
+  or,
+  SQL,
+} from "drizzle-orm";
 
 import * as schema from "../db/schema";
 import db from "../lib/initDB";
@@ -15,7 +26,7 @@ export async function createCategory(categoryData: schema.NewCategory) {
     .insert(schema.categoryTable)
     .values(categoryData)
     .returning();
-  console.log("New category created:", newCategory);
+  console.log("New category created:", newCategory.id);
   return newCategory;
 }
 
@@ -27,11 +38,25 @@ export async function listCategory() {
   const categories = await db.query.categoryTable.findMany({
     orderBy: (categories, { asc }) => [asc(categories.name)],
   });
-  console.log("Categories:", categories);
+  console.log("No. of categories:", categories.length);
   return categories;
 }
 
 // --- Product Functions ---
+
+export async function getProductById(productId: string) {
+  return db.query.productTable.findFirst({
+    where: eq(schema.productTable.id, productId),
+    with: {
+      advertisement: true,
+      productsToCategories: {
+        with: {
+          category: true,
+        },
+      },
+    },
+  });
+}
 
 /**
  * Creates a new product and associates it with given categories.
@@ -62,7 +87,7 @@ export async function createProduct(
         .values(productToCategoryValues);
     }
 
-    console.log("New product created:", newProduct);
+    console.log("New product created:", newProduct.id);
 
     // 3. Return the full product with relations for confirmation
     return tx.query.productTable.findFirst({
@@ -78,7 +103,7 @@ export async function createProduct(
   });
 }
 
-interface ListProductsParams {
+export interface ListProductsParams {
   page?: number;
   limit?: number;
   categoryId?: string;
@@ -102,6 +127,9 @@ export async function listProducts({
 }: ListProductsParams) {
   const offset = (page - 1) * limit;
   const conditions: (SQL | undefined)[] = [];
+
+  // Only return products that have an associated seller.
+  conditions.push(isNotNull(schema.productTable.sellerId));
 
   // Add conditions based on filters
   if (categoryId) {

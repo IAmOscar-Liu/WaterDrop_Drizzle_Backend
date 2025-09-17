@@ -90,6 +90,7 @@ async function seedDatabase() {
         const [newProduct] = await tx
           .insert(schema.productTable)
           .values({
+            sellerId: "43e757cc-5eba-4b6b-bccc-f33c492d45a7",
             name: product.name,
             description: product.description,
             price: product.price,

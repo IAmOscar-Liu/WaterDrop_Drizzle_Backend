@@ -1,86 +1,45 @@
+import cookieParser from "cookie-parser";
+import cors from "cors";
 import "dotenv/config";
-import {
-  getTreasureBoxesByUserId,
-  openTreasureBox,
-  processVideoCompletion,
-} from "./repository/treasureBox";
-import {
-  createUser,
-  getDailyStatByUserId,
-  getUserByOauthProviderAndOauthId,
-  getUsers,
-  joinGroupByReferralCode,
-} from "./repository/user";
-import { listProducts } from "./repository/product";
-import { client } from "./lib/initDB";
-import { listAdvertisements } from "./repository/advertisement";
-import { upsertCartItem, listCartItems } from "./repository/cart";
+import express from "express";
+import { errorHandler } from "./middleware/errorHandler";
+import AdvertisementRouter from "./routers/advertisement";
+import AuthRouter from "./routers/auth";
+import CartRouter from "./routers/cart";
+import ProductRouter from "./routers/product";
+import TreasureBoxRouter from "./routers/treasureBox";
+import ChatroomRouter from "./routers/chatroom";
+import dailyTask from "./lib/scheduler";
 
-// createUser({
-//   oauthProvider: "google",
-//   oauthId: "llkjafdafedadfaf",
-//   email: "ddtor@lksdfdd.com",
-//   name: "Ian",
-//   phone: "0234775599",
-// });
-// getUsers();
-getUserByOauthProviderAndOauthId("google", "dasfafaf22dddddsss");
-// joinGroupByReferralCode("JEF1eS", "018dffd0-f397-4085-9413-215aa83e1592");
-// getDailyStatByUserId("018dffd0-f397-4085-9413-215aa83e1592");
-// processVideoCompletion("018dffd0-f397-4085-9413-215aa83e1592");
-// openTreasureBox(
-//   "018dffd0-f397-4085-9413-215aa83e1592",
-//   "0bfce039-057a-4d4e-aec2-dd4aa333412b"
-// );
-// getTreasureBoxesByUserId("018dffd0-f397-4085-9413-215aa83e1592");
+const app = express();
+const PORT = process.env.PORT ?? 4000;
 
-async function main() {
-  try {
-    // console.log("--- Listing products (Page 1, Limit 5) ---");
-    // const results = await listProducts({ page: 1, limit: 10 });
-    // console.log(JSON.stringify(results, null, 2));
+dailyTask.start(); // Start the scheduled task
+console.log("Cron job has been started.");
 
-    // console.log("\n--- Searching for products with '電源' (Power) ---");
-    // const searchResults = await listProducts({
-    //   page: 1,
-    //   limit: 10,
-    //   search: "電源",
-    // });
-    // console.log(JSON.stringify(searchResults.products.map((p) => p.name)));
-    // console.log("\n--- Listing advertisements (Page 1, Limit 5) ---");
-    // const adResults = await listAdvertisements({
-    //   page: 1,
-    //   limit: 20,
-    //   shuffle: true,
-    // });
-    // console.log(JSON.stringify(adResults, null, 2));
+app.use(express.json());
+app.use(cookieParser());
+app.use(express.urlencoded({ extended: true })); // Middleware for parsing form data
 
-    // // 2. Add product to cart with quantity 2
-    // await upsertCartItem(
-    //   "018dffd0-f397-4085-9413-215aa83e1592",
-    //   "05f96562-17aa-4828-8ce4-1003c8d9c6d5",
-    //   2
-    // );
-    // let cart = await listCartItems("018dffd0-f397-4085-9413-215aa83e1592");
-    // console.log("Cart contents:", JSON.stringify(cart, null, 2));
+app.use(cors());
 
-    // // 3. Update quantity to 5
-    // console.log("\n--- Updating quantity to 5 ---");
-    // await upsertCartItem(
-    //   "018dffd0-f397-4085-9413-215aa83e1592",
-    //   "05f96562-17aa-4828-8ce4-1003c8d9c6d5",
-    //   5
-    // );
-    // cart = await listCartItems("018dffd0-f397-4085-9413-215aa83e1592");
+app.post("/api/protected/test", (_, res) => {
+  res.send({
+    success: true,
+    data: "Here is some protected information from the server",
+  });
+});
 
-    const cart = await listCartItems("01c5a9d0-6d7a-47be-8788-7ef944feb280");
-    console.log("Cart contents:", JSON.stringify(cart, null, 2));
-  } catch (error) {
-    console.error("An error occurred:", error);
-  } finally {
-    await client.end();
-    console.log("\nDatabase connection closed.");
-  }
-}
+app.use("/api/auth", AuthRouter);
+app.use("/api/treasureBox", TreasureBoxRouter);
+app.use("/api/advertisement", AdvertisementRouter);
+app.use("/api/product", ProductRouter);
+app.use("/api/cart", CartRouter);
+app.use("/api/chatroom", ChatroomRouter);
 
-// main();
+app.use(errorHandler);
+
+// Start server
+app.listen(PORT, () => {
+  console.log(`Server running at http://localhost:${PORT}`);
+});
