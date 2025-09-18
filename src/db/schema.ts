@@ -3,6 +3,7 @@ import { relations } from "drizzle-orm";
 import {
   boolean,
   doublePrecision,
+  index,
   integer,
   jsonb,
   pgEnum,
@@ -137,6 +138,7 @@ export const userTable = pgTable(
         table.email
       ),
       byReferral: uniqueIndex("users_referral_code_uk").on(table.referralCode),
+      byTimezone: index("users_timezone_idx").on(table.timezone),
       // Optional helpful indexes:
     };
   }

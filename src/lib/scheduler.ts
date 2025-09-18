@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import { resetDailyStats } from "../repository/treasureBox";
-import { getUserIdsByTimezone } from "../repository/user";
+import { getUserIdsInTimezones } from "../repository/user";
 import { CustomError } from "./error";
 
 const BATCH_SIZE = 100; // Process 100 users at a time. Adjust as needed.
@@ -9,7 +9,7 @@ const BATCH_SIZE = 100; // Process 100 users at a time. Adjust as needed.
 const dailyTask = cron.schedule(
   "*/30 * * * *", // every 30 minutes
   async () => {
-    console.log(`Hourly cron job started. Time: ${new Date()}`);
+    console.log(`30 minute cron job started. Time: ${new Date()}`);
 
     const timezones = (Intl as any).supportedValuesOf("timeZone") as string[];
     const timezonesAtMidnight = timezones.filter((tz) => {
@@ -37,55 +37,51 @@ const dailyTask = cron.schedule(
       return;
     }
 
-    console.log("Timezones at midnight:", timezonesAtMidnight.join(", "));
+    console.log(
+      `${timezonesAtMidnight.length} timezones at midnight:`,
+      timezonesAtMidnight.join(", ")
+    );
 
-    for (const timezone of timezonesAtMidnight) {
-      console.log(`Processing users for timezone: ${timezone}`);
-      let offset = 0;
-      let usersProcessed = 0;
+    let offset = 0;
+    let usersProcessed = 0;
 
-      try {
-        while (true) {
-          const userIds = await getUserIdsByTimezone({
-            limit: BATCH_SIZE,
-            offset,
-            timezone,
-          });
+    try {
+      while (true) {
+        const userIds = await getUserIdsInTimezones({
+          limit: BATCH_SIZE,
+          offset,
+          timezones: timezonesAtMidnight,
+        });
 
-          if (userIds.length === 0) {
-            break;
-          }
-
-          console.log(
-            `Processing batch of ${userIds.length} users in ${timezone}...`
-          );
-
-          await Promise.all(
-            userIds.map((userId) =>
-              resetDailyStats(userId).catch((err) => {
-                if (err instanceof CustomError && err.statusCode === 404)
-                  return;
-                console.error(
-                  `Error resetting stats for user ${userId} in ${timezone}:`,
-                  err
-                );
-              })
-            )
-          );
-
-          usersProcessed += userIds.length;
-          offset += BATCH_SIZE;
+        if (userIds.length === 0) {
+          break;
         }
 
         console.log(
-          `✅ Daily reset complete for ${timezone}. Total users processed: ${usersProcessed}`
+          `Processing batch of ${userIds.length} users in ${timezonesAtMidnight.length} timezones...`
         );
-      } catch (error) {
-        console.error(
-          `An error occurred during batch processing for timezone ${timezone}:`,
-          error
+
+        await Promise.all(
+          userIds.map((userId) =>
+            resetDailyStats(userId).catch((err) => {
+              if (err instanceof CustomError && err.statusCode === 404) return;
+              console.error(`Error resetting stats for user ${userId}:`, err);
+            })
+          )
         );
+
+        usersProcessed += userIds.length;
+        offset += BATCH_SIZE;
       }
+
+      console.log(
+        `✅ Daily reset complete for current ${timezonesAtMidnight.length} timezones. Total users processed: ${usersProcessed}`
+      );
+    } catch (error) {
+      console.error(
+        `An error occurred during batch processing for current ${timezonesAtMidnight.length} timezones:`,
+        error
+      );
     }
   }
 );

@@ -5,7 +5,7 @@ import jwt, { type SignOptions } from "jsonwebtoken";
 const JWT_SECRET =
   process.env.JWT_SECRET ??
   "your-super-secret-and-long-string-that-is-hard-to-guess";
-const DEFAULT_EXPIRATION = "24h"; // Default token validity: 1 hour
+const DEFAULT_EXPIRATION = "30d"; // Default token validity: 1 hour
 
 /**
  * Generates a JSON Web Token (JWT).

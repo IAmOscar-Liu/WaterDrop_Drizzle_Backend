@@ -1,4 +1,12 @@
-import { and, count, eq, getTableColumns, isNotNull, sql } from "drizzle-orm";
+import {
+  and,
+  count,
+  eq,
+  getTableColumns,
+  isNotNull,
+  sql,
+  inArray,
+} from "drizzle-orm";
 import * as schema from "../db/schema";
 import { generateInvitationCode } from "../lib/generateInvitationCode";
 import db from "../lib/initDB";
@@ -54,19 +62,19 @@ export async function getUsers() {
   return users;
 }
 
-export async function getUserIdsByTimezone({
+export async function getUserIdsInTimezones({
   limit = 100,
   offset = 0,
-  timezone,
+  timezones,
 }: {
   limit?: number;
   offset?: number;
-  timezone: string;
+  timezones: string[];
 }) {
   const users = await db
     .select({ id: schema.userTable.id })
     .from(schema.userTable)
-    .where(eq(schema.userTable.timezone, timezone))
+    .where(inArray(schema.userTable.timezone, timezones))
     .limit(limit)
     .offset(offset);
   return users.map((u) => u.id);

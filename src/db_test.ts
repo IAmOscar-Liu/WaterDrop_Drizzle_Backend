@@ -22,13 +22,13 @@ import {
 } from "./repository/chatroom";
 
 // createUser({
-//   name: "test_from_local",
-//   email: "ollladfafssss@ddd.com",
+//   name: "test_from_local2",
+//   email: "ollladfafseee@kkk.com",
 //   oauthProvider: "google",
-//   oauthId: "asdfasdfaedafsafdsad",
+//   oauthId: "kljiadfasfeds",
 // });
 // getUsers();
-getUserByOauthProviderAndOauthId("google", "asdfasdfaedafsafdsad1");
+// getUserByOauthProviderAndOauthId("google", "asdfasdfaedafsafdsad1");
 // joinGroupByReferralCode("JEF1eS", "018dffd0-f397-4085-9413-215aa83e1592");
 // getDailyStatByUserId("018dffd0-f397-4085-9413-215aa83e1592");
 // processVideoCompletion("018dffd0-f397-4085-9413-215aa83e1592");
