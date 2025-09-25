@@ -1,5 +1,5 @@
 {
-  "id": "66b2d403-9d55-4e5e-b4a1-8cf6a7f73028",
+  "id": "7210e907-927f-4c33-9e82-f70f2f0d945a",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -986,6 +986,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "avatar_url": {
+          "name": "avatar_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "group_id": {
           "name": "group_id",
           "type": "uuid",
@@ -1046,6 +1052,21 @@
             }
           ],
           "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "users_timezone_idx": {
+          "name": "users_timezone_idx",
+          "columns": [
+            {
+              "expression": "timezone",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
