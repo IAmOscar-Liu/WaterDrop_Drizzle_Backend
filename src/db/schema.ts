@@ -119,7 +119,7 @@ export const userTable = pgTable(
     name: text("name"),
     phone: text("phone"),
     address: text("address"),
-    avatar: text("avatar"),
+    avatar_url: text("avatar_url"),
 
     groupId: uuid("group_id").references(() => groupTable.id),
     timezone: text("timezone"),

@@ -403,37 +403,6 @@
       "policies": {},
       "isRLSEnabled": false
     },
-    "public.__drizzle_migrations": {
-      "name": "__drizzle_migrations",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "hash": {
-          "name": "hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {},
-      "policies": {},
-      "isRLSEnabled": false
-    },
     "public.groups": {
       "name": "groups",
       "schema": "",
@@ -640,6 +609,12 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "avatar": {
+          "name": "avatar",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -650,7 +625,7 @@
               "expression": "oauth_provider",
               "asc": true,
               "nulls": "last",
-              "opclass": "text_ops",
+              "opclass": "enum_ops",
               "isExpression": false
             },
             {
@@ -678,6 +653,22 @@
             }
           ],
           "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "users_timezone_idx": {
+          "name": "users_timezone_idx",
+          "columns": [
+            {
+              "expression": "timezone",
+              "asc": true,
+              "nulls": "last",
+              "opclass": "text_ops",
+              "isExpression": false
+            }
+          ],
+          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}

@@ -53,12 +53,6 @@ CREATE TABLE "cart_items" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "__drizzle_migrations" (
-	"id" serial PRIMARY KEY NOT NULL,
-	"hash" text NOT NULL,
-	"created_at" bigint
-);
---> statement-breakpoint
 CREATE TABLE "groups" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"owner_id" uuid NOT NULL,
@@ -92,7 +86,8 @@ CREATE TABLE "users" (
 	"group_id" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"timezone" text
+	"timezone" text,
+	"avatar" text
 );
 --> statement-breakpoint
 CREATE TABLE "user_daily_stats" (
@@ -157,7 +152,8 @@ ALTER TABLE "treasure_boxes" ADD CONSTRAINT "treasure_boxes_user_id_users_id_fk"
 ALTER TABLE "products_to_categories" ADD CONSTRAINT "products_to_categories_product_id_products_id_fk" FOREIGN KEY ("product_id") REFERENCES "public"."products"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "products_to_categories" ADD CONSTRAINT "products_to_categories_category_id_categories_id_fk" FOREIGN KEY ("category_id") REFERENCES "public"."categories"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "cart_items_user_product_uk" ON "cart_items" USING btree ("user_id" uuid_ops,"product_id" uuid_ops);--> statement-breakpoint
-CREATE UNIQUE INDEX "users_oauth_provider_id_uk" ON "users" USING btree ("oauth_provider" text_ops,"email" text_ops);--> statement-breakpoint
+CREATE UNIQUE INDEX "users_oauth_provider_id_uk" ON "users" USING btree ("oauth_provider" enum_ops,"email" text_ops);--> statement-breakpoint
 CREATE UNIQUE INDEX "users_referral_code_uk" ON "users" USING btree ("referral_code" text_ops);--> statement-breakpoint
+CREATE INDEX "users_timezone_idx" ON "users" USING btree ("timezone" text_ops);--> statement-breakpoint
 CREATE UNIQUE INDEX "chat_rooms_user_account_product_uk" ON "chat_rooms" USING btree ("user_id" uuid_ops,"account_id" uuid_ops,"product_id" uuid_ops);
 */

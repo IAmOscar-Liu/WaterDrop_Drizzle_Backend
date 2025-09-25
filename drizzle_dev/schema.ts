@@ -1,4 +1,4 @@
-import { pgTable, foreignKey, unique, uuid, text, timestamp, doublePrecision, integer, jsonb, uniqueIndex, serial, bigint, boolean, primaryKey, pgEnum } from "drizzle-orm/pg-core"
+import { pgTable, foreignKey, unique, uuid, text, timestamp, doublePrecision, integer, jsonb, uniqueIndex, index, boolean, primaryKey, pgEnum } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 export const accountRole = pgEnum("account_role", ['admin', 'seller'])
@@ -90,13 +90,6 @@ export const cartItems = pgTable("cart_items", {
 		}),
 ]);
 
-export const drizzleMigrations = pgTable("__drizzle_migrations", {
-	id: serial().primaryKey().notNull(),
-	hash: text().notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	createdAt: bigint("created_at", { mode: "number" }),
-});
-
 export const groups = pgTable("groups", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	ownerId: uuid("owner_id").notNull(),
@@ -132,9 +125,11 @@ export const users = pgTable("users", {
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	timezone: text(),
+	avatar: text(),
 }, (table) => [
-	uniqueIndex("users_oauth_provider_id_uk").using("btree", table.oauthProvider.asc().nullsLast().op("text_ops"), table.email.asc().nullsLast().op("text_ops")),
+	uniqueIndex("users_oauth_provider_id_uk").using("btree", table.oauthProvider.asc().nullsLast().op("enum_ops"), table.email.asc().nullsLast().op("text_ops")),
 	uniqueIndex("users_referral_code_uk").using("btree", table.referralCode.asc().nullsLast().op("text_ops")),
+	index("users_timezone_idx").using("btree", table.timezone.asc().nullsLast().op("text_ops")),
 	foreignKey({
 			columns: [table.groupId],
 			foreignColumns: [groups.id],
