@@ -110,6 +110,6 @@
 
     "sourceMap": true //  for F5 debugging, added by Glacius
   },
-  "include": ["src/**/*.ts"], //  for F5 debugging, added by Glacius
+  "include": ["src/**/*.ts", "generate-dmbl.ts"], //  for F5 debugging, added by Glacius
   "exclude": ["node_modules", "dist"] //  for F5 debugging, added by Glacius
 }

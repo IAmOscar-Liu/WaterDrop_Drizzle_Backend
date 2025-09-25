@@ -1,4 +1,4 @@
-import { count, sql } from "drizzle-orm";
+import { count, eq, sql } from "drizzle-orm";
 
 import * as schema from "../db/schema";
 import db from "../lib/initDB";
@@ -67,4 +67,17 @@ export async function listAdvertisements({
     limit,
     totalPages,
   };
+}
+
+export async function updateAdvertisementById(
+  advertisementId: string,
+  updates: Partial<schema.Advertisement>
+) {
+  const [updatedAd] = await db
+    .update(schema.advertisementTable)
+    .set(updates)
+    .where(eq(schema.advertisementTable.id, advertisementId))
+    .returning();
+  console.log("Advertisement updated:", updatedAd.id);
+  return updatedAd;
 }
