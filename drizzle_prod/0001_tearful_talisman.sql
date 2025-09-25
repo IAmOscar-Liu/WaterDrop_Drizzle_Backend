@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "users_timezone_idx" ON "users" USING btree ("timezone");
