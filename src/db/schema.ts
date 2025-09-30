@@ -34,6 +34,12 @@ export const chatMessageSenderEnum = pgEnum("chat_message_sender", [
   "seller",
 ]);
 
+export const orderStatusEnum = pgEnum("order_status", [
+  "pending",
+  "paid",
+  "failed",
+]);
+
 export const groupTable = pgTable("groups", {
   id: uuid("id").defaultRandom().primaryKey(),
   ownerId: uuid("owner_id").notNull(),
@@ -258,6 +264,28 @@ export const cartItemTable = pgTable(
   })
 );
 
+export const collectionTable = pgTable(
+  "collections",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userTable.id, { onDelete: "cascade" }),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => productTable.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => ({
+    userProductUnique: uniqueIndex("collections_user_product_uk").on(
+      t.userId,
+      t.productId
+    ),
+  })
+);
+
 export const productsToCategoriesTable = pgTable(
   "products_to_categories",
   {
@@ -286,6 +314,64 @@ export const adViewCountTable = pgTable("ad_view_counts", {
     .notNull(),
 });
 
+// Add these tables to your schema.ts file
+
+export const orderTable = pgTable("orders", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => userTable.id), // The customer who placed the order
+  accountId: uuid("account_id").references(() => accountTable.id), // Optional: Reference to a seller/admin if needed for the whole order
+  totalAmount: doublePrecision("total_amount").notNull(), // Final calculated total
+  discountCoin: integer("discount_coin").default(0), // New field for discount coins used
+  // Optionally add status (e.g., 'pending', 'shipped', 'delivered')
+  orderStatus: orderStatusEnum("order_status").default("pending").notNull(),
+  // Optionally add shipping address, payment details, etc.
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+  metadata: jsonb("metadata"), // Optional: Store additional info like payment method, shipping info, etc.
+});
+
+export const orderItemTable = pgTable(
+  "order_items",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => orderTable.id, { onDelete: "cascade" }),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => productTable.id),
+
+    quantity: integer("quantity").notNull(),
+
+    // --- The key fields to handle price change ---
+    // 1. Store the price at the time of sale:
+    unitPriceAtSale: doublePrecision("unit_price_at_sale").notNull(),
+
+    // 2. Store other static product details for historical accuracy (optional but recommended):
+    productNameAtSale: text("product_name_at_sale").notNull(),
+
+    // 3. Calculated total for the line item:
+    lineTotal: doublePrecision("line_total").notNull(),
+
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => ({
+    orderItemUnique: uniqueIndex("order_items_order_product_uk").on(
+      t.orderId,
+      t.productId
+    ),
+  })
+);
+
 // Relations
 export const accountRelations = relations(accountTable, ({ many }) => ({
   products: many(productTable),
@@ -304,7 +390,9 @@ export const usersRelations = relations(userTable, ({ one, many }) => ({
   treasureBoxes: many(treasureBoxTable),
   cartItems: many(cartItemTable),
   chatRooms: many(chatRoomTable),
+  collections: many(collectionTable),
   adViews: many(adViewCountTable),
+  orders: many(orderTable),
 }));
 
 export const groupsRelations = relations(groupTable, ({ one, many }) => ({
@@ -378,6 +466,8 @@ export const productRelations = relations(productTable, ({ one, many }) => ({
   productsToCategories: many(productsToCategoriesTable),
   cartItems: many(cartItemTable),
   chatRooms: many(chatRoomTable),
+  collections: many(collectionTable),
+  orderItems: many(orderItemTable),
 }));
 
 export const advertisementRelations = relations(
@@ -420,6 +510,40 @@ export const adViewCountRelations = relations(adViewCountTable, ({ one }) => ({
   }),
 }));
 
+export const collectionRelations = relations(collectionTable, ({ one }) => ({
+  user: one(userTable, {
+    fields: [collectionTable.userId],
+    references: [userTable.id],
+  }),
+  product: one(productTable, {
+    fields: [collectionTable.productId],
+    references: [productTable.id],
+  }),
+}));
+
+export const orderRelations = relations(orderTable, ({ one, many }) => ({
+  user: one(userTable, {
+    fields: [orderTable.userId],
+    references: [userTable.id],
+  }),
+  account: one(accountTable, {
+    fields: [orderTable.accountId],
+    references: [accountTable.id],
+  }),
+  items: many(orderItemTable),
+}));
+
+export const orderItemRelations = relations(orderItemTable, ({ one }) => ({
+  order: one(orderTable, {
+    fields: [orderItemTable.orderId],
+    references: [orderTable.id],
+  }),
+  product: one(productTable, {
+    fields: [orderItemTable.productId],
+    references: [productTable.id],
+  }),
+}));
+
 // Convenient TS types
 export type User = typeof userTable.$inferSelect;
 export type NewUser = typeof userTable.$inferInsert;
@@ -449,6 +573,9 @@ export type NewProductToCategory =
 export type CartItem = typeof cartItemTable.$inferSelect;
 export type NewCartItem = typeof cartItemTable.$inferInsert;
 
+export type Collection = typeof collectionTable.$inferSelect;
+export type NewCollection = typeof collectionTable.$inferInsert;
+
 export type Account = typeof accountTable.$inferSelect;
 export type NewAccount = typeof accountTable.$inferInsert;
 
@@ -460,3 +587,9 @@ export type NewChatMessage = typeof chatMessageTable.$inferInsert;
 
 export type AdViewCount = typeof adViewCountTable.$inferSelect;
 export type NewAdViewCount = typeof adViewCountTable.$inferInsert;
+
+export type Order = typeof orderTable.$inferSelect;
+export type NewOrder = typeof orderTable.$inferInsert;
+
+export type OrderItem = typeof orderItemTable.$inferSelect;
+export type NewOrderItem = typeof orderItemTable.$inferInsert;

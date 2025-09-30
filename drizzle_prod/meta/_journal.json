@@ -29,6 +29,13 @@
       "when": 1758819213502,
       "tag": "0003_nervous_white_tiger",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1759197969872,
+      "tag": "0004_tricky_reavers",
+      "breakpoints": true
     }
   ]
 }

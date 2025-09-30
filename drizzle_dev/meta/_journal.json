@@ -15,6 +15,55 @@
       "when": 1758818130374,
       "tag": "0001_uneven_salo",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1759071274050,
+      "tag": "0002_supreme_loners",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1759074824628,
+      "tag": "0003_thin_silk_fever",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1759074874827,
+      "tag": "0004_lean_captain_britain",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1759077223948,
+      "tag": "0005_sloppy_havok",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1759095256036,
+      "tag": "0006_talented_salo",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1759135388962,
+      "tag": "0007_dark_human_cannonball",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1759136237074,
+      "tag": "0008_big_iron_fist",
+      "breakpoints": true
     }
   ]
 }

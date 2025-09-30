@@ -2,14 +2,17 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import "dotenv/config";
 import express from "express";
+import dailyTask from "./lib/scheduler";
 import { errorHandler } from "./middleware/errorHandler";
 import AdvertisementRouter from "./routers/advertisement";
 import AuthRouter from "./routers/auth";
 import CartRouter from "./routers/cart";
+import ChatroomRouter from "./routers/chatroom";
+import CollectionRouter from "./routers/collection";
+import EcPayRouter from "./routers/ecpay";
+import OrderRouter from "./routers/order";
 import ProductRouter from "./routers/product";
 import TreasureBoxRouter from "./routers/treasureBox";
-import ChatroomRouter from "./routers/chatroom";
-import dailyTask from "./lib/scheduler";
 
 const app = express();
 const PORT = process.env.PORT ?? 4000;
@@ -36,6 +39,9 @@ app.use("/api/advertisement", AdvertisementRouter);
 app.use("/api/product", ProductRouter);
 app.use("/api/cart", CartRouter);
 app.use("/api/chatroom", ChatroomRouter);
+app.use("/api/ecpay", EcPayRouter);
+app.use("/api/order", OrderRouter);
+app.use("/api/collection", CollectionRouter);
 
 app.use(errorHandler);
 
