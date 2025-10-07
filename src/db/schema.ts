@@ -322,6 +322,7 @@ export const orderTable = pgTable("orders", {
     .notNull()
     .references(() => userTable.id), // The customer who placed the order
   accountId: uuid("account_id").references(() => accountTable.id), // Optional: Reference to a seller/admin if needed for the whole order
+  merchantTradeNo: text("merchant_trade_no"),
   totalAmount: doublePrecision("total_amount").notNull(), // Final calculated total
   discountCoin: integer("discount_coin").default(0), // New field for discount coins used
   // Optionally add status (e.g., 'pending', 'shipped', 'delivered')
@@ -371,6 +372,30 @@ export const orderItemTable = pgTable(
     ),
   })
 );
+
+export const deliveryTable = pgTable("deliveries", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orderId: uuid("order_id")
+    .notNull()
+    .references(() => orderTable.id)
+    .unique(),
+  merchantTradeNo: text("merchant_trade_no").notNull(),
+  AllPayLogisticsID: text("all_pay_logistics_id"),
+  LogisticsType: text("logistics_type").notNull(),
+  LogisticsSubType: text("logistics_sub_type").notNull(),
+  RtnCode: text("rtn_code"),
+  RtnMsg: text("rtn_msg"),
+  GoodsAmount: doublePrecision("goods_amount").notNull(),
+  ReceiverStoreId: text("receiver_store_id"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+});
 
 // Relations
 export const accountRelations = relations(accountTable, ({ many }) => ({
@@ -530,7 +555,8 @@ export const orderRelations = relations(orderTable, ({ one, many }) => ({
     fields: [orderTable.accountId],
     references: [accountTable.id],
   }),
-  items: many(orderItemTable),
+  items: many(orderItemTable), // An order can have many items
+  delivery: one(deliveryTable), // An order has one delivery
 }));
 
 export const orderItemRelations = relations(orderItemTable, ({ one }) => ({
@@ -541,6 +567,13 @@ export const orderItemRelations = relations(orderItemTable, ({ one }) => ({
   product: one(productTable, {
     fields: [orderItemTable.productId],
     references: [productTable.id],
+  }),
+}));
+
+export const deliveryRelations = relations(deliveryTable, ({ one }) => ({
+  order: one(orderTable, {
+    fields: [deliveryTable.orderId],
+    references: [orderTable.id],
   }),
 }));
 
@@ -593,3 +626,6 @@ export type NewOrder = typeof orderTable.$inferInsert;
 
 export type OrderItem = typeof orderItemTable.$inferSelect;
 export type NewOrderItem = typeof orderItemTable.$inferInsert;
+
+export type Delivery = typeof deliveryTable.$inferSelect;
+export type NewDelivery = typeof deliveryTable.$inferInsert;

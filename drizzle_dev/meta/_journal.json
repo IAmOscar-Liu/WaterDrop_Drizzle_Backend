@@ -64,6 +64,27 @@
       "when": 1759136237074,
       "tag": "0008_big_iron_fist",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1759499639895,
+      "tag": "0009_workable_celestials",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1759502620196,
+      "tag": "0010_married_jubilee",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1759759469696,
+      "tag": "0011_dizzy_felicia_hardy",
+      "breakpoints": true
     }
   ]
 }

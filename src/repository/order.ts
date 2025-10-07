@@ -72,7 +72,11 @@ export async function updateOrderStatus(
     // Update the order status
     await tx
       .update(schema.orderTable)
-      .set({ orderStatus: status, metadata })
+      .set({
+        orderStatus: status,
+        merchantTradeNo: (metadata as any).MerchantTradeNo ?? null,
+        metadata,
+      })
       .where(eq(schema.orderTable.id, orderId));
 
     // Return the fully updated order with its relations
@@ -119,13 +123,14 @@ export async function listOrders({
       inArray(schema.orderTable.orderStatus, statusIn),
       eq(schema.orderTable.userId, userId)
     ),
-    with: {
-      items: {
-        with: {
-          product: true,
-        },
-      },
-    },
+    // with: {
+    //   items: {
+    //     with: {
+    //       product: true,
+    //     },
+    //   },
+    //   delivery: true,
+    // },
     orderBy: (orders, { desc, asc }) => [
       order === "asc" ? asc(orders.createdAt) : desc(orders.createdAt),
     ],
@@ -143,6 +148,24 @@ export async function getOrderById(orderId: string) {
           product: true,
         },
       },
+      delivery: true,
     },
   });
+}
+
+export async function getOrderByMerchantTradeNo(merchantTradeNo: string) {
+  return db.query.orderTable.findFirst({
+    where: eq(schema.orderTable.merchantTradeNo, merchantTradeNo),
+  });
+}
+
+export async function createDelivery(deliveryData: schema.NewDelivery) {
+  const [newDelivery] = await db
+    .insert(schema.deliveryTable)
+    .values(deliveryData)
+    .returning();
+
+  console.log("New Delivery Created:", newDelivery.id);
+
+  return newDelivery;
 }

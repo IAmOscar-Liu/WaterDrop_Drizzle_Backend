@@ -1,0 +1,1 @@
+ALTER TABLE "deliveries" ALTER COLUMN "receiver_store_id" DROP NOT NULL;

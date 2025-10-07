@@ -1,0 +1,1 @@
+ALTER TABLE "orders" ADD COLUMN "merchant_trade_no" text;
