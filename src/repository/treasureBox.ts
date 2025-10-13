@@ -1,8 +1,7 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, not, sql } from "drizzle-orm";
 import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
 import db from "../lib/initDB";
-import { getRandomInteger } from "../lib/general";
 
 /**
  * Processes a user completing a video watch.
@@ -70,7 +69,11 @@ export async function processVideoCompletion(
       console.log(`Awarding a treasure box to user ${userId}...`);
 
       // Generate random coins for the treasure box
-      const coinsAwarded = getRandomInteger(5, 10);
+      // const coinsAwarded = getRandomInteger(5, 10);
+      const coinsAwarded = Math.min(
+        165,
+        (updatedStat.groupAdViewsCountYesterday ?? 0) * 0.75
+      );
 
       // Insert new treasure box
       await tx.insert(schema.treasureBoxTable).values({
@@ -119,7 +122,8 @@ export async function openTreasureBox(userId: string, treasureBoxId: string) {
       .where(
         and(
           eq(schema.treasureBoxTable.id, treasureBoxId),
-          eq(schema.treasureBoxTable.userId, userId)
+          eq(schema.treasureBoxTable.userId, userId),
+          eq(schema.treasureBoxTable.isActive, true)
         )
       );
 
@@ -179,7 +183,10 @@ export async function openTreasureBox(userId: string, treasureBoxId: string) {
  */
 export async function getTreasureBoxesByUserId(userId: string) {
   const treasureBoxes = await db.query.treasureBoxTable.findMany({
-    where: eq(schema.treasureBoxTable.userId, userId),
+    where: and(
+      eq(schema.treasureBoxTable.userId, userId),
+      eq(schema.treasureBoxTable.isActive, true)
+    ),
     orderBy: (treasureBoxes, { desc }) => [desc(treasureBoxes.earnedAt)],
   });
 
@@ -191,7 +198,7 @@ export async function getTreasureBoxesByUserId(userId: string) {
 
 export async function resetDailyStats(userId: string) {
   return db.transaction(async (tx) => {
-    const updateStatPromise = tx
+    const [updatedStat] = await tx
       .update(schema.userDailyStatTable)
       .set({
         totalViews: 0,
@@ -202,11 +209,16 @@ export async function resetDailyStats(userId: string) {
       })
       .where(eq(schema.userDailyStatTable.userId, userId))
       .returning();
-
-    const [updatedStat] = await updateStatPromise;
     await tx
-      .delete(schema.treasureBoxTable)
-      .where(eq(schema.treasureBoxTable.userId, userId));
+      // .delete(schema.treasureBoxTable)
+      .update(schema.treasureBoxTable)
+      .set({ isActive: false })
+      .where(
+        and(
+          eq(schema.treasureBoxTable.userId, userId),
+          not(eq(schema.treasureBoxTable.isActive, false))
+        )
+      );
 
     if (!updatedStat) {
       throw new CustomError(

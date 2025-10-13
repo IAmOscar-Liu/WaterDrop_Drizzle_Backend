@@ -13,6 +13,7 @@ import EcPayRouter from "./routers/ecpay";
 import OrderRouter from "./routers/order";
 import ProductRouter from "./routers/product";
 import TreasureBoxRouter from "./routers/treasureBox";
+import FileRouter from "./routers/file";
 
 const app = express();
 const PORT = process.env.PORT ?? 4000;
@@ -42,6 +43,7 @@ app.use("/api/chatroom", ChatroomRouter);
 app.use("/api/ecpay", EcPayRouter);
 app.use("/api/order", OrderRouter);
 app.use("/api/collection", CollectionRouter);
+app.use("/api/file", FileRouter);
 
 app.use(errorHandler);
 

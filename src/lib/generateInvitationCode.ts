@@ -6,8 +6,9 @@
  * @returns {string} An alphanumeric string of the specified length.
  */
 export function generateInvitationCode(length: number = 6): string {
-  const characters =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  // const characters =
+  //   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  const characters = "ABCDEFGHJKLMNPQRSTWXYZ23456789";
   let result = "";
   const charactersLength = characters.length;
 

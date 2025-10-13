@@ -6,6 +6,7 @@ import {
   isNotNull,
   sql,
   inArray,
+  gte,
 } from "drizzle-orm";
 import * as schema from "../db/schema";
 import { generateInvitationCode } from "../lib/generateInvitationCode";
@@ -16,14 +17,26 @@ import { CustomError } from "../lib/error";
 export async function createUser(
   user: Omit<typeof schema.userTable.$inferInsert, "referralCode">
 ) {
-  // await db.delete(userTable);
+  let referralCode: string;
+  let isCodeUnique = false;
+
+  // Loop until a unique referral code is generated.
+  do {
+    referralCode = generateInvitationCode();
+    const [existingUser] = await db
+      .select({ id: schema.userTable.id })
+      .from(schema.userTable)
+      .where(eq(schema.userTable.referralCode, referralCode))
+      .limit(1);
+
+    if (!existingUser) {
+      isCodeUnique = true;
+    }
+  } while (!isCodeUnique);
 
   const [newUser] = await db
     .insert(schema.userTable)
-    .values({
-      ...user,
-      referralCode: generateInvitationCode(),
-    })
+    .values({ ...user, referralCode })
     .returning();
   console.log("New user created with id:", newUser.id);
 
@@ -62,21 +75,12 @@ export async function getUsers() {
   return users;
 }
 
-export async function getUserIdsInTimezones({
-  limit = 100,
-  offset = 0,
-  timezones,
-}: {
-  limit?: number;
-  offset?: number;
-  timezones: string[];
-}) {
+export async function getUserIdsInTimezones(timezones: string[]) {
   const users = await db
     .select({ id: schema.userTable.id })
     .from(schema.userTable)
-    .where(inArray(schema.userTable.timezone, timezones))
-    .limit(limit)
-    .offset(offset);
+    .where(inArray(schema.userTable.timezone, timezones));
+
   return users.map((u) => u.id);
 }
 
@@ -289,4 +293,46 @@ export async function getDailyStatByUserId(
 
   console.log("New daily stat created:", newStat.id);
   return newStat;
+}
+
+export async function updateGroupAdViewsCountYesterday(userId: string) {
+  return db.transaction(async (tx) => {
+    let userIdsInGroup: string[] = [];
+
+    // Find the group owned by the user
+    const [group] = await tx
+      .select({ id: schema.groupTable.id })
+      .from(schema.groupTable)
+      .where(eq(schema.groupTable.ownerId, userId));
+
+    if (group) {
+      // Get all users in that group
+      const usersInGroup = await tx
+        .select({ id: schema.userTable.id })
+        .from(schema.userTable)
+        .where(eq(schema.userTable.groupId, group.id));
+
+      userIdsInGroup = usersInGroup.map((u) => u.id);
+    }
+
+    // Also include the owner
+    const allUserIds = [...userIdsInGroup, userId];
+
+    const results = await tx
+      .select({ totalViews: schema.userDailyStatTable.totalViews })
+      .from(schema.userDailyStatTable)
+      .where(and(inArray(schema.userDailyStatTable.userId, allUserIds)));
+
+    const groupAdViewsCountYesterday = results.reduce(
+      (total, result) => total + result.totalViews,
+      0
+    );
+
+    const [updatedStat] = await tx
+      .update(schema.userDailyStatTable)
+      .set({ groupAdViewsCountYesterday })
+      .where(eq(schema.userDailyStatTable.userId, userId))
+      .returning();
+    return updatedStat;
+  });
 }

@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "group_treasure_boxes" integer DEFAULT 0;

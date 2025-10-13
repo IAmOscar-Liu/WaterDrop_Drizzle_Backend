@@ -119,7 +119,7 @@ export const userTable = pgTable(
     oauthProvider: oauthProviderEnum("oauth_provider").notNull(),
     oauthId: text("oauth_id").notNull(),
 
-    coins: integer("coins").notNull().default(0),
+    coins: doublePrecision("coins").notNull().default(0),
 
     referralCode: text("referral_code").notNull(),
     name: text("name"),
@@ -129,6 +129,7 @@ export const userTable = pgTable(
 
     groupId: uuid("group_id").references(() => groupTable.id),
     timezone: text("timezone"),
+
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -162,6 +163,9 @@ export const userDailyStatTable = pgTable("user_daily_stats", {
   canWatchMore: boolean("can_watch_more").default(true).notNull(),
   remainingViews: integer("remaining_views").default(20).notNull(),
   nextTreasureBoxIn: integer("next_treasure_box_in").default(2).notNull(),
+  groupAdViewsCountYesterday: integer("group_ad_views_count_yesterday").default(
+    20
+  ),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -180,8 +184,9 @@ export const treasureBoxTable = pgTable("treasure_boxes", {
     .defaultNow()
     .notNull(),
   openedAt: timestamp("opened_at", { withTimezone: true }),
-  coinsAwarded: integer("coins_awarded").notNull(),
+  coinsAwarded: doublePrecision("coins_awarded").notNull(),
   isOpened: boolean("is_opened").default(false).notNull(),
+  isActive: boolean("is_active").default(true),
 });
 
 export const categoryTable = pgTable("categories", {

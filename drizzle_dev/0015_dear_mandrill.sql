@@ -1,0 +1,1 @@
+ALTER TABLE "user_daily_stats" RENAME COLUMN "group_treasure_boxes" TO "group_ad_views_count_yesterday";

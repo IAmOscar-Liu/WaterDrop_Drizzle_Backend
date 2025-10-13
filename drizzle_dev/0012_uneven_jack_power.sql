@@ -1,0 +1,1 @@
+ALTER TABLE "treasure_boxes" ADD COLUMN "is_active" boolean DEFAULT true;
