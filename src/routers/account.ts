@@ -176,6 +176,30 @@ router.post("/login", AccountController.login);
 
 /**
  * @swagger
+ * /api/admin/account/logout:
+ *   post:
+ *     tags: [Account]
+ *     summary: Log out an account
+ *     description: Clears the refresh token HTTP-only cookie, effectively logging the user out from the perspective of token refreshing. The access token will remain valid until it expires.
+ *     responses:
+ *       '200':
+ *         description: Successfully logged out and cleared the refresh token cookie.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: string
+ *                   example: "OK"
+ */
+router.post("/logout", AccountController.logout);
+
+/**
+ * @swagger
  * /api/admin/account/refresh-token:
  *   post:
  *     tags: [Account]

@@ -65,6 +65,11 @@ class AccountController {
     }
   }
 
+  logout(_: Request, res: Response) {
+    res.clearCookie(process.env.REFRESH_TOKEN_NAME!);
+    sendJsonResponse(res, { success: true, data: "OK" });
+  }
+
   async getCurrentUser(req: RequestWithId, res: Response): Promise<any> {
     const result = await accountService.getAdminAccountById(req.userId ?? "");
     sendJsonResponse(res, result);
