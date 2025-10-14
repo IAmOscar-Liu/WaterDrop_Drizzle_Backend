@@ -4,16 +4,19 @@ import "dotenv/config";
 import express from "express";
 import dailyTask from "./lib/scheduler";
 import { errorHandler } from "./middleware/errorHandler";
+import AccountRouter from "./routers/account";
 import AdvertisementRouter from "./routers/advertisement";
 import AuthRouter from "./routers/auth";
 import CartRouter from "./routers/cart";
 import ChatroomRouter from "./routers/chatroom";
 import CollectionRouter from "./routers/collection";
 import EcPayRouter from "./routers/ecpay";
+import FileRouter from "./routers/file";
 import OrderRouter from "./routers/order";
 import ProductRouter from "./routers/product";
 import TreasureBoxRouter from "./routers/treasureBox";
-import FileRouter from "./routers/file";
+import swaggerUi from "swagger-ui-express";
+import { swaggerSpec } from "./lib/swagger";
 
 const app = express();
 const PORT = process.env.PORT ?? 4000;
@@ -34,6 +37,9 @@ app.post("/api/protected/test", (_, res) => {
   });
 });
 
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
+app.use("/api/admin/account", AccountRouter);
 app.use("/api/auth", AuthRouter);
 app.use("/api/treasureBox", TreasureBoxRouter);
 app.use("/api/advertisement", AdvertisementRouter);

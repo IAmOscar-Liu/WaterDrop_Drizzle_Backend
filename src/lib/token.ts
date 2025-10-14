@@ -1,4 +1,5 @@
 import jwt, { type SignOptions } from "jsonwebtoken";
+import { Response } from "express";
 
 // --- Configuration ---
 // In a real application, store this securely (e.g., in .env files, not in code)
@@ -67,4 +68,15 @@ export function validateToken(token?: string) {
     console.error("Invalid token:", error.message);
     return null;
   }
+}
+
+export function sendRefreshToken(res: Response, payload: any) {
+  const refreshToken = generateToken(payload);
+
+  res.cookie(process.env.REFRESH_TOKEN_NAME!, refreshToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    maxAge: 1000 * 60 * 60 * 24 * 30, // 30 days,
+  });
 }
