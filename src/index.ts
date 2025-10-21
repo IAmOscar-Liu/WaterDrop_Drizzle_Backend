@@ -2,7 +2,9 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import "dotenv/config";
 import express from "express";
-import dailyTask from "./lib/scheduler";
+import swaggerUi from "swagger-ui-express";
+import { dailyNotificationTask, dailyResetTask } from "./lib/scheduler";
+import { swaggerSpec } from "./lib/swagger";
 import { errorHandler } from "./middleware/errorHandler";
 import AccountRouter from "./routers/account";
 import AdvertisementRouter from "./routers/advertisement";
@@ -15,13 +17,13 @@ import FileRouter from "./routers/file";
 import OrderRouter from "./routers/order";
 import ProductRouter from "./routers/product";
 import TreasureBoxRouter from "./routers/treasureBox";
-import swaggerUi from "swagger-ui-express";
-import { swaggerSpec } from "./lib/swagger";
 
 const app = express();
 const PORT = process.env.PORT ?? 4000;
 
-dailyTask.start(); // Start the scheduled task
+dailyResetTask.start(); // Start the scheduled task
+dailyNotificationTask.start(); // Start the scheduled task
+
 console.log("Cron job has been started.");
 
 app.use(express.json());
@@ -30,10 +32,10 @@ app.use(express.urlencoded({ extended: true })); // Middleware for parsing form 
 
 app.use(cors());
 
-app.post("/api/protected/test", (_, res) => {
+app.get("/api/test", (_, res) => {
   res.send({
     success: true,
-    data: "Here is some protected information from the server",
+    data: "OK",
   });
 });
 

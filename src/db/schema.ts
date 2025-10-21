@@ -402,6 +402,20 @@ export const deliveryTable = pgTable("deliveries", {
     .notNull(),
 });
 
+export const deviceTokenTable = pgTable("device_tokens", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  fcmToken: text("fcm_token").notNull().unique(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => userTable.id, { onDelete: "cascade" }),
+  lastUsedAt: timestamp("last_used_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
 // Relations
 export const accountRelations = relations(accountTable, ({ many }) => ({
   products: many(productTable),
@@ -423,6 +437,7 @@ export const usersRelations = relations(userTable, ({ one, many }) => ({
   collections: many(collectionTable),
   adViews: many(adViewCountTable),
   orders: many(orderTable),
+  deviceTokens: many(deviceTokenTable),
 }));
 
 export const groupsRelations = relations(groupTable, ({ one, many }) => ({
@@ -582,6 +597,13 @@ export const deliveryRelations = relations(deliveryTable, ({ one }) => ({
   }),
 }));
 
+export const deviceTokenRelations = relations(deviceTokenTable, ({ one }) => ({
+  user: one(userTable, {
+    fields: [deviceTokenTable.userId],
+    references: [userTable.id],
+  }),
+}));
+
 // Convenient TS types
 export type User = typeof userTable.$inferSelect;
 export type NewUser = typeof userTable.$inferInsert;
@@ -634,3 +656,6 @@ export type NewOrderItem = typeof orderItemTable.$inferInsert;
 
 export type Delivery = typeof deliveryTable.$inferSelect;
 export type NewDelivery = typeof deliveryTable.$inferInsert;
+
+export type DeviceToken = typeof deviceTokenTable.$inferSelect;
+export type NewDeviceToken = typeof deviceTokenTable.$inferInsert;

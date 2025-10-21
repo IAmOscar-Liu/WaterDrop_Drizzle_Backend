@@ -5,6 +5,12 @@ import { generateToken } from "../lib/token";
 import { RequestWithId } from "../type/request";
 
 class AuthController {
+  async deviceToken(req: RequestWithId, res: Response): Promise<any> {
+    const { fcmToken } = req.body;
+    const result = await authService.deviceToken(req.userId ?? "", fcmToken);
+    sendJsonResponse(res, result);
+  }
+
   async login(req: Request, res: Response): Promise<any> {
     const result = await authService.login(req.body);
     if (result.success) {

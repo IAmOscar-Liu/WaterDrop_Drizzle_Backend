@@ -9,6 +9,7 @@ import {
   joinGroupByReferralCode,
   updateUser,
   updateUserTimezone,
+  upsertDeviceToken,
   validateReferralCode,
 } from "../repository/user";
 import { ServiceResponse } from "../type/general";
@@ -19,6 +20,26 @@ type AuthLoginResponse = {
 };
 
 class AuthService {
+  async deviceToken(
+    userId: string,
+    fcmToken: string
+  ): Promise<ServiceResponse<Awaited<ReturnType<typeof upsertDeviceToken>>>> {
+    try {
+      const result = await upsertDeviceToken(userId, fcmToken);
+      if (result) {
+        return { success: true, data: result };
+      } else {
+        return {
+          success: false,
+          statusCode: 404,
+          message: "Failed to create device token",
+        };
+      }
+    } catch (error) {
+      return handleServiceError(error);
+    }
+  }
+
   async login({
     name,
     email,

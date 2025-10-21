@@ -84,6 +84,27 @@ export async function getUserIdsInTimezones(timezones: string[]) {
   return users.map((u) => u.id);
 }
 
+export async function getUserStatsInTimezones(timezones: string[]) {
+  const userIds = await getUserIdsInTimezones(timezones);
+
+  if (userIds.length === 0) {
+    return [];
+  }
+
+  return db
+    .select()
+    .from(schema.userDailyStatTable)
+    .where(inArray(schema.userDailyStatTable.userId, userIds));
+}
+
+export async function getFcmTokensInUserIds(userIds: string[]) {
+  const deviceTokens = await db
+    .select({ fcmToken: schema.deviceTokenTable.fcmToken })
+    .from(schema.deviceTokenTable)
+    .where(inArray(schema.deviceTokenTable.userId, userIds));
+  return deviceTokens.map((d) => d.fcmToken);
+}
+
 export async function updateUserTimezone(userId: string, timezone: string) {
   const [updatedUser] = await db
     .update(schema.userTable)
@@ -100,6 +121,26 @@ export async function updateUserTimezone(userId: string, timezone: string) {
 
   console.log(`User ${userId} timezone updated to ${timezone}`);
   return updatedUser;
+}
+
+/**
+ * Creates or updates a device token record.
+ * If the fcmToken already exists, it updates the userId and lastUsedAt timestamp.
+ * If it doesn't exist, it creates a new record.
+ * @param userId The ID of the user.
+ * @param fcmToken The FCM device token.
+ */
+export async function upsertDeviceToken(userId: string, fcmToken: string) {
+  const [deviceToken] = await db
+    .insert(schema.deviceTokenTable)
+    .values({ userId, fcmToken })
+    .onConflictDoUpdate({
+      target: schema.deviceTokenTable.fcmToken,
+      set: { userId, lastUsedAt: new Date() },
+    })
+    .returning();
+
+  return deviceToken;
 }
 
 export async function updateUser(
