@@ -40,6 +40,15 @@ export const orderStatusEnum = pgEnum("order_status", [
   "failed",
 ]);
 
+export const notificationTypeEnum = pgEnum("notification_type", [
+  "system_alert",
+  "order_status",
+  "promotion",
+  "coins_earned",
+  "chat_message", // Optional: To notify about a new chat
+  "other",
+]);
+
 export const groupTable = pgTable("groups", {
   id: uuid("id").defaultRandom().primaryKey(),
   ownerId: uuid("owner_id").notNull(),
@@ -416,6 +425,67 @@ export const deviceTokenTable = pgTable("device_tokens", {
     .notNull(),
 });
 
+export const userMonthlyCoinStatTable = pgTable(
+  "user_monthly_coin_stats",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userTable.id, { onDelete: "cascade" }),
+
+    // Stores the month in 'YYYY-MM' format
+    month: text("month").notNull(),
+
+    coinsEarned: doublePrecision("coins_earned").notNull().default(0),
+    coinsSpent: doublePrecision("coins_spent").notNull().default(0),
+    expired: boolean("expired").notNull().default(false),
+
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (t) => ({
+    // Composite primary key ensures one entry per user per month
+    pk: primaryKey({ columns: [t.userId, t.month] }),
+  })
+);
+
+export const userNotificationTable = pgTable(
+  "user_notifications",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userTable.id, { onDelete: "cascade" }),
+    type: notificationTypeEnum("type").notNull().default("system_alert"),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    isRead: boolean("is_read").default(false).notNull(),
+    orderId: uuid("order_id").references(() => orderTable.id, {
+      onDelete: "set null",
+    }),
+    // A generic metadata field for other links (e.g., product, URL)
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (t) => ({
+    // Index for quickly finding all unread notifications for a user
+    userReadIdx: index("user_notifications_user_read_idx").on(
+      t.userId,
+      t.isRead
+    ),
+  })
+);
+
 // Relations
 export const accountRelations = relations(accountTable, ({ many }) => ({
   products: many(productTable),
@@ -438,6 +508,8 @@ export const usersRelations = relations(userTable, ({ one, many }) => ({
   adViews: many(adViewCountTable),
   orders: many(orderTable),
   deviceTokens: many(deviceTokenTable),
+  monthlyCoinStats: many(userMonthlyCoinStatTable),
+  notifications: many(userNotificationTable),
 }));
 
 export const groupsRelations = relations(groupTable, ({ one, many }) => ({
@@ -604,6 +676,30 @@ export const deviceTokenRelations = relations(deviceTokenTable, ({ one }) => ({
   }),
 }));
 
+export const userMonthlyCoinStatRelations = relations(
+  userMonthlyCoinStatTable,
+  ({ one }) => ({
+    user: one(userTable, {
+      fields: [userMonthlyCoinStatTable.userId],
+      references: [userTable.id],
+    }),
+  })
+);
+
+export const userNotificationRelations = relations(
+  userNotificationTable,
+  ({ one }) => ({
+    user: one(userTable, {
+      fields: [userNotificationTable.userId],
+      references: [userTable.id],
+    }),
+    order: one(orderTable, {
+      fields: [userNotificationTable.orderId],
+      references: [orderTable.id],
+    }),
+  })
+);
+
 // Convenient TS types
 export type User = typeof userTable.$inferSelect;
 export type NewUser = typeof userTable.$inferInsert;
@@ -659,3 +755,10 @@ export type NewDelivery = typeof deliveryTable.$inferInsert;
 
 export type DeviceToken = typeof deviceTokenTable.$inferSelect;
 export type NewDeviceToken = typeof deviceTokenTable.$inferInsert;
+
+export type UserMonthlyCoinStat = typeof userMonthlyCoinStatTable.$inferSelect;
+export type NewUserMonthlyCoinStat =
+  typeof userMonthlyCoinStatTable.$inferInsert;
+
+export type UserNotification = typeof userNotificationTable.$inferSelect;
+export type NewUserNotification = typeof userNotificationTable.$inferInsert;

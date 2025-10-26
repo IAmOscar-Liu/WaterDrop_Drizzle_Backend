@@ -3,7 +3,12 @@ import cors from "cors";
 import "dotenv/config";
 import express from "express";
 import swaggerUi from "swagger-ui-express";
-import { dailyNotificationTask, dailyResetTask } from "./lib/scheduler";
+import {
+  dailyNotificationTask,
+  dailyResetTask,
+  monthlyCoinExpirationNotificationTask,
+  monthlyCoinStatExpirationTask,
+} from "./lib/scheduler";
 import { swaggerSpec } from "./lib/swagger";
 import { errorHandler } from "./middleware/errorHandler";
 import AccountRouter from "./routers/account";
@@ -14,6 +19,7 @@ import ChatroomRouter from "./routers/chatroom";
 import CollectionRouter from "./routers/collection";
 import EcPayRouter from "./routers/ecpay";
 import FileRouter from "./routers/file";
+import NotificationRouter from "./routers/notification";
 import OrderRouter from "./routers/order";
 import ProductRouter from "./routers/product";
 import TreasureBoxRouter from "./routers/treasureBox";
@@ -21,8 +27,11 @@ import TreasureBoxRouter from "./routers/treasureBox";
 const app = express();
 const PORT = process.env.PORT ?? 4000;
 
-dailyResetTask.start(); // Start the scheduled task
-dailyNotificationTask.start(); // Start the scheduled task
+// Start the scheduled task
+dailyResetTask.start();
+dailyNotificationTask.start();
+monthlyCoinStatExpirationTask.start();
+monthlyCoinExpirationNotificationTask.start();
 
 console.log("Cron job has been started.");
 
@@ -51,6 +60,7 @@ app.use("/api/chatroom", ChatroomRouter);
 app.use("/api/ecpay", EcPayRouter);
 app.use("/api/order", OrderRouter);
 app.use("/api/collection", CollectionRouter);
+app.use("/api/notification", NotificationRouter);
 app.use("/api/file", FileRouter);
 
 app.use(errorHandler);

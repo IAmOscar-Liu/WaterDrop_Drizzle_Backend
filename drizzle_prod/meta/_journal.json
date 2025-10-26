@@ -57,6 +57,13 @@
       "when": 1761055882240,
       "tag": "0007_demonic_vengeance",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1761498412813,
+      "tag": "0008_glorious_felicia_hardy",
+      "breakpoints": true
     }
   ]
 }

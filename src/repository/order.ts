@@ -65,6 +65,46 @@ export async function updateOrderStatus(
             })
             .where(eq(schema.userTable.id, order.userId))
         );
+
+        // Update coinsSpent in userMonthlyCoinStatTable
+        let remainingDiscountCoins = order.discountCoin;
+
+        // 1. Find rows where expired is false, ordered by month (fartherest first)
+        const monthlyStats = await tx.query.userMonthlyCoinStatTable.findMany({
+          where: and(
+            eq(schema.userMonthlyCoinStatTable.userId, order.userId),
+            eq(schema.userMonthlyCoinStatTable.expired, false)
+          ),
+          orderBy: (stats, { asc }) => [asc(stats.month)],
+        });
+
+        for (const stat of monthlyStats) {
+          if (remainingDiscountCoins <= 0) break; // No more discount coins to apply
+
+          const availableCoinsToSpend = stat.coinsEarned - stat.coinsSpent;
+
+          if (availableCoinsToSpend > 0) {
+            const amountToSpendInThisMonth = Math.min(
+              remainingDiscountCoins,
+              availableCoinsToSpend
+            );
+
+            promises.push(
+              tx
+                .update(schema.userMonthlyCoinStatTable)
+                .set({
+                  coinsSpent: sql`${schema.userMonthlyCoinStatTable.coinsSpent} + ${amountToSpendInThisMonth}`,
+                })
+                .where(
+                  and(
+                    eq(schema.userMonthlyCoinStatTable.userId, order.userId),
+                    eq(schema.userMonthlyCoinStatTable.month, stat.month)
+                  )
+                )
+            );
+            remainingDiscountCoins -= amountToSpendInThisMonth;
+          }
+        }
       }
       await Promise.all(promises);
     }
@@ -76,6 +116,7 @@ export async function updateOrderStatus(
         orderStatus: status,
         merchantTradeNo: (metadata as any).MerchantTradeNo ?? null,
         metadata,
+        updatedAt: new Date(), // Ensure updatedAt is updated
       })
       .where(eq(schema.orderTable.id, orderId));
 

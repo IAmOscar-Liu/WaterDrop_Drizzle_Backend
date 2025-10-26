@@ -3,11 +3,19 @@ import { resetDailyStats } from "../repository/treasureBox";
 import {
   getFcmTokensInUserIds,
   getUserIdsInTimezones,
+  getUserMonthlyCoinStatsInUserIds,
   getUserStatsInTimezones,
+  setMonthlyCoinExpire,
   updateGroupAdViewsCountYesterday,
 } from "../repository/user";
 import { CustomError } from "./error";
+import {
+  getCurrentLocalDateTime,
+  getCurrentYearMonthString,
+  getNumOfDaysInMonth,
+} from "./general";
 import { sendMulticastPushNotification } from "./sendNotification";
+import { createNotification } from "../repository/notification";
 
 const RESET_BATCH_SIZE = 100; // Process 100 users at a time. Adjust as needed.
 
@@ -15,26 +23,13 @@ const RESET_BATCH_SIZE = 100; // Process 100 users at a time. Adjust as needed.
 export const dailyResetTask = cron.schedule(
   "*/30 * * * *", // every 30 minutes
   async () => {
-    console.log(`30 minute cron job started. Time: ${new Date()}`);
+    console.log(
+      `30 minute cron job for dailyResetTask started. Time: ${new Date()}`
+    );
 
     const timezones = (Intl as any).supportedValuesOf("timeZone") as string[];
     const timezonesAtMidnight = timezones.filter((tz) => {
-      // Use Intl.DateTimeFormat for a more reliable way to get the local hour.
-      const formatter = new Intl.DateTimeFormat("en-US-u-ca-gregory", {
-        timeZone: tz,
-        hour: "numeric",
-        minute: "numeric",
-        hour12: false, // Use 24-hour format
-      });
-      const parts = formatter.formatToParts(new Date());
-      const localHour = parseInt(
-        parts.find((p) => p.type === "hour")?.value ?? "0",
-        10
-      );
-      const localMinute = parseInt(
-        parts.find((p) => p.type === "minute")?.value ?? "0",
-        10
-      );
+      const { localHour, localMinute } = getCurrentLocalDateTime(tz);
       return localHour === 0 && localMinute < 30;
     });
 
@@ -95,26 +90,13 @@ const FCM_MAX_BATCH_SIZE = 100; // Process 100 users at a time. Adjust as needed
 export const dailyNotificationTask = cron.schedule(
   "*/30 * * * *", // every 30 minutes
   async () => {
-    console.log(`30 minute cron job started. Time: ${new Date()}`);
+    console.log(
+      `30 minute cron job for dailyNotificationTask started. Time: ${new Date()}`
+    );
 
     const timezones = (Intl as any).supportedValuesOf("timeZone") as string[];
     const timezonesAtSpecificTime = timezones.filter((tz) => {
-      // Use Intl.DateTimeFormat for a more reliable way to get the local hour.
-      const formatter = new Intl.DateTimeFormat("en-US-u-ca-gregory", {
-        timeZone: tz,
-        hour: "numeric",
-        minute: "numeric",
-        hour12: false, // Use 24-hour format
-      });
-      const parts = formatter.formatToParts(new Date());
-      const localHour = parseInt(
-        parts.find((p) => p.type === "hour")?.value ?? "0",
-        10
-      );
-      const localMinute = parseInt(
-        parts.find((p) => p.type === "minute")?.value ?? "0",
-        10
-      );
+      const { localHour, localMinute } = getCurrentLocalDateTime(tz);
       return localHour === 21 && localMinute < 30;
     });
 
@@ -144,6 +126,161 @@ export const dailyNotificationTask = cron.schedule(
         },
         data: {
           command: "explore",
+        },
+      });
+
+      console.log(
+        `✅ Daily notification complete for current ${
+          timezonesAtSpecificTime.length
+        } timezones. Total tokens processed: ${i + batchFcmTokens.length}`
+      );
+    }
+  }
+);
+
+// New cron job for monthly coin stat expiration
+// This job runs every 30 minutes, checks for timezones where it's the first day of the month,
+// and expires coin stats for users in those timezones.
+export const monthlyCoinStatExpirationTask = cron.schedule(
+  "*/30 * 1 * *", // Every 30 minutes, on day 1 of the month.
+  async () => {
+    console.log(
+      `30 minute cron job for monthlyCoinStatExpirationTask started. Time: ${new Date()}`
+    );
+
+    try {
+      const timezones = (Intl as any).supportedValuesOf("timeZone") as string[];
+      const timezonesAtStartOfMonth = timezones.filter((tz) => {
+        const { localDay, localHour, localMinute } =
+          getCurrentLocalDateTime(tz);
+
+        // Check if it's the first day of the month and the first hour (00:00 - 00:59).
+        return localDay === 1 && localHour === 0 && localMinute < 30;
+      });
+
+      if (timezonesAtStartOfMonth.length === 0) {
+        console.log("No timezones at the start of a new month.");
+        return;
+      }
+
+      console.log(
+        `Found ${timezonesAtStartOfMonth.length} timezones at the start of a month:`,
+        timezonesAtStartOfMonth.join(", ")
+      );
+
+      const userIds = await getUserIdsInTimezones(timezonesAtStartOfMonth);
+
+      if (userIds.length === 0) {
+        console.log("No users found in the targeted timezones.");
+        return;
+      }
+
+      // Get the year and month of the *previous* month.
+      // If it's Jan 1st, this will correctly calculate Dec of the previous year.
+      const now = new Date();
+      now.setMonth(now.getMonth() - 1);
+      const yearMonthString = getCurrentYearMonthString(
+        timezonesAtStartOfMonth[0],
+        now
+      ); // yyyy-mm
+
+      // For these users, expire all their monthly stats. The logic to keep the current month active
+      // is handled by creating a new entry when coins are earned/spent.
+      await setMonthlyCoinExpire(userIds, yearMonthString);
+
+      console.log(
+        `✅ Monthly coin stat expiration complete for ${userIds.length} users.`
+      );
+    } catch (error) {
+      console.error("Error during monthly coin stat expiration:", error);
+    }
+  }
+);
+
+export const monthlyCoinExpirationNotificationTask = cron.schedule(
+  "*/30 * 26-31 * *", // Every 30 minutes, between day 26 and 31 of the month
+  async () => {
+    console.log(
+      `30 minute cron job for monthlyCoinExpirationNotificationTask started. Time: ${new Date()}`
+    );
+
+    const timezones = (Intl as any).supportedValuesOf("timeZone") as string[];
+    const timezonesAtSpecificTime = timezones.filter((tz) => {
+      const { localMonth, localDay, localHour, localMinute } =
+        getCurrentLocalDateTime(tz);
+      return (
+        localDay > getNumOfDaysInMonth(localMonth) - 7 &&
+        localHour === 6 &&
+        localMinute < 30
+      );
+    });
+
+    if (timezonesAtSpecificTime.length === 0) {
+      console.log("No timezones at 6:00.");
+      return;
+    }
+
+    console.log(
+      `${timezonesAtSpecificTime.length} timezones at 6:00:`,
+      timezonesAtSpecificTime.join(", ")
+    );
+
+    let userIds = await getUserIdsInTimezones(timezonesAtSpecificTime);
+
+    if (userIds.length === 0) {
+      console.log("No users found in the targeted timezones.");
+      return;
+    }
+
+    const now = new Date();
+    now.setMonth(now.getMonth() - 1);
+    const yearMonthString = getCurrentYearMonthString(
+      timezonesAtSpecificTime[0],
+      now
+    ); // yyyy-mm
+
+    const userMonthlyCoinStats = (
+      await getUserMonthlyCoinStatsInUserIds(userIds, yearMonthString)
+    ).filter((stat) => stat.coinsEarned > stat.coinsSpent);
+
+    for (let i = 0; i < userMonthlyCoinStats.length; i += RESET_BATCH_SIZE) {
+      const batchCoinStats = userMonthlyCoinStats.slice(
+        i,
+        i + RESET_BATCH_SIZE
+      );
+
+      await Promise.allSettled(
+        batchCoinStats.map((stat) =>
+          createNotification({
+            userId: stat.userId,
+            type: "system_alert",
+            title: "金幣即將過期通知",
+            body: `您${now.getMonth() + 1}月份的金幣尚有${
+              stat.coinsEarned - stat.coinsSpent
+            }未使用，即將在 ${
+              now.getMonth() + 3
+            }/01 00:00 過期，快把握時間使用您的金幣吧!`,
+          })
+        )
+      );
+    }
+
+    userIds = userMonthlyCoinStats.map((stats) => stats.userId);
+    const fcmTokens = await getFcmTokensInUserIds(userIds);
+
+    for (let i = 0; i < fcmTokens.length; i += FCM_MAX_BATCH_SIZE) {
+      const batchFcmTokens = fcmTokens.slice(i, i + FCM_MAX_BATCH_SIZE);
+
+      await sendMulticastPushNotification({
+        tokens: batchFcmTokens,
+        notification: {
+          title: "金幣即將過期通知",
+          body: `您${now.getMonth() + 1}月份的金幣即將在 ${
+            now.getMonth() + 3
+          }/01 00:00 過期，快把握時間使用您的金幣吧!`,
+        },
+        data: {
+          command: "message",
         },
       });
 

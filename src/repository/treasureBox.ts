@@ -1,6 +1,7 @@
 import { and, eq, not, sql } from "drizzle-orm";
 import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
+import { getCurrentYearMonthString } from "../lib/general";
 import db from "../lib/initDB";
 
 /**
@@ -149,6 +150,7 @@ export async function openTreasureBox(userId: string, treasureBoxId: string) {
         id: schema.userTable.id,
         name: schema.userTable.name,
         coins: schema.userTable.coins,
+        timezone: schema.userTable.timezone,
       });
 
     if (!updatedUser) {
@@ -171,6 +173,24 @@ export async function openTreasureBox(userId: string, treasureBoxId: string) {
       .returning();
 
     console.log(`Treasure box ${treasureBoxId} has been opened.`);
+
+    // Step 4: Update coinsEarned in userMonthlyCoinStatTable (create a row if it doesn't exist)
+    await tx
+      .insert(schema.userMonthlyCoinStatTable)
+      .values({
+        userId: userId,
+        month: getCurrentYearMonthString(updatedUser.timezone ?? undefined),
+        coinsEarned: treasureBox.coinsAwarded,
+      })
+      .onConflictDoUpdate({
+        target: [
+          schema.userMonthlyCoinStatTable.userId,
+          schema.userMonthlyCoinStatTable.month,
+        ],
+        set: {
+          coinsEarned: sql`${schema.userMonthlyCoinStatTable.coinsEarned} + ${treasureBox.coinsAwarded}`,
+        },
+      });
 
     return treasureBox;
   });

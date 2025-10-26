@@ -1,0 +1,1 @@
+ALTER TABLE "user_monthly_coin_stats" ALTER COLUMN "expired" SET NOT NULL;

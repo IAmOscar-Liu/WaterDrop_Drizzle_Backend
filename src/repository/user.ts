@@ -7,12 +7,18 @@ import {
   sql,
   inArray,
   gte,
+  lt,
 } from "drizzle-orm";
 import * as schema from "../db/schema";
 import { generateInvitationCode } from "../lib/generateInvitationCode";
 import db from "../lib/initDB";
 import { getMemberInfo } from "../lib/getMemberInfo";
 import { CustomError } from "../lib/error";
+import {
+  getCurrentLocalDateTime,
+  getCurrentYearMonthString,
+  getNumOfDaysInMonth,
+} from "../lib/general";
 
 export async function createUser(
   user: Omit<typeof schema.userTable.$inferInsert, "referralCode">
@@ -105,6 +111,25 @@ export async function getFcmTokensInUserIds(userIds: string[]) {
   return deviceTokens.map((d) => d.fcmToken);
 }
 
+export async function getUserMonthlyCoinStatsInUserIds(
+  userIds: string[],
+  month: string
+) {
+  if (userIds.length === 0) {
+    return [];
+  }
+
+  return db
+    .select()
+    .from(schema.userMonthlyCoinStatTable)
+    .where(
+      and(
+        inArray(schema.userMonthlyCoinStatTable.userId, userIds),
+        eq(schema.userMonthlyCoinStatTable.month, month)
+      )
+    );
+}
+
 export async function updateUserTimezone(userId: string, timezone: string) {
   const [updatedUser] = await db
     .update(schema.userTable)
@@ -141,6 +166,46 @@ export async function upsertDeviceToken(userId: string, fcmToken: string) {
     .returning();
 
   return deviceToken;
+}
+
+export async function setMonthlyCoinExpire(userIds: string[], month: string) {
+  const monthlyCoinStats = await db
+    .update(schema.userMonthlyCoinStatTable)
+    .set({ expired: true })
+    .where(
+      and(
+        inArray(schema.userMonthlyCoinStatTable.userId, userIds),
+        lt(schema.userMonthlyCoinStatTable.month, month),
+        eq(schema.userMonthlyCoinStatTable.expired, false)
+      )
+    )
+    .returning();
+
+  const userUnusedCoins: Record<string, number> = {};
+  for (const stat of monthlyCoinStats) {
+    if (!userUnusedCoins[stat.userId]) {
+      userUnusedCoins[stat.userId] = stat.coinsEarned - stat.coinsSpent;
+    } else {
+      userUnusedCoins[stat.userId] += stat.coinsEarned - stat.coinsSpent;
+    }
+  }
+
+  const updateUserIds = Object.keys(userUnusedCoins);
+
+  const BATCH_SIZE = 100;
+  for (let i = 0; i < updateUserIds.length; i += BATCH_SIZE) {
+    const batchUserIds = updateUserIds.slice(i, i + BATCH_SIZE);
+    await Promise.all(
+      batchUserIds.map((userId) =>
+        db
+          .update(schema.userTable)
+          .set({
+            coins: sql`${schema.userTable.coins} - ${userUnusedCoins[userId]}`,
+          })
+          .where(eq(schema.userTable.id, userId))
+      )
+    );
+  }
 }
 
 export async function updateUser(
@@ -243,7 +308,7 @@ export async function getUserById(id: string) {
     .groupBy(schema.userTable.groupId)
     .as("group_counts");
 
-  const users = await db
+  const [user] = await db
     .select({
       ...getTableColumns(schema.userTable),
       referralCount:
@@ -257,11 +322,13 @@ export async function getUserById(id: string) {
     .leftJoin(groupCounts, eq(schema.groupTable.id, groupCounts.groupId))
     .where(eq(schema.userTable.id, id));
 
-  let user = users[0];
   if (!user) return null;
-  user = { ...user, ...getMemberInfo(user.referralCount) };
   console.log("User by id:", user.id);
-  return user;
+  return {
+    ...user,
+    ...getMemberInfo(user.referralCount),
+    coinsExpireSoon: await getCoinsExpireSoon(user.id, user.timezone),
+  };
 }
 
 export async function getUserByOauthProviderAndOauthId(
@@ -278,7 +345,7 @@ export async function getUserByOauthProviderAndOauthId(
     .groupBy(schema.userTable.groupId)
     .as("group_counts");
 
-  const users = await db
+  let [user] = await db
     .select({
       ...getTableColumns(schema.userTable),
       referralCount:
@@ -297,11 +364,13 @@ export async function getUserByOauthProviderAndOauthId(
       )
     );
 
-  let user = users[0];
   if (!user) return null;
-  user = { ...user, ...getMemberInfo(user.referralCount) };
   console.log("User by oAuth:", user.id);
-  return user;
+  return {
+    ...user,
+    ...getMemberInfo(user.referralCount),
+    coinsExpireSoon: await getCoinsExpireSoon(user.id, user.timezone),
+  };
 }
 
 export async function getDailyStatByUserId(
@@ -376,4 +445,30 @@ export async function updateGroupAdViewsCountYesterday(userId: string) {
       .returning();
     return updatedStat;
   });
+}
+
+async function getCoinsExpireSoon(userId: string, timezone?: string | null) {
+  if (!timezone) return null;
+
+  const { localMonth, localDay } = getCurrentLocalDateTime(timezone);
+  if (localDay <= getNumOfDaysInMonth(localMonth) - 7) return null;
+
+  const now = new Date();
+  now.setMonth(now.getMonth() - 1);
+  const yearMonthString = getCurrentYearMonthString(timezone, now);
+
+  const [userMonthlyCoinStat] = await db
+    .select()
+    .from(schema.userMonthlyCoinStatTable)
+    .where(
+      and(
+        eq(schema.userMonthlyCoinStatTable.userId, userId),
+        eq(schema.userMonthlyCoinStatTable.month, yearMonthString),
+        eq(schema.userMonthlyCoinStatTable.expired, false)
+      )
+    );
+
+  return userMonthlyCoinStat
+    ? userMonthlyCoinStat.coinsEarned - userMonthlyCoinStat.coinsSpent
+    : null;
 }

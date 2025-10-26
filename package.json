@@ -12,11 +12,12 @@
     "db:generate": "npx drizzle-kit generate",
     "db:migrate": "NODE_TLS_REJECT_UNAUTHORIZED=0 npx drizzle-kit migrate",
     "db:studio": "NODE_TLS_REJECT_UNAUTHORIZED=0 npx drizzle-kit studio",
-    "db:test": "npx tsx src/db_test.ts",
-    "db:seed-products": "npx tsx src/seed/addProducts.ts",
-    "firebase:set-cache": "npx tsx src/setFireStorageCache.ts",
-    "cloudflare:upload": "npx tsx src/cloudflare_upload_files.ts",
-    "generate-dbml": "npx tsx src/generate-dmbl.ts"
+    "db:test": "ts-node src/db_test.ts",
+    "db:seed-products": "ts-node src/seed/addProducts.ts",
+    "firebase:set-cache": "ts-node src/setFireStorageCache.ts",
+    "cloudflare:upload": "ts-node src/cloudflare_upload_files.ts",
+    "generate-dbml": "ts-node src/generate-dmbl.ts",
+    "test-script": "ts-node src/test_script.ts"
   },
   "keywords": [],
   "author": "",
