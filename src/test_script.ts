@@ -4,6 +4,7 @@ import {
   getFcmTokensInUserIds,
   getUserIdsInTimezones,
   getUserMonthlyCoinStatsInUserIds,
+  setMonthlyCoinExpire,
 } from "./repository/user";
 import { getCurrentYearMonthString } from "./lib/general";
 import { sendMulticastPushNotification } from "./lib/sendNotification";
@@ -73,4 +74,10 @@ export async function testScript() {
   }
 }
 
-testScript();
+// testScript();
+
+async function testScript2() {
+  setMonthlyCoinExpire(["236511b2-cab3-45bb-88d6-8208e9ed7ab5"], "2025-10");
+}
+
+testScript2();

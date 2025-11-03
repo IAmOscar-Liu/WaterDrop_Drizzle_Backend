@@ -142,7 +142,7 @@ export const dailyNotificationTask = cron.schedule(
 // This job runs every 30 minutes, checks for timezones where it's the first day of the month,
 // and expires coin stats for users in those timezones.
 export const monthlyCoinStatExpirationTask = cron.schedule(
-  "*/30 * 1 * *", // Every 30 minutes, on day 1 of the month.
+  "*/30 * L,1 * *", // Every 30 minutes, on day the last day and 1 of the month
   async () => {
     console.log(
       `30 minute cron job for monthlyCoinStatExpirationTask started. Time: ${new Date()}`
@@ -198,7 +198,7 @@ export const monthlyCoinStatExpirationTask = cron.schedule(
 );
 
 export const monthlyCoinExpirationNotificationTask = cron.schedule(
-  "*/30 * 26-31 * *", // Every 30 minutes, between day 26 and 31 of the month
+  "*/30 * L-8 * *", // Every 30 minutes, 8 days before the end of the month
   async () => {
     console.log(
       `30 minute cron job for monthlyCoinExpirationNotificationTask started. Time: ${new Date()}`
