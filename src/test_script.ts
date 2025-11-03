@@ -77,7 +77,13 @@ export async function testScript() {
 // testScript();
 
 async function testScript2() {
-  setMonthlyCoinExpire(["236511b2-cab3-45bb-88d6-8208e9ed7ab5"], "2025-10");
+  setMonthlyCoinExpire(
+    [
+      "ad12924f-6c9e-4eb4-a545-062e6fafeec5",
+      "e8e3dfa4-ac9b-4029-941e-81c020f289d8",
+    ],
+    "2025-10"
+  );
 }
 
 testScript2();
