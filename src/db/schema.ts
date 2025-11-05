@@ -212,9 +212,11 @@ export const categoryTable = pgTable("categories", {
 
 export const productTable = pgTable("products", {
   id: uuid("id").defaultRandom().primaryKey(),
-  sellerId: uuid("seller_id").references(() => accountTable.id, {
-    onDelete: "set null",
-  }),
+  sellerId: uuid("seller_id")
+    .notNull()
+    .references(() => accountTable.id, {
+      onDelete: "set null",
+    }),
 
   name: text("name").notNull(),
   avatar: text("avatar"),

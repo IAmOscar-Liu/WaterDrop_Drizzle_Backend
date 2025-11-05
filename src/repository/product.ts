@@ -103,6 +103,53 @@ export async function createProduct(
   });
 }
 
+/**
+ * Updates an existing product and its category associations.
+ * @param productId The ID of the product to update.
+ * @param productData The product data to update.
+ * @param categoryIds An optional array of category IDs. If provided, it will replace all existing category associations for the product.
+ * @returns The updated product with its category relations.
+ */
+export async function updateProduct(
+  productId: string,
+  productData: Partial<Omit<schema.NewProduct, "id">>,
+  categoryIds?: string[]
+) {
+  return db.transaction(async (tx) => {
+    // 1. Update the product itself
+    const [updatedProduct] = await tx
+      .update(schema.productTable)
+      .set({ ...productData, updatedAt: new Date() })
+      .where(eq(schema.productTable.id, productId))
+      .returning();
+
+    // 2. If category IDs are provided, update the associations
+    if (categoryIds) {
+      // First, remove all existing category associations for this product
+      await tx
+        .delete(schema.productsToCategoriesTable)
+        .where(eq(schema.productsToCategoriesTable.productId, productId));
+
+      // Then, insert the new associations if there are any
+      if (categoryIds.length > 0) {
+        const productToCategoryValues = categoryIds.map((categoryId) => ({
+          productId: productId,
+          categoryId: categoryId,
+        }));
+        await tx
+          .insert(schema.productsToCategoriesTable)
+          .values(productToCategoryValues);
+      }
+    }
+
+    console.log("Product updated:", updatedProduct.id);
+
+    // 3. Return the fully updated product with its relations
+    // We re-fetch it to get the latest state including the new category relations.
+    return getProductById(productId);
+  });
+}
+
 export interface ListProductsParams {
   page?: number;
   limit?: number;

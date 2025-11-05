@@ -3,22 +3,21 @@ import {
   count,
   eq,
   getTableColumns,
-  isNotNull,
-  sql,
   inArray,
-  gte,
+  isNotNull,
   lt,
+  sql,
 } from "drizzle-orm";
 import * as schema from "../db/schema";
-import { generateInvitationCode } from "../lib/generateInvitationCode";
-import db from "../lib/initDB";
-import { getMemberInfo } from "../lib/getMemberInfo";
 import { CustomError } from "../lib/error";
 import {
+  generateInvitationCode,
   getCurrentLocalDateTime,
   getCurrentYearMonthString,
   getNumOfDaysInMonth,
 } from "../lib/general";
+import { getMemberInfo } from "../lib/getMemberInfo";
+import db from "../lib/initDB";
 
 export async function createUser(
   user: Omit<typeof schema.userTable.$inferInsert, "referralCode">

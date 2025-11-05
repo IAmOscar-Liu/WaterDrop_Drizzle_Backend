@@ -2,8 +2,11 @@ import { handleServiceError } from "../lib/error";
 import {
   listAdvertisements,
   ListAdvertisementsParams,
+  createAdvertisement,
+  updateAdvertisementById,
 } from "../repository/advertisement";
 import { ServiceResponse } from "../type/general";
+import * as schema from "../db/schema";
 
 class AdvertisementService {
   async listAdvertisements(
@@ -18,6 +21,50 @@ class AdvertisementService {
           success: false,
           statusCode: 404,
           message: "advertisements not found",
+        };
+      }
+    } catch (error) {
+      return handleServiceError(error);
+    }
+  }
+
+  async createAdvertisement(
+    advertisementData: schema.NewAdvertisement
+  ): Promise<ServiceResponse<schema.Advertisement>> {
+    try {
+      const advertisement = await createAdvertisement(advertisementData);
+      if (advertisement) {
+        return { success: true, data: advertisement };
+      } else {
+        return {
+          success: false,
+          statusCode: 404,
+          message: "advertisement not found",
+        };
+      }
+    } catch (error) {
+      return handleServiceError(error);
+    }
+  }
+
+  async updateAdvertisement(
+    advertisementId: string,
+    advertisementData: Partial<Omit<schema.NewAdvertisement, "id">>
+  ): Promise<
+    ServiceResponse<Awaited<ReturnType<typeof updateAdvertisementById>>>
+  > {
+    try {
+      const advertisement = await updateAdvertisementById(
+        advertisementId,
+        advertisementData
+      );
+      if (advertisement) {
+        return { success: true, data: advertisement };
+      } else {
+        return {
+          success: false,
+          statusCode: 404,
+          message: "advertisement not found",
         };
       }
     } catch (error) {

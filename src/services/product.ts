@@ -1,9 +1,12 @@
 import * as schema from "../db/schema";
 import { handleServiceError } from "../lib/error";
 import {
+  createCategory,
+  createProduct,
   getProductById,
   listCategory,
   listProducts,
+  updateProduct,
   type ListProductsParams,
 } from "../repository/product";
 import { ServiceResponse } from "../type/general";
@@ -19,6 +22,26 @@ class ProductService {
           success: false,
           statusCode: 404,
           message: "categories not found",
+        };
+      }
+    } catch (error) {
+      // console.error(error);
+      return handleServiceError(error);
+    }
+  }
+
+  async createCategory(
+    categoryData: schema.NewCategory
+  ): Promise<ServiceResponse<schema.Category>> {
+    try {
+      const category = await createCategory(categoryData);
+      if (category) {
+        return { success: true, data: category };
+      } else {
+        return {
+          success: false,
+          statusCode: 404,
+          message: "category not found",
         };
       }
     } catch (error) {
@@ -52,6 +75,51 @@ class ProductService {
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof getProductById>>>> {
     try {
       const product = await getProductById(id);
+      if (product) {
+        return { success: true, data: product };
+      } else {
+        return {
+          success: false,
+          statusCode: 404,
+          message: "product not found",
+        };
+      }
+    } catch (error) {
+      // console.error(error);
+      return handleServiceError(error);
+    }
+  }
+
+  async createProduct(
+    productDataWithCategoryIds: schema.NewProduct & { categoryIds?: string[] }
+  ): Promise<ServiceResponse<Awaited<ReturnType<typeof createProduct>>>> {
+    try {
+      const { categoryIds, ...productData } = productDataWithCategoryIds;
+      const product = await createProduct(productData, categoryIds);
+      if (product) {
+        return { success: true, data: product };
+      } else {
+        return {
+          success: false,
+          statusCode: 404,
+          message: "product not found",
+        };
+      }
+    } catch (error) {
+      // console.error(error);
+      return handleServiceError(error);
+    }
+  }
+
+  async updateProduct(
+    productId: string,
+    productDataWithCategoryIds: Partial<Omit<schema.NewProduct, "id">> & {
+      categoryIds?: string[];
+    }
+  ): Promise<ServiceResponse<Awaited<ReturnType<typeof updateProduct>>>> {
+    try {
+      const { categoryIds, ...productData } = productDataWithCategoryIds;
+      const product = await updateProduct(productId, productData, categoryIds);
       if (product) {
         return { success: true, data: product };
       } else {

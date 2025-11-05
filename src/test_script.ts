@@ -8,6 +8,7 @@ import {
 } from "./repository/user";
 import { getCurrentYearMonthString } from "./lib/general";
 import { sendMulticastPushNotification } from "./lib/sendNotification";
+import bcrypt from "bcrypt";
 
 const FCM_MAX_BATCH_SIZE = 100; // Process 100 users at a time. Adjust as needed.
 const RESET_BATCH_SIZE = 100;
@@ -86,4 +87,11 @@ async function testScript2() {
   );
 }
 
-testScript2();
+// testScript2();
+
+async function generateHashPassword(password: string) {
+  const hashedPassword = await bcrypt.hash(password, 10);
+  console.log(`Hashed password: ${hashedPassword}`);
+}
+
+generateHashPassword("test1234");

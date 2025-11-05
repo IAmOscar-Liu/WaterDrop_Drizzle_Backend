@@ -72,7 +72,10 @@ async function main() {
 
   for (const filePath of files) {
     const basename = path.basename(filePath);
-    const fileUrl = await uploadFile(filePath, basename);
+    const fileUrl = await uploadFile({
+      localPath: filePath,
+      key: basename,
+    });
     console.log(`Uploaded ${filePath} to ${fileUrl}`);
     const id = basename.replace(/\.mp4$/i, "");
     await updateAdvertisementById(id, { video_url: fileUrl });

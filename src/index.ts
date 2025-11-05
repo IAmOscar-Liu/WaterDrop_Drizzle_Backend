@@ -11,7 +11,7 @@ import {
 } from "./lib/scheduler";
 import { swaggerSpec } from "./lib/swagger";
 import { errorHandler } from "./middleware/errorHandler";
-import AccountRouter from "./routers/account";
+import AdminRouter from "./routers/admin";
 import AdvertisementRouter from "./routers/advertisement";
 import AuthRouter from "./routers/auth";
 import CartRouter from "./routers/cart";
@@ -50,7 +50,7 @@ app.get("/api/test", (_, res) => {
 
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-app.use("/api/admin/account", AccountRouter);
+app.use("/api/admin", AdminRouter);
 app.use("/api/auth", AuthRouter);
 app.use("/api/treasureBox", TreasureBoxRouter);
 app.use("/api/advertisement", AdvertisementRouter);

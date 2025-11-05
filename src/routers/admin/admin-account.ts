@@ -1,7 +1,7 @@
 import { Router } from "express";
-import AccountController from "../controller/account";
-import isAuth from "../middleware/isAuth";
-import { sendMulticastPushNotification } from "../lib/sendNotification";
+import AccountController from "../../controller/account";
+import { sendMulticastPushNotification } from "../../lib/sendNotification";
+import isAuth from "../../middleware/isAuth";
 
 /**
  * @swagger
