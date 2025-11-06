@@ -27,9 +27,10 @@ class Fileservice {
       key = `${cleanDirectory}/${key}`;
     }
     const localPath = file.path;
+    const mimetype = file.mimetype;
 
     try {
-      const fileUrl = await uploadFile({ localPath, key });
+      const fileUrl = await uploadFile({ localPath, key, mimetype });
 
       return {
         success: true,

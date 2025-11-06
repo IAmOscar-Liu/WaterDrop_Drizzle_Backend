@@ -18,12 +18,15 @@ const s3 = new S3Client({
 export async function uploadFile({
   localPath,
   key,
+  mimetype,
 }: {
   localPath: string;
   key: string;
+  mimetype?: string;
 }) {
   const Body = fs.createReadStream(localPath);
-  const ContentType = mime.getType(localPath) || "application/octet-stream";
+  const ContentType =
+    mimetype || mime.getType(localPath) || "application/octet-stream";
   console.log(localPath);
 
   // Multipart when needed (large files), otherwise PutObjectCommand also works.
