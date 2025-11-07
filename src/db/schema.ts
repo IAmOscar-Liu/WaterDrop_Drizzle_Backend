@@ -27,6 +27,16 @@ export const oauthProviderEnum = pgEnum("oauth_provider", [
 ]);
 
 export const accountRoleEnum = pgEnum("account_role", ["admin", "seller"]);
+export const accountStatusEnum = pgEnum("account_status", [
+  "active",
+  "inactive",
+  "banned",
+]);
+
+export const productStatusEnum = pgEnum("product_status", [
+  "active",
+  "inactive",
+]);
 
 export const chatMessageSenderEnum = pgEnum("chat_message_sender", [
   "user",
@@ -110,6 +120,7 @@ export const accountTable = pgTable("accounts", {
   role: accountRoleEnum("role").notNull().default("seller"),
   phone: text("phone"),
   address: text("address"),
+  status: accountStatusEnum("status").default("active").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -217,14 +228,13 @@ export const productTable = pgTable("products", {
     .references(() => accountTable.id, {
       onDelete: "set null",
     }),
-
   name: text("name").notNull(),
   avatar: text("avatar"),
   description: text("description").notNull(),
   price: doublePrecision("price").notNull(),
   stock: integer("stock").notNull(),
   images: text("images").array(),
-  status: text("status").default("active").notNull(),
+  status: productStatusEnum("status").default("active").notNull(),
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()

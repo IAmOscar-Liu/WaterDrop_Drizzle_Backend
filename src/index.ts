@@ -35,9 +35,11 @@ monthlyCoinExpirationNotificationTask.start();
 
 console.log("Cron job has been started.");
 
-app.use(express.json());
+// Increase payload size limit for JSON and URL-encoded bodies
+// Adjust '50mb' to a value that suits your needs, matching or exceeding Nginx's limit.
+app.use(express.json({ limit: "50mb" }));
 app.use(cookieParser());
-app.use(express.urlencoded({ extended: true })); // Middleware for parsing form data
+app.use(express.urlencoded({ limit: "50mb", extended: true })); // Middleware for parsing form data
 
 app.use(cors());
 

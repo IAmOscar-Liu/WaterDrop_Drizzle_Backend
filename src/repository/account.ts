@@ -1,5 +1,5 @@
 import bcrypt from "bcrypt";
-import { eq } from "drizzle-orm";
+import { and, count, eq, ilike, or, SQL } from "drizzle-orm";
 import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
 import db from "../lib/initDB";
@@ -80,6 +80,17 @@ export async function getAccountById(
   return accountInfo;
 }
 
+export async function isAccountAdmin(accountId: string): Promise<boolean> {
+  const [account] = await db
+    .select()
+    .from(schema.accountTable)
+    .where(eq(schema.accountTable.id, accountId));
+
+  if (!account) return false;
+
+  return account.role === "admin";
+}
+
 /**
  * Updates an account's profile information (excluding password).
  * @param accountId The ID of the account to update.
@@ -89,7 +100,9 @@ export async function getAccountById(
  */
 export async function updateAccount(
   accountId: string,
-  updates: Partial<Omit<schema.Account, "id" | "password" | "createdAt">>
+  updates: Partial<
+    Omit<schema.Account, "id" | "password" | "createdAt" | "updatedAt">
+  >
 ): Promise<Omit<schema.Account, "password">> {
   const [updatedAccount] = await db
     .update(schema.accountTable)
@@ -150,4 +163,65 @@ export async function changeAccountPassword(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { password, ...accountInfo } = updatedAccount;
   return accountInfo;
+}
+
+export interface ListAccountsParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+  role?: schema.NewAccount["role"];
+  status?: schema.NewAccount["status"];
+}
+
+export async function listAccounts({
+  page = 1,
+  limit = 10,
+  search,
+  role,
+  status,
+}: ListAccountsParams) {
+  const offset = (page - 1) * limit;
+  const conditions: (SQL | undefined)[] = [];
+
+  if (search) {
+    conditions.push(
+      or(
+        ilike(schema.accountTable.email, `%${search}%`),
+        ilike(schema.accountTable.name, `%${search}%`)
+      )
+    );
+  }
+
+  if (role) {
+    conditions.push(eq(schema.accountTable.role, role));
+  }
+
+  if (status) {
+    conditions.push(eq(schema.accountTable.status, status));
+  }
+
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+  // Query for total count matching the filters
+  const totalResult = await db
+    .select({ total: count() })
+    .from(schema.accountTable)
+    .where(whereClause);
+
+  const total = totalResult[0].total;
+  const totalPages = Math.ceil(total / limit);
+
+  // Query for the paginated accounts
+  const accountsWithPassword = await db
+    .select()
+    .from(schema.accountTable)
+    .where(whereClause)
+    .limit(limit)
+    .offset(offset);
+
+  const accounts = accountsWithPassword.map(
+    ({ password, ...accountInfo }) => accountInfo
+  );
+
+  return { accounts, total, page, limit, totalPages };
 }

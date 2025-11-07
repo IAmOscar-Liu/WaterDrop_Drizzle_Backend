@@ -195,6 +195,12 @@ router.post("/categories/create", isAuth, ProductController.createCategory);
  *         schema:
  *           type: string
  *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [active, inactive]
+ *         description: Filter products by their status.
+ *       - in: query
  *         name: minPrice
  *         schema:
  *           type: number
@@ -215,7 +221,7 @@ router.post("/categories/create", isAuth, ProductController.createCategory);
  *                 data:
  *                   $ref: '#/components/schemas/ListProductsResponse'
  */
-router.get("/list", isAuth, ProductController.listProducts);
+router.get("/list", isAuth, ProductController.listAdminProducts);
 
 /**
  * @swagger

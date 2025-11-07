@@ -3,22 +3,24 @@ import advertisementService from "../services/advertisement";
 import { sendJsonResponse } from "../lib/general";
 
 class AdvertisementController {
-  async listAdvertisementsShuffle(req: Request, res: Response): Promise<any> {
-    const { page, limit } = req.query;
-    const result = await advertisementService.listAdvertisements({
-      page: page ? Number(page) : undefined,
-      limit: limit ? Number(limit) : undefined,
-      shuffle: true,
-    });
-    sendJsonResponse(res, result);
-  }
-
   async listAdvertisements(req: Request, res: Response): Promise<any> {
     const { page, limit } = req.query;
     const result = await advertisementService.listAdvertisements({
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
+      shuffle: true,
+      activeProductOnly: true,
+    });
+    sendJsonResponse(res, result);
+  }
+
+  async listAdminAdvertisements(req: Request, res: Response): Promise<any> {
+    const { page, limit } = req.query;
+    const result = await advertisementService.listAdvertisements({
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
       shuffle: false,
+      activeProductOnly: false,
     });
     sendJsonResponse(res, result);
   }

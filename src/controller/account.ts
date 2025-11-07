@@ -3,6 +3,7 @@ import accountService from "../services/account";
 import { sendJsonResponse } from "../lib/general";
 import { generateToken, sendRefreshToken, validateToken } from "../lib/token";
 import { RequestWithId } from "../type/request";
+import { isAccountAdmin, ListAccountsParams } from "../repository/account";
 
 class AccountController {
   async register(req: Request, res: Response): Promise<any> {
@@ -119,7 +120,7 @@ class AccountController {
   }
 
   async updateAccount(req: RequestWithId, res: Response): Promise<any> {
-    const { id, name, email, phone, address } = req.body;
+    const { id, ...update } = req.body;
     if (!id) {
       return sendJsonResponse(res, {
         success: false,
@@ -127,7 +128,7 @@ class AccountController {
         message: "id is required.",
       });
     }
-    if (id !== req.userId) {
+    if (id !== req.userId && !(await isAccountAdmin(req.userId ?? ""))) {
       return sendJsonResponse(res, {
         success: false,
         statusCode: 403,
@@ -136,12 +137,7 @@ class AccountController {
     }
     const result = await accountService.updateAdminAccount({
       accountId: id,
-      update: {
-        name,
-        email,
-        phone,
-        address,
-      },
+      update,
     });
     sendJsonResponse(res, result);
   }
@@ -167,6 +163,26 @@ class AccountController {
       oldPassword,
       newPassword,
     });
+    sendJsonResponse(res, result);
+  }
+
+  async listAccounts(req: Request, res: Response): Promise<any> {
+    const { page, limit, search, role, status } = req.query;
+    const result = await accountService.listAdminAccounts({
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+      search: search ? String(search) : undefined,
+      role: role ? (String(role) as ListAccountsParams["role"]) : undefined,
+      status: status
+        ? (String(status) as ListAccountsParams["status"])
+        : undefined,
+    });
+    sendJsonResponse(res, result);
+  }
+
+  async getAccount(req: Request, res: Response): Promise<any> {
+    const { id } = req.params;
+    const result = await accountService.getAdminAccountById(id);
     sendJsonResponse(res, result);
   }
 }

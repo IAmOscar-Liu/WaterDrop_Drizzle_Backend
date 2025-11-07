@@ -92,7 +92,7 @@ const router = Router();
  *                 data:
  *                   $ref: '#/components/schemas/ListAdvertisementsResponse'
  */
-router.get("/list", isAuth, AdvertisementController.listAdvertisements);
+router.get("/list", isAuth, AdvertisementController.listAdminAdvertisements);
 
 /**
  * @swagger

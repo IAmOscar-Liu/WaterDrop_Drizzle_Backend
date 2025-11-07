@@ -4,8 +4,11 @@ import {
   createOrder,
   getOrderById,
   listOrders,
+  listAdminOrders,
   ListOrdersParams,
+  ListAdminOrdersParams,
   updateOrderStatus,
+  updateDelivery,
 } from "../repository/order";
 import { ServiceResponse } from "../type/general";
 
@@ -21,6 +24,41 @@ class OrderService {
   > {
     try {
       const orders = await listOrders({ page, limit, userId, statusIn, order });
+      if (orders) {
+        return { success: true, data: orders };
+      } else {
+        return {
+          success: false,
+          statusCode: 404,
+          message: "orders not found",
+        };
+      }
+    } catch (error) {
+      return handleServiceError(error);
+    }
+  }
+
+  async listAdminOrders({
+    page = 1,
+    limit = 10,
+    userId,
+    status,
+    order = "desc",
+    startDate,
+    endDate,
+  }: ListAdminOrdersParams): Promise<
+    ServiceResponse<Awaited<ReturnType<typeof listAdminOrders>>>
+  > {
+    try {
+      const orders = await listAdminOrders({
+        page,
+        limit,
+        userId,
+        status,
+        order,
+        startDate,
+        endDate,
+      });
       if (orders) {
         return { success: true, data: orders };
       } else {
@@ -101,6 +139,26 @@ class OrderService {
           success: false,
           statusCode: 404,
           message: "order not found",
+        };
+      }
+    } catch (error) {
+      return handleServiceError(error);
+    }
+  }
+
+  async updateOrderDelivery(
+    deliveryId: string,
+    updates: Parameters<typeof updateDelivery>[1]
+  ): Promise<ServiceResponse<Awaited<ReturnType<typeof updateDelivery>>>> {
+    try {
+      const delivery = await updateDelivery(deliveryId, updates);
+      if (delivery) {
+        return { success: true, data: delivery };
+      } else {
+        return {
+          success: false,
+          statusCode: 404,
+          message: "delivery not found",
         };
       }
     } catch (error) {

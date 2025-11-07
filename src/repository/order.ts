@@ -1,4 +1,4 @@
-import { and, count, eq, inArray, sql } from "drizzle-orm";
+import { and, count, eq, gte, inArray, lte, SQL, sql } from "drizzle-orm";
 import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
 import db from "../lib/initDB";
@@ -180,6 +180,82 @@ export async function listOrders({
   return { orders, total, page, limit, totalPages };
 }
 
+export interface ListAdminOrdersParams {
+  page?: number;
+  limit?: number;
+  userId?: string;
+  status: schema.NewOrder["orderStatus"];
+  order?: "asc" | "desc";
+  startDate?: Date;
+  endDate?: Date;
+}
+
+export async function listAdminOrders({
+  page = 1,
+  limit = 10,
+  userId,
+  status,
+  order = "desc",
+  startDate,
+  endDate,
+}: ListAdminOrdersParams) {
+  const offset = (page - 1) * limit;
+  const conditions: (SQL | undefined)[] = [];
+
+  if (userId) {
+    conditions.push(eq(schema.orderTable.userId, userId));
+  }
+
+  if (status) {
+    conditions.push(eq(schema.orderTable.orderStatus, status));
+  }
+
+  if (startDate) {
+    conditions.push(gte(schema.orderTable.createdAt, startDate));
+  }
+
+  if (endDate) {
+    conditions.push(lte(schema.orderTable.createdAt, endDate));
+  }
+
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+  // Query for total count matching the filters
+  const totalResult = await db
+    .select({ total: count() })
+    .from(schema.orderTable)
+    .where(whereClause);
+
+  const total = totalResult[0].total;
+  const totalPages = Math.ceil(total / limit);
+
+  // Query for the paginated orders
+  const orders = await db.query.orderTable.findMany({
+    where: whereClause,
+    limit,
+    offset,
+    with: {
+      user: {
+        columns: {
+          id: true,
+          name: true,
+          email: true,
+        },
+      },
+      delivery: {
+        columns: {
+          id: true,
+        },
+      },
+    },
+    orderBy: (orders, { desc, asc }) => [
+      order === "asc" ? asc(orders.createdAt) : desc(orders.createdAt),
+    ],
+  });
+
+  return { orders, total, page, limit, totalPages };
+}
+
 export async function getOrderById(orderId: string) {
   return db.query.orderTable.findFirst({
     where: eq(schema.orderTable.id, orderId),
@@ -209,4 +285,21 @@ export async function createDelivery(deliveryData: schema.NewDelivery) {
   console.log("New Delivery Created:", newDelivery.id);
 
   return newDelivery;
+}
+
+export async function updateDelivery(
+  deliveryId: string,
+  updates: Omit<
+    Partial<schema.NewDelivery>,
+    "id" | "orderId" | "createdAt" | "updatedAt"
+  >
+) {
+  const [updatedDelivery] = await db
+    .update(schema.deliveryTable)
+    .set({ ...updates, updatedAt: new Date() })
+    .where(eq(schema.deliveryTable.id, deliveryId))
+    .returning();
+
+  console.log("Delivery updated:", updatedDelivery.id);
+  return updatedDelivery;
 }

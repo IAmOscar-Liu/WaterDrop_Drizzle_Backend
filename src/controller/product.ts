@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { sendJsonResponse } from "../lib/general";
 import productService from "../services/product";
+import { ListProductsParams } from "../repository/product";
 
 class ProductController {
   async listCategory(_: Request, res: Response): Promise<any> {
@@ -15,12 +16,31 @@ class ProductController {
   }
 
   async listProducts(req: Request, res: Response): Promise<any> {
-    const { page, limit, categoryId, search, minPrice, maxPrice } = req.query;
+    const { page, limit, categoryId, search, status, minPrice, maxPrice } =
+      req.query;
     const result = await productService.listProducts({
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
       categoryId: categoryId ? String(categoryId) : undefined,
       search: search ? String(search) : undefined,
+      status: "active",
+      minPrice: minPrice ? Number(minPrice) : undefined,
+      maxPrice: maxPrice ? Number(maxPrice) : undefined,
+    });
+    sendJsonResponse(res, result);
+  }
+
+  async listAdminProducts(req: Request, res: Response): Promise<any> {
+    const { page, limit, categoryId, search, status, minPrice, maxPrice } =
+      req.query;
+    const result = await productService.listProducts({
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+      categoryId: categoryId ? String(categoryId) : undefined,
+      search: search ? String(search) : undefined,
+      status: status
+        ? (String(status) as ListProductsParams["status"])
+        : undefined,
       minPrice: minPrice ? Number(minPrice) : undefined,
       maxPrice: maxPrice ? Number(maxPrice) : undefined,
     });

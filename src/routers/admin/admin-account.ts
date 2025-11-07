@@ -1,10 +1,13 @@
 import { Router } from "express";
 import AccountController from "../../controller/account";
-import { sendMulticastPushNotification } from "../../lib/sendNotification";
 import isAuth from "../../middleware/isAuth";
 
 /**
  * @swagger
+ *  tags:
+ *   name: Account
+ *   description: Account management for administrators
+ *
  * components:
  *   securitySchemes:
  *     bearerAuth:
@@ -38,6 +41,11 @@ import isAuth from "../../middleware/isAuth";
  *           type: string
  *           enum: [admin, seller]
  *           description: The role of the account.
+ *         status:
+ *           type: string
+ *           enum: [active, inactive, banned]
+ *           description: The status of the account.
+ *           default: active
  *         createdAt:
  *           type: string
  *           format: date-time
@@ -46,6 +54,26 @@ import isAuth from "../../middleware/isAuth";
  *           type: string
  *           format: date-time
  *           description: The date and time the account was last updated.
+ *
+ *     ListAccountsResponse:
+ *       type: object
+ *       properties:
+ *         accounts:
+ *           type: array
+ *           items:
+ *             $ref: '#/components/schemas/Account'
+ *         total:
+ *           type: integer
+ *           description: Total number of accounts matching the query.
+ *         page:
+ *           type: integer
+ *           description: The current page number.
+ *         limit:
+ *           type: integer
+ *           description: The number of items per page.
+ *         totalPages:
+ *           type: integer
+ *           description: The total number of pages.
  *
  *     LoginSuccessResponse:
  *       type: object
@@ -301,6 +329,11 @@ router.get("/me", isAuth, AccountController.getCurrentUser);
  *                 type: string
  *               address:
  *                 type: string
+ *               status:
+ *                 type: string
+ *                 enum: [active, inactive, banned]
+ *                 description: The status of the account.
+ *                 example: "inactive"
  *     responses:
  *       '200':
  *         description: Account updated successfully.
@@ -370,37 +403,78 @@ router.put("/change-password", isAuth, AccountController.changeAccountPassword);
 
 /**
  * @swagger
- * /api/admin/account/send-notification:
- *   post:
+ * /api/admin/account/list:
+ *   get:
  *     tags: [Account]
- *     summary: Send a push notification to multiple devices
- *     description: Sends a multicast push notification via FCM
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [tokens]
- *             properties:
- *               tokens:
- *                 type: array
- *                 items:
- *                   type: string
- *                 description: An array of FCM registration tokens for the target devices (max 500).
- *                 example: ["token1...", "token2..."]
- *               notification:
- *                 $ref: '#/components/schemas/Notification'
- *               data:
- *                 type: object
- *                 additionalProperties:
- *                   type: string
- *                 description: Arbitrary key-value data to be sent with the message.
- *                 example:
- *                   command: "explore"
+ *     summary: List accounts with pagination and filtering
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: The page number to retrieve.
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: The number of accounts to return per page.
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: A search term to filter accounts by name or email.
+ *       - in: query
+ *         name: role
+ *         schema:
+ *           type: string
+ *           enum: [admin, seller]
+ *         description: Filter accounts by role.
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [active, inactive, banned]
+ *         description: Filter accounts by status.
  *     responses:
  *       '200':
- *         description: Notification request was successfully processed.
+ *         description: A paginated list of accounts.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/ListAccountsResponse'
+ *
+ */
+router.get("/list", isAuth, AccountController.listAccounts);
+
+/**
+ * @swagger
+ * /api/admin/account/{id}:
+ *   get:
+ *     tags: [Account]
+ *     summary: Get a single account by ID
+ *     description: Retrieves the details of a specific account by its unique identifier. This is an admin-only endpoint.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: The unique identifier of the account to retrieve.
+ *     responses:
+ *       '200':
+ *         description: Successfully retrieved the account details.
  *         content:
  *           application/json:
  *             schema:
@@ -410,12 +484,14 @@ router.put("/change-password", isAuth, AccountController.changeAccountPassword);
  *                   type: boolean
  *                   example: true
  *                 data:
- *                   type: string
- *                   example: "OK"
+ *                   $ref: '#/components/schemas/Account'
+ *       '404':
+ *         description: Account not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.post("/send-notification", async (req, res) => {
-  await sendMulticastPushNotification(req.body);
-  res.json({ success: true, data: "OK" });
-});
+router.get("/:id", isAuth, AccountController.getAccount);
 
 export default router;

@@ -6,6 +6,8 @@ import {
   getAccountByEmailAndPassword,
   getAccountById,
   updateAccount,
+  listAccounts,
+  ListAccountsParams,
 } from "../repository/account";
 import { ServiceResponse } from "../type/general";
 
@@ -75,7 +77,7 @@ class AdminService {
     update,
   }: {
     accountId: string;
-    update: Partial<Omit<schema.Account, "id" | "password" | "createdAt">>;
+    update: Parameters<typeof updateAccount>[1];
   }): Promise<ServiceResponse<Awaited<ReturnType<typeof updateAccount>>>> {
     try {
       const account = await updateAccount(accountId, update); // Replace with real data fetching logic
@@ -117,6 +119,25 @@ class AdminService {
           success: false,
           statusCode: 404,
           message: "account not found",
+        };
+      }
+    } catch (error) {
+      return handleServiceError(error);
+    }
+  }
+
+  async listAdminAccounts(
+    params: ListAccountsParams
+  ): Promise<ServiceResponse<Awaited<ReturnType<typeof listAccounts>>>> {
+    try {
+      const accounts = await listAccounts(params); // Replace with real data fetching logic
+      if (accounts) {
+        return { success: true, data: accounts };
+      } else {
+        return {
+          success: false,
+          statusCode: 404,
+          message: "accounts not found",
         };
       }
     } catch (error) {

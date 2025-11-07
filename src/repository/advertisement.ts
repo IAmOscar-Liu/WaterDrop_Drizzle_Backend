@@ -1,4 +1,4 @@
-import { count, eq, sql } from "drizzle-orm";
+import { and, count, eq, sql } from "drizzle-orm";
 
 import * as schema from "../db/schema";
 import db from "../lib/initDB";
@@ -25,6 +25,7 @@ export interface ListAdvertisementsParams {
   page?: number;
   limit?: number;
   shuffle?: boolean;
+  activeProductOnly?: boolean;
 }
 
 /**
@@ -36,29 +37,48 @@ export async function listAdvertisements({
   page = 1,
   limit = 10,
   shuffle = false,
+  activeProductOnly = false,
 }: ListAdvertisementsParams) {
   const offset = (page - 1) * limit;
+
+  const whereClause = activeProductOnly
+    ? eq(schema.productTable.status, "active")
+    : undefined;
 
   // Query for total count
   const totalResult = await db
     .select({ total: count() })
-    .from(schema.advertisementTable);
+    .from(schema.advertisementTable)
+    .leftJoin(
+      schema.productTable,
+      eq(schema.advertisementTable.productId, schema.productTable.id)
+    )
+    .where(whereClause);
 
   const total = totalResult[0].total;
   const totalPages = Math.ceil(total / limit);
 
   // Query for the paginated advertisements with their related product
-  const advertisements = await db.query.advertisementTable.findMany({
-    with: {
-      product: true,
-    },
-    limit: limit,
-    offset: offset,
-    // orderBy: (advertisements, { desc }) => [desc(advertisements.createdAt)],
-    orderBy: shuffle
-      ? sql`random()`
-      : (advertisements, { desc }) => [desc(advertisements.createdAt)],
-  });
+  const results = await db
+    .select()
+    .from(schema.advertisementTable)
+    .leftJoin(
+      schema.productTable,
+      eq(schema.advertisementTable.productId, schema.productTable.id)
+    )
+    .where(whereClause)
+    .limit(limit)
+    .offset(offset)
+    .orderBy(() =>
+      shuffle
+        ? sql`random()`
+        : [sql`${schema.advertisementTable.createdAt} desc`]
+    );
+
+  const advertisements = results.map((r) => ({
+    ...r.advertisements,
+    product: r.products,
+  }));
 
   return {
     advertisements,

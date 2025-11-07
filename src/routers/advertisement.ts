@@ -4,6 +4,6 @@ import isAuth from "../middleware/isAuth";
 
 const router = Router();
 
-router.get("/list", isAuth, AdvertisementController.listAdvertisementsShuffle);
+router.get("/list", isAuth, AdvertisementController.listAdvertisements);
 
 export default router;

@@ -1,8 +1,8 @@
 import { Request, Response } from "express";
+import * as schema from "../db/schema";
 import { sendJsonResponse } from "../lib/general";
 import orderService from "../services/order";
 import { RequestWithId } from "../type/request";
-import * as schema from "../db/schema";
 
 class OrderController {
   async listOrders(req: RequestWithId, res: Response): Promise<any> {
@@ -19,6 +19,22 @@ class OrderController {
     sendJsonResponse(res, result);
   }
 
+  async listAdminOrders(req: RequestWithId, res: Response): Promise<any> {
+    const { page, limit, status, order, startDate, endDate } = req.query;
+    const result = await orderService.listAdminOrders({
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+      userId: req.userId ?? "",
+      status: status
+        ? (String(status) as schema.NewOrder["orderStatus"])
+        : undefined,
+      order: order === "asc" ? "asc" : "desc",
+      startDate: startDate ? new Date(String(startDate)) : undefined,
+      endDate: endDate ? new Date(String(endDate)) : undefined,
+    });
+    sendJsonResponse(res, result);
+  }
+
   async createOrder(req: RequestWithId, res: Response): Promise<any> {
     const { items, totalAmount, discountCoin } = req.body;
     const result = await orderService.createOrder({
@@ -30,19 +46,25 @@ class OrderController {
     sendJsonResponse(res, result);
   }
 
-  async getOrder(req: RequestWithId, res: Response): Promise<any> {
+  async getOrder(req: Request, res: Response): Promise<any> {
     const { id } = req.params;
     const result = await orderService.getOrderById(id);
     sendJsonResponse(res, result);
   }
 
-  async updateOrderStatus(req: RequestWithId, res: Response): Promise<any> {
+  async updateOrderStatus(req: Request, res: Response): Promise<any> {
     const { orderId } = req.params;
     const { status } = req.body;
     const result = await orderService.updateOrderStatus(
       orderId,
       status as Exclude<schema.Order["orderStatus"], undefined>
     );
+    sendJsonResponse(res, result);
+  }
+
+  async updateOrderDelivery(req: Request, res: Response): Promise<any> {
+    const { deliveryId } = req.params;
+    const result = await orderService.updateOrderDelivery(deliveryId, req.body);
     sendJsonResponse(res, result);
   }
 }
