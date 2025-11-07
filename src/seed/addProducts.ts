@@ -96,7 +96,7 @@ async function seedDatabase() {
             price: product.price,
             stock: product.stock,
             images: product.images,
-            status: product.status,
+            status: product.status as schema.NewProduct["status"],
             createdAt: new Date(product.created_at * 1000),
             updatedAt: new Date(product.updated_at * 1000),
           })
