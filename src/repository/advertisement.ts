@@ -1,7 +1,8 @@
-import { and, count, eq, sql } from "drizzle-orm";
+import { and, count, eq, gte, lte, sql } from "drizzle-orm";
 
 import * as schema from "../db/schema";
 import db from "../lib/initDB";
+import { CustomError } from "../lib/error";
 
 // --- Advertisement Functions ---
 
@@ -100,4 +101,49 @@ export async function updateAdvertisementById(
     .returning();
   console.log("Advertisement updated:", updatedAd.id);
   return updatedAd;
+}
+
+/**
+ * Gets the view count for a specific advertisement, with an optional date range.
+ * @param params The advertisement ID and optional start and end dates.
+ * @returns The total number of views for the advertisement.
+ */
+export async function getAdViewCount({
+  advertisementId,
+  startAt,
+  endAt,
+}: {
+  advertisementId: string;
+  startAt?: Date;
+  endAt?: Date;
+}) {
+  const advertisement = await db.query.advertisementTable.findFirst({
+    where: eq(schema.advertisementTable.id, advertisementId),
+  });
+  if (!advertisement) throw new CustomError("Advertisement not found", 404);
+
+  const conditions = [
+    eq(schema.adViewCountTable.advertisementId, advertisementId),
+  ];
+
+  if (startAt) {
+    conditions.push(gte(schema.adViewCountTable.createdAt, startAt));
+  }
+  if (endAt) {
+    conditions.push(lte(schema.adViewCountTable.createdAt, endAt));
+  }
+
+  const [result] = await db
+    .select({ value: count() })
+    .from(schema.adViewCountTable)
+    .where(and(...conditions));
+
+  return {
+    advertisement,
+    stats: {
+      startAt: startAt ? startAt.toISOString() : null,
+      endAt: endAt ? endAt.toISOString() : null,
+      count: result.value,
+    },
+  };
 }

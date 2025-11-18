@@ -179,4 +179,67 @@ router.post("/create", isAuth, AdvertisementController.createAdvertisement);
  */
 router.put("/:id", isAuth, AdvertisementController.updateAdvertisement);
 
+/**
+ * @swagger
+ * /api/admin/advertisement/{id}/view-count:
+ *   get:
+ *     tags: [Advertisement]
+ *     summary: Get the view count for an advertisement
+ *     description: Retrieves the total number of views for a specific advertisement, with an optional date range filter.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: The ID of the advertisement.
+ *       - in: query
+ *         name: startAt
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Optional start date (ISO 8601 format) to filter view counts.
+ *       - in: query
+ *         name: endAt
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Optional end date (ISO 8601 format) to filter view counts.
+ *     responses:
+ *       '200':
+ *         description: The total view count for the advertisement within the specified range.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     advertisement:
+ *                       $ref: '#/components/schemas/Advertisement'
+ *                     stats:
+ *                       type: object
+ *                       properties:
+ *                         startAt:
+ *                           type: string
+ *                           format: date-time
+ *                           nullable: true
+ *                           description: The start date of the filter range.
+ *                         endAt:
+ *                           type: string
+ *                           format: date-time
+ *                           nullable: true
+ *                           description: The end date of the filter range.
+ *                         count:
+ *                           type: integer
+ *                           description: The total number of views.
+ */
+router.get("/:id/view-count", isAuth, AdvertisementController.getAdViewCount);
+
 export default router;

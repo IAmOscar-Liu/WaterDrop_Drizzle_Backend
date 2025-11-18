@@ -29,8 +29,14 @@ class OrderController {
         ? (String(status) as schema.NewOrder["orderStatus"])
         : undefined,
       order: order === "asc" ? "asc" : "desc",
-      startDate: startDate ? new Date(String(startDate)) : undefined,
-      endDate: endDate ? new Date(String(endDate)) : undefined,
+      startDate: startDate
+        ? new Date(
+            typeof startDate === "number" ? startDate : String(startDate)
+          )
+        : undefined,
+      endDate: endDate
+        ? new Date(typeof endDate === "number" ? endDate : String(endDate))
+        : undefined,
     });
     sendJsonResponse(res, result);
   }

@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import accountService from "../services/account";
-import { sendJsonResponse } from "../lib/general";
+import { sendJsonResponse, validatePassword } from "../lib/general";
 import { generateToken, sendRefreshToken, validateToken } from "../lib/token";
 import { RequestWithId } from "../type/request";
 import { isAccountAdmin, ListAccountsParams } from "../repository/account";
@@ -14,6 +14,14 @@ class AccountController {
         success: false,
         statusCode: 400,
         message: "Name, email, and password are required.",
+      });
+    }
+    if (!validatePassword(password)) {
+      return sendJsonResponse(res, {
+        success: false,
+        statusCode: 400,
+        message:
+          "Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character.",
       });
     }
 
@@ -158,6 +166,15 @@ class AccountController {
         message: "You are not authorized to update this account.",
       });
     }
+    if (!validatePassword(newPassword)) {
+      return sendJsonResponse(res, {
+        success: false,
+        statusCode: 400,
+        message:
+          "Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character.",
+      });
+    }
+
     const result = await accountService.changeAdminAccountPassword({
       accountId: id,
       oldPassword,

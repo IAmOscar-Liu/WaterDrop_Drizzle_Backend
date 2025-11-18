@@ -8,11 +8,13 @@ import {
   isNotNull,
   lte,
   or,
+  sql,
   SQL,
 } from "drizzle-orm";
 
 import * as schema from "../db/schema";
 import db from "../lib/initDB";
+import { CustomError } from "../lib/error";
 
 // --- Category Functions ---
 
@@ -244,5 +246,71 @@ export async function listProducts({
     page,
     limit,
     totalPages,
+  };
+}
+
+/**
+ * Calculates the sales summary (total quantity sold and total revenue) for a specific product.
+ * It only considers order items from orders with a 'paid' status.
+ * @param params The product ID and optional start and end dates for filtering orders.
+ * @returns An object containing the total quantity sold and total revenue.
+ */
+// from /Users/oscar/Desktop/my_code/drizzle/drizzle_test/src/repository/product.ts
+
+export async function getProductSalesSummary({
+  productId,
+  startAt,
+  endAt,
+}: {
+  productId: string;
+  startAt?: Date;
+  endAt?: Date;
+}) {
+  const product = await db.query.productTable.findFirst({
+    where: eq(schema.productTable.id, productId),
+  });
+  if (!product) throw new CustomError("Product not found", 404);
+
+  const conditions: (SQL | undefined)[] = [
+    // Filter for the specific product in the order items
+    eq(schema.orderItemTable.productId, productId),
+    // Filter for orders that have a 'paid' status from the joined orderTable
+    eq(schema.orderTable.orderStatus, "paid"),
+  ];
+
+  if (startAt) {
+    // Filter by date on the orderTable
+    conditions.push(gte(schema.orderTable.createdAt, startAt));
+  }
+  if (endAt) {
+    conditions.push(lte(schema.orderTable.createdAt, endAt));
+  }
+
+  const [result] = await db
+    .select({
+      totalQuantity:
+        sql<number>`sum(${schema.orderItemTable.quantity})`.mapWith(Number),
+      totalRevenue:
+        sql<number>`sum(${schema.orderItemTable.unitPriceAtSale} * ${schema.orderItemTable.quantity})`.mapWith(
+          Number
+        ),
+    })
+    .from(schema.orderItemTable)
+    // Here we join orderItemTable with orderTable on the order ID
+    .innerJoin(
+      schema.orderTable,
+      eq(schema.orderItemTable.orderId, schema.orderTable.id)
+    )
+    // The 'where' clause applies all conditions, including the one for order status
+    .where(and(...conditions));
+
+  return {
+    product,
+    stats: {
+      startAt: startAt ? startAt.toISOString() : null,
+      endAt: endAt ? endAt.toISOString() : null,
+      totalQuantity: result.totalQuantity || 0,
+      totalRevenue: result.totalRevenue || 0,
+    },
   };
 }

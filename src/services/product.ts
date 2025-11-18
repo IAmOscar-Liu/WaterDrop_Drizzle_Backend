@@ -7,6 +7,7 @@ import {
   listCategory,
   listProducts,
   updateProduct,
+  getProductSalesSummary,
   type ListProductsParams,
 } from "../repository/product";
 import { ServiceResponse } from "../type/general";
@@ -131,6 +132,21 @@ class ProductService {
       }
     } catch (error) {
       // console.error(error);
+      return handleServiceError(error);
+    }
+  }
+
+  async getProductSalesSummary(input: {
+    productId: string;
+    startAt?: Date;
+    endAt?: Date;
+  }): Promise<
+    ServiceResponse<Awaited<ReturnType<typeof getProductSalesSummary>>>
+  > {
+    try {
+      const result = await getProductSalesSummary(input);
+      return { success: true, data: result };
+    } catch (error) {
       return handleServiceError(error);
     }
   }

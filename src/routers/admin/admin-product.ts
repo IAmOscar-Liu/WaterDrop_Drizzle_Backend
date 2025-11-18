@@ -394,4 +394,70 @@ router.post("/create", isAuth, ProductController.createProduct);
  */
 router.put("/:id", isAuth, ProductController.updateProduct);
 
+/**
+ * @swagger
+ * /api/admin/product/{id}/sales-summary:
+ *   get:
+ *     tags: [Product]
+ *     summary: Get sales summary for a product
+ *     description: Retrieves the total quantity sold and total revenue for a specific product from 'paid' orders, with an optional date range filter.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: The ID of the product.
+ *       - in: query
+ *         name: startAt
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Optional start date (ISO 8601 format) to filter sales data.
+ *       - in: query
+ *         name: endAt
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Optional end date (ISO 8601 format) to filter sales data.
+ *     responses:
+ *       '200':
+ *         description: The product and its sales summary.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     product:
+ *                       $ref: '#/components/schemas/Product'
+ *                     stats:
+ *                       type: object
+ *                       properties:
+ *                         startAt:
+ *                           type: string
+ *                           format: date-time
+ *                           nullable: true
+ *                         endAt:
+ *                           type: string
+ *                           format: date-time
+ *                           nullable: true
+ *                         totalQuantity:
+ *                           type: integer
+ *                         totalRevenue:
+ *                           type: number
+ */
+router.get(
+  "/:id/sales-summary",
+  isAuth,
+  ProductController.getProductSalesSummary
+);
+
 export default router;

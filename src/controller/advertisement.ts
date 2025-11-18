@@ -42,6 +42,21 @@ class AdvertisementController {
     );
     sendJsonResponse(res, result);
   }
+
+  async getAdViewCount(req: Request, res: Response): Promise<any> {
+    const { id } = req.params;
+    const { startAt, endAt } = req.query;
+    const result = await advertisementService.getAdViewCount({
+      advertisementId: id,
+      startAt: startAt
+        ? new Date(typeof startAt === "number" ? startAt : String(startAt))
+        : undefined,
+      endAt: endAt
+        ? new Date(typeof endAt === "number" ? endAt : String(endAt))
+        : undefined,
+    });
+    sendJsonResponse(res, result);
+  }
 }
 
 export default new AdvertisementController();

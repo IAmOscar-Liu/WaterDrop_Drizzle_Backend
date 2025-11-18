@@ -4,6 +4,7 @@ import {
   ListAdvertisementsParams,
   createAdvertisement,
   updateAdvertisementById,
+  getAdViewCount,
 } from "../repository/advertisement";
 import { ServiceResponse } from "../type/general";
 import * as schema from "../db/schema";
@@ -67,6 +68,19 @@ class AdvertisementService {
           message: "advertisement not found",
         };
       }
+    } catch (error) {
+      return handleServiceError(error);
+    }
+  }
+
+  async getAdViewCount(input: {
+    advertisementId: string;
+    startAt?: Date;
+    endAt?: Date;
+  }): Promise<ServiceResponse<Awaited<ReturnType<typeof getAdViewCount>>>> {
+    try {
+      const count = await getAdViewCount(input);
+      return { success: true, data: count };
     } catch (error) {
       return handleServiceError(error);
     }
