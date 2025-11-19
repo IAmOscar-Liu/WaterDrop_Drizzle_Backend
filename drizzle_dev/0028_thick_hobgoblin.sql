@@ -1,0 +1,1 @@
+ALTER TABLE "user_daily_stats" ALTER COLUMN "group_ad_views_count_yesterday" SET DEFAULT 10;

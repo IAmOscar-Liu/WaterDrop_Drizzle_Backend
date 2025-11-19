@@ -163,6 +163,7 @@ export const userTable = pgTable(
       // Composite uniqueness on (oauthProvider, oauthId)
       oauthCompositeUnique: uniqueIndex("users_oauth_provider_id_uk").on(
         table.oauthProvider,
+        table.oauthId,
         table.email
       ),
       byReferral: uniqueIndex("users_referral_code_uk").on(table.referralCode),

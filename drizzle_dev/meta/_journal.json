@@ -183,6 +183,34 @@
       "when": 1762480845834,
       "tag": "0025_little_clint_barton",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1763548962188,
+      "tag": "0026_useful_spirit",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1763550176821,
+      "tag": "0027_premium_mephisto",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1763550200619,
+      "tag": "0028_thick_hobgoblin",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1763550225012,
+      "tag": "0029_brown_stature",
+      "breakpoints": true
     }
   ]
 }
