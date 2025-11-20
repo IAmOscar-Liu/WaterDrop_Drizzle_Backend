@@ -3,7 +3,7 @@ import * as admin from "firebase-admin";
 
 // Import your service account key JSON file
 // Ensure the path is correct relative to this file
-const serviceAccount = require("../../flutter-ad-commerce-firebase-adminsdk-fbsvc-5ed5ed03a1.json");
+const serviceAccount = require("../../flutter-ad-ecommerce-dev-5d9da-firebase-adminsdk-fbsvc-d73658c022.json");
 
 // Initialize the Firebase Admin SDK
 admin.initializeApp({
