@@ -1,6 +1,6 @@
 {
-  "id": "7210e907-927f-4c33-9e82-f70f2f0d945a",
-  "prevId": "00000000-0000-0000-0000-000000000000",
+  "id": "4e4bd1ad-4272-4327-93d2-1dc54a7069ba",
+  "prevId": "66b2d403-9d55-4e5e-b4a1-8cf6a7f73028",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -986,12 +986,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "avatar_url": {
-          "name": "avatar_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "group_id": {
           "name": "group_id",
           "type": "uuid",
@@ -1066,7 +1060,7 @@
               "nulls": "last"
             }
           ],
-          "isUnique": false,
+          "isUnique": true,
           "concurrently": false,
           "method": "btree",
           "with": {}

@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { sendJsonResponse } from "../lib/general";
-import { RequestWithId } from "../type/request";
 import chatroomService from "../services/chatroom";
+import { RequestWithId } from "../type/request";
 
 class ChatroomController {
   async findOrCreateChatRoom(req: RequestWithId, res: Response): Promise<any> {
@@ -14,7 +14,7 @@ class ChatroomController {
     sendJsonResponse(res, result);
   }
 
-  async getChatHistory(req: RequestWithId, res: Response): Promise<any> {
+  async getChatHistory(req: Request, res: Response): Promise<any> {
     const { chatRoomId } = req.params;
     const { page, limit } = req.query;
     const result = await chatroomService.getChatHistory({
@@ -42,6 +42,17 @@ class ChatroomController {
     const result = await chatroomService.markMessagesAsRead({
       chatRoomId,
       readerType,
+    });
+    sendJsonResponse(res, result);
+  }
+
+  async listAdminChatRooms(req: RequestWithId, res: Response): Promise<any> {
+    const { productId, page, limit } = req.query;
+    const result = await chatroomService.listAdminChatRooms({
+      accountId: req.userId ?? "",
+      productId: productId ? String(productId) : undefined,
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
     });
     sendJsonResponse(res, result);
   }

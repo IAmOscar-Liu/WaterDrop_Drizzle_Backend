@@ -1,6 +1,6 @@
 {
-  "id": "21ab0647-38cd-411d-9b11-1120accb842c",
-  "prevId": "f576d174-cdde-41a4-84ec-233312e547a0",
+  "id": "0143c6d7-27f1-4c65-b5b3-be21dea1ca82",
+  "prevId": "6aee035b-19c7-44c6-801d-dc88379e7377",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -647,6 +647,122 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.deliveries": {
+      "name": "deliveries",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "order_id": {
+          "name": "order_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "merchant_trade_no": {
+          "name": "merchant_trade_no",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "all_pay_logistics_id": {
+          "name": "all_pay_logistics_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "logistics_type": {
+          "name": "logistics_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "logistics_sub_type": {
+          "name": "logistics_sub_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rtn_code": {
+          "name": "rtn_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rtn_msg": {
+          "name": "rtn_msg",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "goods_amount": {
+          "name": "goods_amount",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "receiver_store_id": {
+          "name": "receiver_store_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "metadata": {
+          "name": "metadata",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "deliveries_order_id_orders_id_fk": {
+          "name": "deliveries_order_id_orders_id_fk",
+          "tableFrom": "deliveries",
+          "tableTo": "orders",
+          "columnsFrom": [
+            "order_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "deliveries_order_id_unique": {
+          "name": "deliveries_order_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "order_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.groups": {
       "name": "groups",
       "schema": "",
@@ -819,6 +935,12 @@
         "account_id": {
           "name": "account_id",
           "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "merchant_trade_no": {
+          "name": "merchant_trade_no",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },

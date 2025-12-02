@@ -1,6 +1,7 @@
 import { and, count, eq, isNull, ne } from "drizzle-orm";
 import * as schema from "../db/schema";
 import db from "../lib/initDB";
+import { CustomError } from "../lib/error";
 
 /**
  * Finds an existing chat room or creates a new one.
@@ -29,6 +30,15 @@ export async function findOrCreateChatRoom(
 
   if (existingRoom) {
     console.log("Found existing chat room:", existingRoom.id);
+    if (existingRoom.status !== "active") {
+      // if existing room is inactive, set it to active
+      return await db
+        .update(schema.chatRoomTable)
+        .set({ status: "active" })
+        .where(eq(schema.chatRoomTable.id, existingRoom.id))
+        .returning();
+    }
+
     return existingRoom;
   }
 
@@ -57,6 +67,17 @@ export async function sendChatMessage(
   senderType: schema.ChatMessage["senderType"],
   content: string
 ) {
+  // check if chatroom is active
+  const existingRoom = await db.query.chatRoomTable.findFirst({
+    where: and(
+      eq(schema.chatRoomTable.id, chatRoomId),
+      eq(schema.chatRoomTable.status, "active")
+    ),
+  });
+  if (!existingRoom) {
+    throw new CustomError("Chat room not found or not active", 404);
+  }
+
   // Insert the new message
   const [newMessage] = await db
     .insert(schema.chatMessageTable)
@@ -128,6 +149,17 @@ export async function markMessagesAsRead(
   chatRoomId: string,
   readerType: schema.ChatMessage["senderType"]
 ) {
+  // check if chatroom is active
+  const existingRoom = await db.query.chatRoomTable.findFirst({
+    where: and(
+      eq(schema.chatRoomTable.id, chatRoomId),
+      eq(schema.chatRoomTable.status, "active")
+    ),
+  });
+  if (!existingRoom) {
+    throw new CustomError("Chat room not found or not active", 404);
+  }
+
   console.log(
     `Marking messages in room ${chatRoomId} as read for ${readerType}.`
   );
@@ -142,4 +174,57 @@ export async function markMessagesAsRead(
       )
     )
     .returning();
+}
+
+export type ListAdminChatRoomsParams = {
+  accountId: string;
+  productId?: string;
+  page?: number;
+  limit?: number;
+};
+
+export async function listAdminChatRooms({
+  accountId,
+  productId,
+  page = 1,
+  limit = 20,
+}: ListAdminChatRoomsParams) {
+  const offset = (page - 1) * limit;
+
+  // Build the conditions for the query
+  const conditions = [eq(schema.chatRoomTable.accountId, accountId)];
+  if (productId) {
+    conditions.push(eq(schema.chatRoomTable.productId, productId));
+  }
+
+  // 1. Get the total count of chat rooms matching the criteria
+  const totalResult = await db
+    .select({ total: count() })
+    .from(schema.chatRoomTable)
+    .where(and(...conditions));
+
+  const total = totalResult[0].total;
+  const totalPages = Math.ceil(total / limit);
+
+  // 2. Get the paginated list of chat rooms
+  // We order by creation date to have a consistent order.
+  // A more advanced implementation could order by the last message's timestamp.
+  const rooms = await db.query.chatRoomTable.findMany({
+    where: and(...conditions),
+    orderBy: (chatRooms, { desc }) => [desc(chatRooms.createdAt)],
+    limit: limit,
+    offset: offset,
+    // You might want to include related data, like the last message or user info
+    with: {
+      user: true, // Assuming a 'user' relation exists on chatRoomTable
+    },
+  });
+
+  return {
+    rooms,
+    total,
+    page,
+    limit,
+    totalPages,
+  };
 }

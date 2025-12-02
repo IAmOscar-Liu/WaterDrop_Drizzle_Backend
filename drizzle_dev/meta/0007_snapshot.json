@@ -1,6 +1,6 @@
 {
-  "id": "c0eb5179-ec62-42e0-9058-22b37e2208e5",
-  "prevId": "a2b1018e-a094-4da3-a82c-5d6f1ff53779",
+  "id": "f478163c-bf84-4ec8-bdb6-f5a9f54315b8",
+  "prevId": "90905645-45dd-4a1d-b9e0-48fd5b8ca835",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -563,6 +563,13 @@
       "name": "collections",
       "schema": "",
       "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
         "user_id": {
           "name": "user_id",
           "type": "uuid",
@@ -583,7 +590,29 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "collections_user_product_uk": {
+          "name": "collections_user_product_uk",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "product_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "collections_user_id_users_id_fk": {
           "name": "collections_user_id_users_id_fk",
@@ -612,16 +641,192 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {
-        "collections_user_id_product_id_pk": {
-          "name": "collections_user_id_product_id_pk",
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.deliveries": {
+      "name": "deliveries",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "order_id": {
+          "name": "order_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "merchant_trade_no": {
+          "name": "merchant_trade_no",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "all_pay_logistics_id": {
+          "name": "all_pay_logistics_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "logistics_type": {
+          "name": "logistics_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "logistics_sub_type": {
+          "name": "logistics_sub_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rtn_code": {
+          "name": "rtn_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rtn_msg": {
+          "name": "rtn_msg",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "goods_amount": {
+          "name": "goods_amount",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "receiver_store_id": {
+          "name": "receiver_store_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "metadata": {
+          "name": "metadata",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "deliveries_order_id_orders_id_fk": {
+          "name": "deliveries_order_id_orders_id_fk",
+          "tableFrom": "deliveries",
+          "tableTo": "orders",
+          "columnsFrom": [
+            "order_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "deliveries_order_id_unique": {
+          "name": "deliveries_order_id_unique",
+          "nullsNotDistinct": false,
           "columns": [
-            "user_id",
-            "product_id"
+            "order_id"
           ]
         }
       },
-      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.device_tokens": {
+      "name": "device_tokens",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "fcm_token": {
+          "name": "fcm_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_used_at": {
+          "name": "last_used_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "device_tokens_user_id_users_id_fk": {
+          "name": "device_tokens_user_id_users_id_fk",
+          "tableFrom": "device_tokens",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "device_tokens_fcm_token_unique": {
+          "name": "device_tokens_fcm_token_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "fcm_token"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -798,6 +1003,12 @@
         "account_id": {
           "name": "account_id",
           "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "merchant_trade_no": {
+          "name": "merchant_trade_no",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -1073,7 +1284,7 @@
         },
         "coins_awarded": {
           "name": "coins_awarded",
-          "type": "integer",
+          "type": "double precision",
           "primaryKey": false,
           "notNull": true
         },
@@ -1083,6 +1294,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": false
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": true
         }
       },
       "indexes": {},
@@ -1158,6 +1376,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": 2
+        },
+        "group_ad_views_count_yesterday": {
+          "name": "group_ad_views_count_yesterday",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 20
         },
         "created_at": {
           "name": "created_at",
@@ -1236,7 +1461,7 @@
         },
         "coins": {
           "name": "coins",
-          "type": "integer",
+          "type": "double precision",
           "primaryKey": false,
           "notNull": true,
           "default": 0

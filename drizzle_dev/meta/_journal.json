@@ -5,211 +5,106 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1758817875386,
-      "tag": "0000_magenta_king_cobra",
+      "when": 1758102400986,
+      "tag": "0000_curved_george_stacy",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "7",
-      "when": 1758818130374,
-      "tag": "0001_uneven_salo",
+      "when": 1758109774858,
+      "tag": "0001_tearful_talisman",
       "breakpoints": true
     },
     {
       "idx": 2,
       "version": "7",
-      "when": 1759071274050,
-      "tag": "0002_supreme_loners",
+      "when": 1758110145093,
+      "tag": "0002_warm_black_panther",
       "breakpoints": true
     },
     {
       "idx": 3,
       "version": "7",
-      "when": 1759074824628,
-      "tag": "0003_thin_silk_fever",
+      "when": 1758819213502,
+      "tag": "0003_nervous_white_tiger",
       "breakpoints": true
     },
     {
       "idx": 4,
       "version": "7",
-      "when": 1759074874827,
-      "tag": "0004_lean_captain_britain",
+      "when": 1759197969872,
+      "tag": "0004_tricky_reavers",
       "breakpoints": true
     },
     {
       "idx": 5,
       "version": "7",
-      "when": 1759077223948,
-      "tag": "0005_sloppy_havok",
+      "when": 1759819302823,
+      "tag": "0005_watery_baron_zemo",
       "breakpoints": true
     },
     {
       "idx": 6,
       "version": "7",
-      "when": 1759095256036,
-      "tag": "0006_talented_salo",
+      "when": 1760342248195,
+      "tag": "0006_tricky_george_stacy",
       "breakpoints": true
     },
     {
       "idx": 7,
       "version": "7",
-      "when": 1759135388962,
-      "tag": "0007_dark_human_cannonball",
+      "when": 1761055882240,
+      "tag": "0007_demonic_vengeance",
       "breakpoints": true
     },
     {
       "idx": 8,
       "version": "7",
-      "when": 1759136237074,
-      "tag": "0008_big_iron_fist",
+      "when": 1761498412813,
+      "tag": "0008_glorious_felicia_hardy",
       "breakpoints": true
     },
     {
       "idx": 9,
       "version": "7",
-      "when": 1759499639895,
-      "tag": "0009_workable_celestials",
+      "when": 1762336395457,
+      "tag": "0009_zippy_malcolm_colcord",
       "breakpoints": true
     },
     {
       "idx": 10,
       "version": "7",
-      "when": 1759502620196,
-      "tag": "0010_married_jubilee",
+      "when": 1762480345912,
+      "tag": "0010_secret_reaper",
       "breakpoints": true
     },
     {
       "idx": 11,
       "version": "7",
-      "when": 1759759469696,
-      "tag": "0011_dizzy_felicia_hardy",
+      "when": 1762480425264,
+      "tag": "0011_rare_zarda",
       "breakpoints": true
     },
     {
       "idx": 12,
       "version": "7",
-      "when": 1760084840781,
-      "tag": "0012_uneven_jack_power",
+      "when": 1762490553002,
+      "tag": "0012_smart_purifiers",
       "breakpoints": true
     },
     {
       "idx": 13,
       "version": "7",
-      "when": 1760085371637,
-      "tag": "0013_ambiguous_layla_miller",
+      "when": 1763552731859,
+      "tag": "0013_acoustic_wraith",
       "breakpoints": true
     },
     {
       "idx": 14,
       "version": "7",
-      "when": 1760088283231,
-      "tag": "0014_magical_clea",
-      "breakpoints": true
-    },
-    {
-      "idx": 15,
-      "version": "7",
-      "when": 1760091983265,
-      "tag": "0015_dear_mandrill",
-      "breakpoints": true
-    },
-    {
-      "idx": 16,
-      "version": "7",
-      "when": 1761030930104,
-      "tag": "0016_deep_blink",
-      "breakpoints": true
-    },
-    {
-      "idx": 17,
-      "version": "7",
-      "when": 1761320345997,
-      "tag": "0017_lean_gwen_stacy",
-      "breakpoints": true
-    },
-    {
-      "idx": 18,
-      "version": "7",
-      "when": 1761322214234,
-      "tag": "0018_motionless_nocturne",
-      "breakpoints": true
-    },
-    {
-      "idx": 19,
-      "version": "7",
-      "when": 1761323650651,
-      "tag": "0019_petite_changeling",
-      "breakpoints": true
-    },
-    {
-      "idx": 20,
-      "version": "7",
-      "when": 1761323755866,
-      "tag": "0020_greedy_purifiers",
-      "breakpoints": true
-    },
-    {
-      "idx": 21,
-      "version": "7",
-      "when": 1761408062556,
-      "tag": "0021_living_punisher",
-      "breakpoints": true
-    },
-    {
-      "idx": 22,
-      "version": "7",
-      "when": 1762326815888,
-      "tag": "0022_lean_carlie_cooper",
-      "breakpoints": true
-    },
-    {
-      "idx": 23,
-      "version": "7",
-      "when": 1762480153358,
-      "tag": "0023_fine_kinsey_walden",
-      "breakpoints": true
-    },
-    {
-      "idx": 24,
-      "version": "7",
-      "when": 1762480495938,
-      "tag": "0024_perfect_johnny_blaze",
-      "breakpoints": true
-    },
-    {
-      "idx": 25,
-      "version": "7",
-      "when": 1762480845834,
-      "tag": "0025_little_clint_barton",
-      "breakpoints": true
-    },
-    {
-      "idx": 26,
-      "version": "7",
-      "when": 1763548962188,
-      "tag": "0026_useful_spirit",
-      "breakpoints": true
-    },
-    {
-      "idx": 27,
-      "version": "7",
-      "when": 1763550176821,
-      "tag": "0027_premium_mephisto",
-      "breakpoints": true
-    },
-    {
-      "idx": 28,
-      "version": "7",
-      "when": 1763550200619,
-      "tag": "0028_thick_hobgoblin",
-      "breakpoints": true
-    },
-    {
-      "idx": 29,
-      "version": "7",
-      "when": 1763550225012,
-      "tag": "0029_brown_stature",
+      "when": 1764668119298,
+      "tag": "0014_nosy_serpent_society",
       "breakpoints": true
     }
   ]

@@ -41,7 +41,12 @@ app.use(express.json({ limit: "50mb" }));
 app.use(cookieParser());
 app.use(express.urlencoded({ limit: "50mb", extended: true })); // Middleware for parsing form data
 
-app.use(cors());
+app.use(
+  cors({
+    origin: "https://waterdropping.com",
+    credentials: true,
+  })
+);
 
 app.get("/api/test", (_, res) => {
   res.send({

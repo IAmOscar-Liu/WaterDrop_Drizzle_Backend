@@ -1,6 +1,6 @@
 {
-  "id": "6aee035b-19c7-44c6-801d-dc88379e7377",
-  "prevId": "2aca5dba-5cc3-4c55-9349-7ff5869fc044",
+  "id": "8c196541-edbc-450a-a362-4f5efd60afb3",
+  "prevId": "082c1922-471f-4446-893a-05c6f1949349",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -647,6 +647,190 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.deliveries": {
+      "name": "deliveries",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "order_id": {
+          "name": "order_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "merchant_trade_no": {
+          "name": "merchant_trade_no",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "all_pay_logistics_id": {
+          "name": "all_pay_logistics_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "logistics_type": {
+          "name": "logistics_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "logistics_sub_type": {
+          "name": "logistics_sub_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rtn_code": {
+          "name": "rtn_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rtn_msg": {
+          "name": "rtn_msg",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "goods_amount": {
+          "name": "goods_amount",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "receiver_store_id": {
+          "name": "receiver_store_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "metadata": {
+          "name": "metadata",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "deliveries_order_id_orders_id_fk": {
+          "name": "deliveries_order_id_orders_id_fk",
+          "tableFrom": "deliveries",
+          "tableTo": "orders",
+          "columnsFrom": [
+            "order_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "deliveries_order_id_unique": {
+          "name": "deliveries_order_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "order_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.device_tokens": {
+      "name": "device_tokens",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "fcm_token": {
+          "name": "fcm_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_used_at": {
+          "name": "last_used_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "device_tokens_user_id_users_id_fk": {
+          "name": "device_tokens_user_id_users_id_fk",
+          "tableFrom": "device_tokens",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "device_tokens_fcm_token_unique": {
+          "name": "device_tokens_fcm_token_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "fcm_token"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.groups": {
       "name": "groups",
       "schema": "",
@@ -920,7 +1104,7 @@
           "name": "seller_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "name": {
           "name": "name",
@@ -1100,7 +1284,7 @@
         },
         "coins_awarded": {
           "name": "coins_awarded",
-          "type": "integer",
+          "type": "double precision",
           "primaryKey": false,
           "notNull": true
         },
@@ -1110,6 +1294,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": false
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": true
         }
       },
       "indexes": {},
@@ -1186,6 +1377,13 @@
           "notNull": true,
           "default": 2
         },
+        "group_ad_views_count_yesterday": {
+          "name": "group_ad_views_count_yesterday",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 20
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -1231,6 +1429,216 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.user_monthly_coin_stats": {
+      "name": "user_monthly_coin_stats",
+      "schema": "",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "month": {
+          "name": "month",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "coins_earned": {
+          "name": "coins_earned",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "coins_spent": {
+          "name": "coins_spent",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "expired": {
+          "name": "expired",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "user_monthly_coin_stats_user_id_users_id_fk": {
+          "name": "user_monthly_coin_stats_user_id_users_id_fk",
+          "tableFrom": "user_monthly_coin_stats",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "user_monthly_coin_stats_user_id_month_pk": {
+          "name": "user_monthly_coin_stats_user_id_month_pk",
+          "columns": [
+            "user_id",
+            "month"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.user_notifications": {
+      "name": "user_notifications",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
+          "type": "notification_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'system_alert'"
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_read": {
+          "name": "is_read",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "order_id": {
+          "name": "order_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "metadata": {
+          "name": "metadata",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "user_notifications_user_read_idx": {
+          "name": "user_notifications_user_read_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "is_read",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "user_notifications_user_id_users_id_fk": {
+          "name": "user_notifications_user_id_users_id_fk",
+          "tableFrom": "user_notifications",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "user_notifications_order_id_orders_id_fk": {
+          "name": "user_notifications_order_id_orders_id_fk",
+          "tableFrom": "user_notifications",
+          "tableTo": "orders",
+          "columnsFrom": [
+            "order_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.users": {
       "name": "users",
       "schema": "",
@@ -1263,7 +1671,7 @@
         },
         "coins": {
           "name": "coins",
-          "type": "integer",
+          "type": "double precision",
           "primaryKey": false,
           "notNull": true,
           "default": 0
@@ -1416,6 +1824,18 @@
         "user",
         "admin",
         "seller"
+      ]
+    },
+    "public.notification_type": {
+      "name": "notification_type",
+      "schema": "public",
+      "values": [
+        "system_alert",
+        "order_status",
+        "promotion",
+        "coins_earned",
+        "chat_message",
+        "other"
       ]
     },
     "public.oauth_provider": {

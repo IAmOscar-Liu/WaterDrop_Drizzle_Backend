@@ -50,6 +50,11 @@ export const orderStatusEnum = pgEnum("order_status", [
   "failed",
 ]);
 
+export const chatRoomStatusEnum = pgEnum("chat_room_status", [
+  "active",
+  "inactive",
+]);
+
 export const notificationTypeEnum = pgEnum("notification_type", [
   "system_alert",
   "order_status",
@@ -89,6 +94,7 @@ export const chatRoomTable = pgTable(
       .defaultNow()
       .$onUpdate(() => new Date())
       .notNull(),
+    status: chatRoomStatusEnum("status").default("active").notNull(),
   },
   (t) => ({
     chatRoomUnique: uniqueIndex("chat_rooms_user_account_product_uk").on(
