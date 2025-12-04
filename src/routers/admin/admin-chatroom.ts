@@ -227,6 +227,18 @@ router.get("/list", isAuth, ChatroomController.listAdminChatRooms);
  *           type: integer
  *           default: 20
  *         description: Number of messages per page.
+ *       - in: query
+ *         name: startAt
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Optional start date (ISO 8601 format) to filter chat messages.
+ *       - in: query
+ *         name: endAt
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Optional end date (ISO 8601 format) to filter chat message.
  *     responses:
  *       200:
  *         description: A paginated list of chat messages.
