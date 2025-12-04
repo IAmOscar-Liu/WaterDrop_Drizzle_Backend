@@ -333,11 +333,11 @@ router.post("/message/:chatRoomId", isAuth, ChatroomController.sendMessage);
  *           schema:
  *             type: object
  *             required:
- *               - senderType
+ *               - readerType
  *             properties:
- *               senderType:
+ *               readerType:
  *                 type: string
- *                 enum: [user, admin, seller]
+ *                 enum: [admin, seller]
  *     responses:
  *       200:
  *         description: Messages marked as read successfully.

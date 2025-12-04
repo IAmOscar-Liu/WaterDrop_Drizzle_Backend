@@ -178,7 +178,7 @@ export async function markMessagesAsRead(
   );
   return db
     .update(schema.chatMessageTable)
-    .set({ isRead: true })
+    .set({ isRead: true, updatedAt: new Date() })
     .where(
       and(
         eq(schema.chatMessageTable.chatRoomId, chatRoomId),
