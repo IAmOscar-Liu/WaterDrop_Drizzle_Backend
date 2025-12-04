@@ -64,15 +64,11 @@ class ChatroomService {
     }
   }
 
-  async getChatHistory({
-    chatRoomId,
-    page = 1,
-    limit = 20,
-  }: GetChatHistoryParams): Promise<
-    ServiceResponse<Awaited<ReturnType<typeof getChatHistory>>>
-  > {
+  async getChatHistory(
+    query: GetChatHistoryParams
+  ): Promise<ServiceResponse<Awaited<ReturnType<typeof getChatHistory>>>> {
     try {
-      const chatHistory = await getChatHistory({ chatRoomId, page, limit });
+      const chatHistory = await getChatHistory(query);
       if (chatHistory) {
         return { success: true, data: chatHistory };
       } else {

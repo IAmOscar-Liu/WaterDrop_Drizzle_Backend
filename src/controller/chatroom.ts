@@ -16,11 +16,17 @@ class ChatroomController {
 
   async getChatHistory(req: Request, res: Response): Promise<any> {
     const { chatRoomId } = req.params;
-    const { page, limit } = req.query;
+    const { page, limit, startAt, endAt } = req.query;
     const result = await chatroomService.getChatHistory({
       chatRoomId: chatRoomId ? String(chatRoomId) : "",
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
+      startAt: startAt
+        ? new Date(typeof startAt === "number" ? startAt : String(startAt))
+        : undefined,
+      endAt: endAt
+        ? new Date(typeof endAt === "number" ? endAt : String(endAt))
+        : undefined,
     });
     sendJsonResponse(res, result);
   }

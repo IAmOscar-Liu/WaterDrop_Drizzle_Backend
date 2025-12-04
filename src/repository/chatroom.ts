@@ -1,4 +1,4 @@
-import { and, count, eq, isNull, ne } from "drizzle-orm";
+import { and, count, eq, gte, isNull, lte, ne } from "drizzle-orm";
 import * as schema from "../db/schema";
 import db from "../lib/initDB";
 import { CustomError } from "../lib/error";
@@ -96,6 +96,8 @@ export interface GetChatHistoryParams {
   chatRoomId: string;
   page?: number;
   limit?: number;
+  startAt?: Date;
+  endAt?: Date;
 }
 
 /**
@@ -108,21 +110,32 @@ export async function getChatHistory({
   chatRoomId,
   page = 1,
   limit = 20,
+  startAt,
+  endAt,
 }: GetChatHistoryParams) {
   const offset = (page - 1) * limit;
+
+  // Build the conditions for the query
+  const conditions = [eq(schema.chatMessageTable.chatRoomId, chatRoomId)];
+  if (startAt) {
+    conditions.push(gte(schema.chatMessageTable.createdAt, startAt));
+  }
+  if (endAt) {
+    conditions.push(lte(schema.chatMessageTable.createdAt, endAt));
+  }
 
   // Query for total count of messages in the room
   const totalResult = await db
     .select({ total: count() })
     .from(schema.chatMessageTable)
-    .where(eq(schema.chatMessageTable.chatRoomId, chatRoomId));
+    .where(and(...conditions));
 
-  const total = totalResult[0].total;
+  const total = totalResult[0]?.total ?? 0;
   const totalPages = Math.ceil(total / limit);
 
   // Query for the paginated messages, sorted by most recent first
   const messages = await db.query.chatMessageTable.findMany({
-    where: eq(schema.chatMessageTable.chatRoomId, chatRoomId),
+    where: and(...conditions),
     orderBy: (messages, { desc }) => [desc(messages.createdAt)],
     limit: limit,
     offset: offset,
