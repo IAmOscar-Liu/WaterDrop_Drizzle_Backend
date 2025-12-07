@@ -73,9 +73,15 @@ export function validateToken(token?: string) {
 export function sendRefreshToken(res: Response, payload: any) {
   const refreshToken = generateToken(payload);
 
+  // Determine domain based on environment
+  // If production, share cookie across subdomains. If dev, leave undefined (defaults to current host)
+  const domain =
+    process.env.NODE_ENV === "production" ? ".waterdropping.com" : undefined;
+
   res.cookie(process.env.REFRESH_TOKEN_NAME!, refreshToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
+    domain,
     sameSite: "strict",
     maxAge: 1000 * 60 * 60 * 24 * 30, // 30 days,
   });
