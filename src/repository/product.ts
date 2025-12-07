@@ -160,6 +160,7 @@ export interface ListProductsParams {
   status?: schema.NewProduct["status"];
   minPrice?: number;
   maxPrice?: number;
+  sellerId?: string;
 }
 
 /**
@@ -173,6 +174,7 @@ export async function listProducts({
   categoryId,
   search,
   status,
+  sellerId,
   minPrice,
   maxPrice,
 }: ListProductsParams) {
@@ -203,6 +205,10 @@ export async function listProducts({
 
   if (status) {
     conditions.push(eq(schema.productTable.status, status));
+  }
+
+  if (sellerId) {
+    conditions.push(eq(schema.productTable.sellerId, sellerId));
   }
 
   if (minPrice !== undefined) {

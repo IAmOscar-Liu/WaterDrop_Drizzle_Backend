@@ -2,9 +2,14 @@ import { handleServiceError } from "../lib/error";
 import {
   listAdvertisements,
   ListAdvertisementsParams,
+  ListAdminAdvertisementsParams,
+  listAdminAdvertisements,
+  getAdvertisement,
   createAdvertisement,
   updateAdvertisementById,
   getAdViewCount,
+  depositAdBalance,
+  setAdStatus,
 } from "../repository/advertisement";
 import { ServiceResponse } from "../type/general";
 import * as schema from "../db/schema";
@@ -24,6 +29,46 @@ class AdvertisementService {
           message: "advertisements not found",
         };
       }
+    } catch (error) {
+      return handleServiceError(error);
+    }
+  }
+
+  async listAdminAdvertisements(
+    params: ListAdminAdvertisementsParams
+  ): Promise<
+    ServiceResponse<Awaited<ReturnType<typeof listAdminAdvertisements>>>
+  > {
+    try {
+      const advertisements = await listAdminAdvertisements(params); // Replace with real data fetching logic
+      if (advertisements) {
+        return { success: true, data: advertisements };
+      } else {
+        return {
+          success: false,
+          statusCode: 404,
+          message: "advertisements not found",
+        };
+      }
+    } catch (error) {
+      return handleServiceError(error);
+    }
+  }
+
+  async getAdvertisement(
+    advertisementId: string
+  ): Promise<ServiceResponse<Awaited<ReturnType<typeof getAdvertisement>>>> {
+    try {
+      const advertisement = await getAdvertisement(advertisementId);
+
+      if (!advertisement) {
+        return {
+          success: false,
+          statusCode: 404,
+          message: "Advertisement not found",
+        };
+      }
+      return { success: true, data: advertisement };
     } catch (error) {
       return handleServiceError(error);
     }
@@ -81,6 +126,34 @@ class AdvertisementService {
     try {
       const count = await getAdViewCount(input);
       return { success: true, data: count };
+    } catch (error) {
+      return handleServiceError(error);
+    }
+  }
+
+  async depositAdBalance(input: {
+    advertisementId: string;
+    amount: number;
+    metadata?: Record<string, any>;
+  }): Promise<ServiceResponse<Awaited<ReturnType<typeof depositAdBalance>>>> {
+    try {
+      const result = await depositAdBalance(input);
+      return { success: true, data: result };
+    } catch (error) {
+      return handleServiceError(error);
+    }
+  }
+
+  async setAdStatus({
+    advertisementId,
+    status,
+  }: {
+    advertisementId: string;
+    status: schema.AdvertisementStats["status"];
+  }): Promise<ServiceResponse<Awaited<ReturnType<typeof setAdStatus>>>> {
+    try {
+      const result = await setAdStatus(advertisementId, status);
+      return { success: true, data: result };
     } catch (error) {
       return handleServiceError(error);
     }

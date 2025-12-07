@@ -3,6 +3,7 @@ import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
 import { getCurrentYearMonthString } from "../lib/general";
 import db from "../lib/initDB";
+import { spendAdBalance } from "./advertisement";
 
 /**
  * Processes a user completing a video watch.
@@ -47,16 +48,28 @@ export async function processVideoCompletion(
       .where(eq(schema.userDailyStatTable.userId, userId))
       .returning();
 
-    // Step 3.5: Create an ad view record
-    const addViewPromise = advertisementId
+    // Step 3.1: Create an ad view record
+    const addAdViewCountPromise = advertisementId
       ? tx.insert(schema.adViewCountTable).values({
           userId,
           advertisementId,
         })
       : Promise.resolve();
 
-    let [updatedStat] = await updateDailyStatPromise;
-    await addViewPromise;
+    // Step 3.2: Decrease seller's ad balance
+    const spendAdBalancePromise = advertisementId
+      ? spendAdBalance({ advertisementId, amount: 1.5 })
+      : Promise.resolve();
+
+    // let [updatedStat] = await updateDailyStatPromise;
+    // await addViewPromise;
+    // await spendAdBalancePromise;
+
+    let [[updatedStat]] = await Promise.all([
+      updateDailyStatPromise,
+      addAdViewCountPromise,
+      spendAdBalancePromise,
+    ]);
 
     console.log(
       `User ${userId} watched a video. Remaining views: ${updatedStat.remainingViews}, Next box in: ${updatedStat.nextTreasureBoxIn}`

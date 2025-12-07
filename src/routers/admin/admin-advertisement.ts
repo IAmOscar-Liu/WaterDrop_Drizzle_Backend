@@ -43,13 +43,39 @@ const router = Router();
  *             product:
  *               $ref: '#/components/schemas/Product'
  *
+ *     AdvertisementWithProductAndStats:
+ *       allOf:
+ *         - $ref: '#/components/schemas/Advertisement'
+ *         - type: object
+ *           properties:
+ *             stats:
+ *               $ref: '#/components/schemas/AdvertisementBudgetStatus'
+ *               nullable: true
+ *             product:
+ *               $ref: '#/components/schemas/Product'
+ *
+ *     AdvertisementWithProductAndDetails:
+ *       allOf:
+ *         - $ref: '#/components/schemas/Advertisement'
+ *         - type: object
+ *           properties:
+ *             stats:
+ *               $ref: '#/components/schemas/AdvertisementBudgetStatus'
+ *               nullable: true
+ *             transactions:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/AdvertisementTransaction'
+ *             product:
+ *               $ref: '#/components/schemas/Product'
+ *
  *     ListAdvertisementsResponse:
  *       type: object
  *       properties:
  *         advertisements:
  *           type: array
  *           items:
- *             $ref: '#/components/schemas/AdvertisementWithProduct'
+ *             $ref: '#/components/schemas/AdvertisementWithProductAndStats'
  *         total:
  *           type: integer
  *         page:
@@ -58,6 +84,52 @@ const router = Router();
  *           type: integer
  *         totalPages:
  *           type: integer
+ *
+ *     AdvertisementBudgetStatus:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: string
+ *           format: uuid
+ *         advertisementId:
+ *           type: string
+ *           format: uuid
+ *         balance:
+ *           type: number
+ *         totalSpent:
+ *           type: number
+ *         status:
+ *           type: string
+ *           enum: [active, paused, depleted, archived]
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *         updatedAt:
+ *           type: string
+ *           format: date-time
+ *
+ *     AdvertisementTransaction:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: string
+ *           format: uuid
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *         metadata:
+ *           type: object
+ *           description: Transaction metadata.
+ *         advertisementId:
+ *           type: string
+ *           format: uuid
+ *         amount:
+ *           type: number
+ *         type:
+ *           type: string
+ *           enum: [deposit]
+ *
+ *
  */
 
 /**
@@ -93,6 +165,37 @@ const router = Router();
  *                   $ref: '#/components/schemas/ListAdvertisementsResponse'
  */
 router.get("/list", isAuth, AdvertisementController.listAdminAdvertisements);
+
+/**
+ * @swagger
+ * /api/admin/advertisement/{id}:
+ *   get:
+ *     tags: [Advertisement]
+ *     summary: Get an advertisement by ID
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: The ID of the advertisement.
+ *     responses:
+ *       '200':
+ *         description: The requested advertisement.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/AdvertisementWithProductAndDetails'
+ */
+router.get("/:id", isAuth, AdvertisementController.getAdvertisement);
 
 /**
  * @swagger
@@ -241,5 +344,88 @@ router.put("/:id", isAuth, AdvertisementController.updateAdvertisement);
  *                           description: The total number of views.
  */
 router.get("/:id/view-count", isAuth, AdvertisementController.getAdViewCount);
+
+/**
+ * @swagger
+ * /api/admin/advertisement/deposit/{id}:
+ *   put:
+ *     tags: [Advertisement]
+ *     summary: Increase advertisement balance
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [amount]
+ *             properties:
+ *               amount:
+ *                 type: number
+ *                 description: The amount to add to the advertisement's balance.
+ *     responses:
+ *       '200':
+ *         description: The updated advertisement budget and status details.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/AdvertisementBudgetStatus'
+ */
+router.put("/deposit/:id", isAuth, AdvertisementController.depositAdBalance);
+
+/**
+ * @swagger
+ * /api/admin/advertisement/status/{id}:
+ *   put:
+ *     tags: [Advertisement]
+ *     summary: Update advertisement status
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [status]
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [active, paused, depleted, archived]
+ *                 description: The new status for the advertisement.
+ *     responses:
+ *       '200':
+ *         description: The advertisement with the updated status.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/AdvertisementBudgetStatus'
+ */
+router.put("/status/:id", isAuth, AdvertisementController.setAdStatus);
 
 export default router;

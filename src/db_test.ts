@@ -55,7 +55,6 @@ async function main() {
     const adResults = await listAdvertisements({
       page: 1,
       limit: 20,
-      shuffle: true,
     });
     console.log(JSON.stringify(adResults, null, 2));
 

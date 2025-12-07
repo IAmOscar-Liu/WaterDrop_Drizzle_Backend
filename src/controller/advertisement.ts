@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import advertisementService from "../services/advertisement";
 import { sendJsonResponse } from "../lib/general";
+import { RequestWithId } from "../type/request";
 
 class AdvertisementController {
   async listAdvertisements(req: Request, res: Response): Promise<any> {
@@ -8,20 +9,26 @@ class AdvertisementController {
     const result = await advertisementService.listAdvertisements({
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
-      shuffle: true,
-      activeProductOnly: true,
     });
     sendJsonResponse(res, result);
   }
 
-  async listAdminAdvertisements(req: Request, res: Response): Promise<any> {
+  async listAdminAdvertisements(
+    req: RequestWithId,
+    res: Response
+  ): Promise<any> {
     const { page, limit } = req.query;
-    const result = await advertisementService.listAdvertisements({
+    const result = await advertisementService.listAdminAdvertisements({
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
-      shuffle: false,
-      activeProductOnly: false,
+      sellerId: req.userId ?? "",
     });
+    sendJsonResponse(res, result);
+  }
+
+  async getAdvertisement(req: Request, res: Response): Promise<any> {
+    const { id } = req.params;
+    const result = await advertisementService.getAdvertisement(id);
     sendJsonResponse(res, result);
   }
 
@@ -54,6 +61,27 @@ class AdvertisementController {
       endAt: endAt
         ? new Date(typeof endAt === "number" ? endAt : String(endAt))
         : undefined,
+    });
+    sendJsonResponse(res, result);
+  }
+
+  async depositAdBalance(req: Request, res: Response): Promise<any> {
+    const { id } = req.params;
+    const { amount, metadata } = req.body;
+    const result = await advertisementService.depositAdBalance({
+      advertisementId: id,
+      amount,
+      metadata,
+    });
+    sendJsonResponse(res, result);
+  }
+
+  async setAdStatus(req: Request, res: Response): Promise<any> {
+    const { id } = req.params;
+    const { status } = req.body;
+    const result = await advertisementService.setAdStatus({
+      advertisementId: id,
+      status,
     });
     sendJsonResponse(res, result);
   }

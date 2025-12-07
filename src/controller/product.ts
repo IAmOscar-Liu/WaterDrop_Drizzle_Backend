@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { sendJsonResponse } from "../lib/general";
 import productService from "../services/product";
 import { ListProductsParams } from "../repository/product";
+import { RequestWithId } from "../type/request";
 
 class ProductController {
   async listCategory(_: Request, res: Response): Promise<any> {
@@ -16,8 +17,7 @@ class ProductController {
   }
 
   async listProducts(req: Request, res: Response): Promise<any> {
-    const { page, limit, categoryId, search, status, minPrice, maxPrice } =
-      req.query;
+    const { page, limit, categoryId, search, minPrice, maxPrice } = req.query;
     const result = await productService.listProducts({
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
@@ -30,7 +30,7 @@ class ProductController {
     sendJsonResponse(res, result);
   }
 
-  async listAdminProducts(req: Request, res: Response): Promise<any> {
+  async listAdminProducts(req: RequestWithId, res: Response): Promise<any> {
     const { page, limit, categoryId, search, status, minPrice, maxPrice } =
       req.query;
     const result = await productService.listProducts({
@@ -38,6 +38,7 @@ class ProductController {
       limit: limit ? Number(limit) : undefined,
       categoryId: categoryId ? String(categoryId) : undefined,
       search: search ? String(search) : undefined,
+      sellerId: req.userId ?? "",
       status: status
         ? (String(status) as ListProductsParams["status"])
         : undefined,
