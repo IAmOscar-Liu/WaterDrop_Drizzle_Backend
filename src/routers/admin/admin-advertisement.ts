@@ -35,6 +35,15 @@ const router = Router();
  *           type: string
  *           format: date-time
  *
+ *     AdvertisementWithCount:
+ *       allOf:
+ *         - $ref: '#/components/schemas/Advertisement'
+ *         - type: object
+ *           properties:
+ *             count:
+ *               type: integer
+ *               description: The view count for the advertisement within the specified date range.
+ *
  *     AdvertisementWithProduct:
  *       allOf:
  *         - $ref: '#/components/schemas/Advertisement'
@@ -281,6 +290,77 @@ router.post("/create", isAuth, AdvertisementController.createAdvertisement);
  *                   $ref: '#/components/schemas/Advertisement'
  */
 router.put("/:id", isAuth, AdvertisementController.updateAdvertisement);
+
+/**
+ * @swagger
+ * /api/admin/advertisement/list/view-count:
+ *   get:
+ *     tags: [Advertisement]
+ *     summary: List all advertisements for a seller with their view counts
+ *     description: Retrieves all advertisements for the authenticated seller, each with a view count calculated for an optional date range.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *       - in: query
+ *         name: startAt
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Optional start date (ISO 8601 format) to filter view counts.
+ *       - in: query
+ *         name: endAt
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Optional end date (ISO 8601 format) to filter view counts.
+ *     responses:
+ *       '200':
+ *         description: A list of the seller's advertisements with their respective view counts.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     startAt:
+ *                       type: string
+ *                       format: date-time
+ *                       nullable: true
+ *                     endAt:
+ *                       type: string
+ *                       format: date-time
+ *                       nullable: true
+ *                     total:
+ *                       type: integer
+ *                     page:
+ *                       type: integer
+ *                     limit:
+ *                       type: integer
+ *                     totalPages:
+ *                       type: integer
+ *                     advertisements:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/AdvertisementWithCount'
+ *
+ *
+ *
+ */
+router.get("/list/view-count", isAuth, AdvertisementController.listAdViewCount);
 
 /**
  * @swagger

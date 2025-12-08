@@ -1,18 +1,20 @@
+import * as schema from "../db/schema";
 import { handleServiceError } from "../lib/error";
 import {
+  createAdvertisement,
+  depositAdBalance,
+  getAdvertisement,
+  getAdViewCount,
+  listAdminAdvertisements,
+  ListAdminAdvertisementsParams,
   listAdvertisements,
   ListAdvertisementsParams,
-  ListAdminAdvertisementsParams,
-  listAdminAdvertisements,
-  getAdvertisement,
-  createAdvertisement,
-  updateAdvertisementById,
-  getAdViewCount,
-  depositAdBalance,
+  listAdViewCount,
+  ListAdViewCountParams,
   setAdStatus,
+  updateAdvertisementById,
 } from "../repository/advertisement";
 import { ServiceResponse } from "../type/general";
-import * as schema from "../db/schema";
 
 class AdvertisementService {
   async listAdvertisements(
@@ -125,6 +127,17 @@ class AdvertisementService {
   }): Promise<ServiceResponse<Awaited<ReturnType<typeof getAdViewCount>>>> {
     try {
       const count = await getAdViewCount(input);
+      return { success: true, data: count };
+    } catch (error) {
+      return handleServiceError(error);
+    }
+  }
+
+  async listAdViewCount(
+    input: ListAdViewCountParams
+  ): Promise<ServiceResponse<Awaited<ReturnType<typeof listAdViewCount>>>> {
+    try {
+      const count = await listAdViewCount(input);
       return { success: true, data: count };
     } catch (error) {
       return handleServiceError(error);

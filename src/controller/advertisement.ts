@@ -65,6 +65,22 @@ class AdvertisementController {
     sendJsonResponse(res, result);
   }
 
+  async listAdViewCount(req: RequestWithId, res: Response): Promise<any> {
+    const { page, limit, startAt, endAt } = req.query;
+    const result = await advertisementService.listAdViewCount({
+      sellerId: req.userId ?? "",
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+      startAt: startAt
+        ? new Date(typeof startAt === "number" ? startAt : String(startAt))
+        : undefined,
+      endAt: endAt
+        ? new Date(typeof endAt === "number" ? endAt : String(endAt))
+        : undefined,
+    });
+    sendJsonResponse(res, result);
+  }
+
   async depositAdBalance(req: Request, res: Response): Promise<any> {
     const { id } = req.params;
     const { amount, metadata } = req.body;

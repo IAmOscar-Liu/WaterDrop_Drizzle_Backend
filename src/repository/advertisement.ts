@@ -251,6 +251,96 @@ export async function getAdViewCount({
   };
 }
 
+export interface ListAdViewCountParams {
+  page?: number;
+  limit?: number;
+  sellerId: string;
+  startAt?: Date;
+  endAt?: Date;
+}
+
+/**
+ * Lists all advertisements along with their view counts within an optional date range.
+ * Ads with zero views in the range are included.
+ * @param params Optional start and end dates for filtering the view counts.
+ * @returns A list of advertisements, each with its associated view count for the period.
+ */
+export async function listAdViewCount({
+  sellerId,
+  page = 1,
+  limit = 10,
+  startAt,
+  endAt,
+}: ListAdViewCountParams) {
+  const conditions = [];
+  const offset = (page - 1) * limit;
+  if (startAt) conditions.push(gte(schema.adViewCountTable.createdAt, startAt));
+  if (endAt) conditions.push(lte(schema.adViewCountTable.createdAt, endAt));
+
+  // Subquery to get view counts within the date range
+  const viewCountsSubquery = db
+    .select({
+      advertisementId: schema.adViewCountTable.advertisementId,
+      count: sql<number>`count(${schema.adViewCountTable.id})`
+        .mapWith(Number)
+        .as("view_count"),
+    })
+    .from(schema.adViewCountTable)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .groupBy(schema.adViewCountTable.advertisementId)
+    .as("view_counts");
+
+  const whereClause = eq(schema.productTable.sellerId, sellerId);
+
+  // Query for total count
+  const totalResult = await db
+    .select({ total: count() })
+    .from(schema.advertisementTable)
+    .leftJoin(
+      schema.productTable,
+      eq(schema.advertisementTable.productId, schema.productTable.id)
+    )
+    .where(whereClause);
+
+  const total = totalResult[0].total;
+  const totalPages = Math.ceil(total / limit);
+
+  const results = await db
+    .select({
+      advertisement: schema.advertisementTable,
+      count: sql<number>`coalesce(${viewCountsSubquery.count}, 0)`.mapWith(
+        Number
+      ),
+    })
+    .from(schema.advertisementTable)
+    .leftJoin(
+      viewCountsSubquery,
+      eq(schema.advertisementTable.id, viewCountsSubquery.advertisementId)
+    )
+    .leftJoin(
+      schema.productTable,
+      eq(schema.advertisementTable.productId, schema.productTable.id)
+    )
+    .where(whereClause)
+    .limit(limit)
+    .offset(offset);
+
+  const advertisements = results.map((r) => ({
+    ...r.advertisement,
+    count: r.count,
+  }));
+
+  return {
+    startAt: startAt ?? null,
+    endAt: endAt ?? null,
+    advertisements,
+    total,
+    page,
+    limit,
+    totalPages,
+  };
+}
+
 /**
  * Increases the balance of an advertisement and records the transaction.
  * @param params The advertisement ID, amount to add, and optional metadata.
