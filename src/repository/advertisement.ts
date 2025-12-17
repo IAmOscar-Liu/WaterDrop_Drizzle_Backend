@@ -59,6 +59,7 @@ export async function listAdvertisements({
   const offset = (page - 1) * limit;
 
   const whereClause = and(
+    eq(schema.productTable.status, "active"),
     eq(schema.advertisementStatsTable.status, "active"),
     gte(schema.advertisementStatsTable.balance, 100)
   );
