@@ -52,6 +52,8 @@ const router = Router();
  *           format: double
  *         stock:
  *           type: integer
+ *         reserve:
+ *           type: integer
  *         images:
  *           type: array
  *           items:
@@ -286,9 +288,6 @@ router.get("/:id", isAuth, ProductController.getProduct);
  *               stock:
  *                 type: integer
  *                 example: 100
- *               reserve:
- *                 type: integer
- *                 example: 0
  *               images:
  *                 type: array
  *                 items:
