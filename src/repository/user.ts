@@ -45,10 +45,12 @@ export async function createUser(
     .returning();
   console.log("New user created with id:", newUser.id);
 
-  return await db
+  await db
     .insert(schema.userDailyStatTable)
     .values({ userId: newUser.id })
     .returning();
+
+  return newUser;
 }
 
 export async function getUsers() {

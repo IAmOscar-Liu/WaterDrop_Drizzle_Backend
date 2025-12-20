@@ -286,6 +286,9 @@ router.get("/:id", isAuth, ProductController.getProduct);
  *               stock:
  *                 type: integer
  *                 example: 100
+ *               reserve:
+ *                 type: integer
+ *                 example: 0
  *               images:
  *                 type: array
  *                 items:

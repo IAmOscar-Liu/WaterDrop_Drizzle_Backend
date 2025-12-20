@@ -14,12 +14,19 @@ import db from "../lib/initDB";
 export async function createAdvertisement(
   advertisementData: schema.NewAdvertisement
 ) {
-  const [newAd] = await db
-    .insert(schema.advertisementTable)
-    .values(advertisementData)
-    .returning();
-  console.log("New advertisement created:", newAd.id);
-  return newAd;
+  return await db.transaction(async (tx) => {
+    const [newAd] = await tx
+      .insert(schema.advertisementTable)
+      .values(advertisementData)
+      .returning();
+
+    await tx.insert(schema.advertisementStatsTable).values({
+      advertisementId: newAd.id,
+    });
+
+    console.log("New advertisement created:", newAd.id);
+    return newAd;
+  });
 }
 
 /**
