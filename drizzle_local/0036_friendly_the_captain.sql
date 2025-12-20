@@ -1,0 +1,1 @@
+ALTER TABLE "products" ADD COLUMN "reserve" integer DEFAULT 0 NOT NULL;

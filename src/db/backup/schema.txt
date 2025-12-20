@@ -26,7 +26,11 @@ export const oauthProviderEnum = pgEnum("oauth_provider", [
   "other",
 ]);
 
-export const accountRoleEnum = pgEnum("account_role", ["admin", "seller"]);
+export const accountRoleEnum = pgEnum("account_role", [
+  "admin",
+  "seller",
+  "employee",
+]);
 export const accountStatusEnum = pgEnum("account_status", [
   "active",
   "inactive",
@@ -49,6 +53,14 @@ export const orderStatusEnum = pgEnum("order_status", [
   "paid",
   "failed",
 ]);
+
+export const advertisementStatusEnum = pgEnum("advertisement_status", [
+  "active",
+  "paused",
+  "depleted",
+  "archived",
+]);
+export const transactionTypeEnum = pgEnum("transaction_type", ["deposit"]);
 
 export const chatRoomStatusEnum = pgEnum("chat_room_status", [
   "active",
@@ -273,6 +285,46 @@ export const advertisementTable = pgTable("advertisements", {
     .$onUpdate(() => new Date())
     .notNull(),
 });
+
+export const advertisementStatsTable = pgTable("advertisement_stats", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  advertisementId: uuid("advertisement_id")
+    .notNull()
+    .references(() => advertisementTable.id, { onDelete: "cascade" })
+    .unique(),
+  balance: doublePrecision("balance").notNull().default(0),
+  totalSpent: doublePrecision("total_spent").notNull().default(0),
+  status: advertisementStatusEnum("status").default("paused").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+});
+
+export const advertisementTransactionTable = pgTable(
+  "advertisement_transactions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    advertisementId: uuid("advertisement_id")
+      .notNull()
+      .references(() => advertisementTable.id, { onDelete: "cascade" }),
+    amount: doublePrecision("amount").notNull(),
+    type: transactionTypeEnum("type").default("deposit").notNull(),
+    metadata: jsonb("metadata"), // For payment details, etc.
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => ({
+    // Index for quickly finding transactions for an advertisement
+    adIdIdx: index("advertisement_transactions_ad_id_idx").on(
+      t.advertisementId
+    ),
+  })
+);
 
 export const cartItemTable = pgTable(
   "cart_items",
@@ -618,6 +670,8 @@ export const advertisementRelations = relations(
       references: [productTable.id],
     }),
     views: many(adViewCountTable),
+    stats: one(advertisementStatsTable),
+    transactions: many(advertisementTransactionTable),
   })
 );
 
@@ -649,6 +703,26 @@ export const adViewCountRelations = relations(adViewCountTable, ({ one }) => ({
     references: [advertisementTable.id],
   }),
 }));
+
+export const advertisementStatsRelations = relations(
+  advertisementStatsTable,
+  ({ one }) => ({
+    advertisement: one(advertisementTable, {
+      fields: [advertisementStatsTable.advertisementId],
+      references: [advertisementTable.id],
+    }),
+  })
+);
+
+export const advertisementTransactionRelations = relations(
+  advertisementTransactionTable,
+  ({ one }) => ({
+    advertisement: one(advertisementTable, {
+      fields: [advertisementTransactionTable.advertisementId],
+      references: [advertisementTable.id],
+    }),
+  })
+);
 
 export const collectionRelations = relations(collectionTable, ({ one }) => ({
   user: one(userTable, {
@@ -744,6 +818,14 @@ export type NewProduct = typeof productTable.$inferInsert;
 
 export type Advertisement = typeof advertisementTable.$inferSelect;
 export type NewAdvertisement = typeof advertisementTable.$inferInsert;
+
+export type AdvertisementStats = typeof advertisementStatsTable.$inferSelect;
+export type NewAdvertisementStats = typeof advertisementStatsTable.$inferInsert;
+
+export type AdvertisementTransaction =
+  typeof advertisementTransactionTable.$inferSelect;
+export type NewAdvertisementTransaction =
+  typeof advertisementTransactionTable.$inferInsert;
 
 export type ProductToCategory = typeof productsToCategoriesTable.$inferSelect;
 export type NewProductToCategory =

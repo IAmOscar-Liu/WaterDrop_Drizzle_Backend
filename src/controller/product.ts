@@ -26,6 +26,7 @@ class ProductController {
       status: "active",
       minPrice: minPrice ? Number(minPrice) : undefined,
       maxPrice: maxPrice ? Number(maxPrice) : undefined,
+      hasStock: true,
     });
     sendJsonResponse(res, result);
   }

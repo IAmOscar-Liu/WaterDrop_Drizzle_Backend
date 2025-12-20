@@ -26,7 +26,11 @@ export const oauthProviderEnum = pgEnum("oauth_provider", [
   "other",
 ]);
 
-export const accountRoleEnum = pgEnum("account_role", ["admin", "seller"]);
+export const accountRoleEnum = pgEnum("account_role", [
+  "admin",
+  "seller",
+  "employee",
+]);
 export const accountStatusEnum = pgEnum("account_status", [
   "active",
   "inactive",
@@ -48,6 +52,8 @@ export const orderStatusEnum = pgEnum("order_status", [
   "pending",
   "paid",
   "failed",
+  "expired",
+  "canceled",
 ]);
 
 export const advertisementStatusEnum = pgEnum("advertisement_status", [
@@ -75,6 +81,18 @@ export const notificationTypeEnum = pgEnum("notification_type", [
 export const groupTable = pgTable("groups", {
   id: uuid("id").defaultRandom().primaryKey(),
   ownerId: uuid("owner_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+});
+
+export const accountGroupTable = pgTable("account_groups", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  parentId: uuid("parent_id").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -138,7 +156,30 @@ export const accountTable = pgTable("accounts", {
   role: accountRoleEnum("role").notNull().default("seller"),
   phone: text("phone"),
   address: text("address"),
+  accountGroupId: uuid("account_group_id").references(
+    () => accountGroupTable.id
+  ),
   status: accountStatusEnum("status").default("active").notNull(),
+  lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+});
+
+export const accountWalletTable = pgTable("account_wallets", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  accountId: uuid("account_id")
+    .notNull()
+    .references(() => accountTable.id)
+    .unique(),
+  walletBalance: doublePrecision("wallet_balance").default(0).notNull(),
+  totalRevenueCash: doublePrecision("total_revenue_cash").default(0).notNull(),
+  totalRevenueCoin: doublePrecision("total_revenue_coin").default(0).notNull(),
+  lockedBalance: doublePrecision("locked_balance").default(0).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -252,6 +293,7 @@ export const productTable = pgTable("products", {
   description: text("description").notNull(),
   price: doublePrecision("price").notNull(),
   stock: integer("stock").notNull(),
+  reserve: integer("reserve").notNull().default(0),
   images: text("images").array(),
   status: productStatusEnum("status").default("active").notNull(),
   metadata: jsonb("metadata"),
@@ -558,9 +600,17 @@ export const userNotificationTable = pgTable(
 );
 
 // Relations
-export const accountRelations = relations(accountTable, ({ many }) => ({
+export const accountRelations = relations(accountTable, ({ one, many }) => ({
   products: many(productTable),
   chatRooms: many(chatRoomTable),
+  group: one(accountGroupTable, {
+    fields: [accountTable.accountGroupId],
+    references: [accountGroupTable.id],
+  }),
+  wallet: one(accountWalletTable, {
+    fields: [accountTable.id],
+    references: [accountWalletTable.accountId],
+  }),
 }));
 
 export const usersRelations = relations(userTable, ({ one, many }) => ({
@@ -590,6 +640,27 @@ export const groupsRelations = relations(groupTable, ({ one, many }) => ({
   }),
   users: many(userTable),
 }));
+
+export const accountGroupRelations = relations(
+  accountGroupTable,
+  ({ one, many }) => ({
+    parent: one(accountTable, {
+      fields: [accountGroupTable.parentId],
+      references: [accountTable.id],
+    }),
+    accounts: many(accountTable),
+  })
+);
+
+export const accountWalletRelations = relations(
+  accountWalletTable,
+  ({ one }) => ({
+    account: one(accountTable, {
+      fields: [accountWalletTable.accountId],
+      references: [accountTable.id],
+    }),
+  })
+);
 
 export const userDailyStatRelations = relations(
   userDailyStatTable,
@@ -800,6 +871,9 @@ export type NewUser = typeof userTable.$inferInsert;
 export type Group = typeof groupTable.$inferSelect;
 export type NewGroup = typeof groupTable.$inferInsert;
 
+export type AccountGroup = typeof accountGroupTable.$inferSelect;
+export type NewAccountGroup = typeof accountGroupTable.$inferInsert;
+
 export type UserDailyStat = typeof userDailyStatTable.$inferSelect;
 export type NewUserDailyStat = typeof userDailyStatTable.$inferInsert;
 
@@ -835,6 +909,9 @@ export type NewCollection = typeof collectionTable.$inferInsert;
 
 export type Account = typeof accountTable.$inferSelect;
 export type NewAccount = typeof accountTable.$inferInsert;
+
+export type AccountWallet = typeof accountWalletTable.$inferSelect;
+export type NewAccountWallet = typeof accountWalletTable.$inferInsert;
 
 export type ChatRoom = typeof chatRoomTable.$inferSelect;
 export type NewChatRoom = typeof chatRoomTable.$inferInsert;

@@ -128,10 +128,11 @@ class OrderService {
 
   async updateOrderStatus(
     orderId: string,
-    status: Exclude<schema.Order["orderStatus"], undefined>
+    status: Exclude<schema.Order["orderStatus"], undefined>,
+    metadata?: any
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof updateOrderStatus>>>> {
     try {
-      const order = await updateOrderStatus(orderId, status);
+      const order = await updateOrderStatus(orderId, status, metadata);
       if (order) {
         return { success: true, data: order };
       } else {

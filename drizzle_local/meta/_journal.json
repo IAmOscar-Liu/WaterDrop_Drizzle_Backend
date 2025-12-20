@@ -232,6 +232,34 @@
       "when": 1765117492597,
       "tag": "0032_peaceful_plazm",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1766060656732,
+      "tag": "0033_lowly_hitman",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1766061705236,
+      "tag": "0034_easy_sheva_callister",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1766125016193,
+      "tag": "0035_even_hedge_knight",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1766207212683,
+      "tag": "0036_friendly_the_captain",
+      "breakpoints": true
     }
   ]
 }

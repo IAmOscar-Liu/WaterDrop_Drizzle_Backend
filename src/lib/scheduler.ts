@@ -16,6 +16,7 @@ import {
 } from "./general";
 import { sendMulticastPushNotification } from "./sendNotification";
 import { createNotification } from "../repository/notification";
+import { expireOrders } from "../repository/order";
 
 const RESET_BATCH_SIZE = 100; // Process 100 users at a time. Adjust as needed.
 
@@ -289,6 +290,21 @@ export const monthlyCoinExpirationNotificationTask = cron.schedule(
           timezonesAtSpecificTime.length
         } timezones. Total tokens processed: ${i + batchFcmTokens.length}`
       );
+    }
+  }
+);
+
+export const expireOrdersTask = cron.schedule(
+  "*/30 * * * *", // every 30 minutes
+  async () => {
+    console.log(
+      `30 minute cron job for expireOrdersTask started. Time: ${new Date()}`
+    );
+    try {
+      const result = await expireOrders(30 * 60 * 1000); // 30 minutes ago
+      console.log(`${result.length} orders expired.`);
+    } catch (error) {
+      console.error(`Error during expireOrdersTask:`, error);
     }
   }
 );

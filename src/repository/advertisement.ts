@@ -1,4 +1,4 @@
-import { and, count, eq, gte, lte, sql } from "drizzle-orm";
+import { and, count, eq, gt, gte, lte, sql } from "drizzle-orm";
 
 import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
@@ -60,6 +60,7 @@ export async function listAdvertisements({
 
   const whereClause = and(
     eq(schema.productTable.status, "active"),
+    gt(schema.productTable.stock, schema.productTable.reserve),
     eq(schema.advertisementStatsTable.status, "active"),
     gte(schema.advertisementStatsTable.balance, 100)
   );

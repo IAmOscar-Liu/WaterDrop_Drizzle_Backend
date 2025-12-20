@@ -6,6 +6,7 @@ import swaggerUi from "swagger-ui-express";
 import {
   dailyNotificationTask,
   dailyResetTask,
+  expireOrdersTask,
   monthlyCoinExpirationNotificationTask,
   monthlyCoinStatExpirationTask,
 } from "./lib/scheduler";
@@ -32,6 +33,7 @@ dailyResetTask.start();
 dailyNotificationTask.start();
 monthlyCoinStatExpirationTask.start();
 monthlyCoinExpirationNotificationTask.start();
+expireOrdersTask.start();
 
 console.log("Cron job has been started.");
 

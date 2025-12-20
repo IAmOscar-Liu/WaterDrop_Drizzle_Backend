@@ -1,4 +1,4 @@
-import { and, count, eq, gte, inArray, lt, lte, SQL, sql } from "drizzle-orm";
+import { and, count, eq, gte, inArray, lte, SQL, sql } from "drizzle-orm";
 import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
 import db from "../lib/initDB";
@@ -17,16 +17,10 @@ export async function createOrder(
   return db.transaction(async (tx) => {
     // check if each item's quantity less or equal to (product.stock - product.reserve)
     if (items.length > 0) {
-      // 1. Sort product IDs to prevent deadlocks when locking multiple rows
-      const productIds = items.map((item) => item.productId).sort();
-
-      // 2. Fetch products with "FOR UPDATE" lock
-      // This ensures no other transaction can modify these rows until this transaction commits/rollbacks
-      const products = await tx
-        .select()
-        .from(schema.productTable)
-        .where(inArray(schema.productTable.id, productIds))
-        .for("update");
+      const productIds = items.map((item) => item.productId);
+      const products = await tx.query.productTable.findMany({
+        where: inArray(schema.productTable.id, productIds),
+      });
 
       const productMap = new Map(products.map((p) => [p.id, p]));
 
@@ -40,13 +34,12 @@ export async function createOrder(
             reason: "Not found",
           });
         } else {
-          if (item.quantity > product.stock - product.reserve) {
+          const reserve = product.reserve ?? 0;
+          if (item.quantity > product.stock - reserve) {
             errors.push({
               productId: item.productId,
               productName: item.productNameAtSale,
               reason: "Insufficient stock",
-              quantity: item.quantity,
-              remaining: product.stock - product.reserve,
             });
           }
         }
@@ -103,19 +96,10 @@ export async function updateOrderStatus(
   status: Exclude<schema.NewOrder["orderStatus"], undefined>,
   metadata?: schema.NewOrder["metadata"]
 ) {
+  console.table({ orderId, status });
   return db.transaction(async (tx) => {
     // First, get the order to access its items and user ID
-    const order = await tx.query.orderTable.findFirst({
-      where: eq(schema.orderTable.id, orderId),
-      with: {
-        items: {
-          with: {
-            product: true,
-          },
-        },
-      },
-    });
-
+    const order = await getOrderById(orderId);
     if (!order) throw new CustomError("Order not found", 404);
 
     // If the new status is "paid", remove the corresponding items from the cart
@@ -220,7 +204,12 @@ export async function updateOrderStatus(
           : {}),
       })
       .where(eq(schema.orderTable.id, orderId));
+    // .returning();
 
+    // return updatedOrder;
+    // console.log("getOrderById", updatedOrder);
+    // Return the fully updated order with its relations
+    // return await getOrderById(orderId);
     return tx.query.orderTable.findFirst({
       where: eq(schema.orderTable.id, orderId),
       with: {
@@ -233,25 +222,6 @@ export async function updateOrderStatus(
       },
     });
   });
-}
-
-export async function expireOrders(expireInMs: number) {
-  const cutoffTime = new Date(Date.now() - expireInMs);
-
-  const expiredOrders = await db
-    .select({ id: schema.orderTable.id })
-    .from(schema.orderTable)
-    .where(
-      and(
-        eq(schema.orderTable.orderStatus, "pending"),
-        lt(schema.orderTable.createdAt, cutoffTime)
-      )
-    );
-
-  const results = await Promise.all(
-    expiredOrders.map((order) => updateOrderStatus(order.id, "expired"))
-  );
-  return results;
 }
 
 export interface ListOrdersParams {

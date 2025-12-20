@@ -60,10 +60,11 @@ class OrderController {
 
   async updateOrderStatus(req: Request, res: Response): Promise<any> {
     const { orderId } = req.params;
-    const { status } = req.body;
+    const { status, metadata } = req.body;
     const result = await orderService.updateOrderStatus(
       orderId,
-      status as Exclude<schema.Order["orderStatus"], undefined>
+      status as Exclude<schema.Order["orderStatus"], undefined>,
+      metadata
     );
     sendJsonResponse(res, result);
   }

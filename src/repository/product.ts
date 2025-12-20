@@ -2,6 +2,7 @@ import {
   and,
   count,
   eq,
+  gt,
   gte,
   ilike,
   inArray,
@@ -152,6 +153,35 @@ export async function updateProduct(
   });
 }
 
+export async function decreaseProductStock(
+  productId: string,
+  quantity: number
+) {
+  if (quantity <= 0) {
+    throw new CustomError("Quantity must be positive", 400);
+  }
+
+  const [updatedProduct] = await db
+    .update(schema.productTable)
+    .set({
+      stock: sql`${schema.productTable.stock} - ${quantity}`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(schema.productTable.id, productId),
+        gte(schema.productTable.stock, quantity)
+      )
+    )
+    .returning();
+
+  if (!updatedProduct) {
+    throw new CustomError("Insufficient stock or product not found", 400);
+  }
+
+  return updatedProduct;
+}
+
 export interface ListProductsParams {
   page?: number;
   limit?: number;
@@ -161,6 +191,7 @@ export interface ListProductsParams {
   minPrice?: number;
   maxPrice?: number;
   sellerId?: string;
+  hasStock?: boolean;
 }
 
 /**
@@ -177,6 +208,7 @@ export async function listProducts({
   sellerId,
   minPrice,
   maxPrice,
+  hasStock,
 }: ListProductsParams) {
   const offset = (page - 1) * limit;
   const conditions: (SQL | undefined)[] = [];
@@ -217,6 +249,10 @@ export async function listProducts({
 
   if (maxPrice !== undefined) {
     conditions.push(lte(schema.productTable.price, maxPrice));
+  }
+
+  if (hasStock) {
+    conditions.push(gt(schema.productTable.stock, schema.productTable.reserve));
   }
 
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
