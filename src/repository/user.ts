@@ -169,6 +169,17 @@ export async function upsertDeviceToken(userId: string, fcmToken: string) {
   return deviceToken;
 }
 
+export async function deleteUnusedDeviceTokens(unusedInMs: number) {
+  const cutoffTime = new Date(Date.now() - unusedInMs);
+
+  const deletedTokens = await db
+    .delete(schema.deviceTokenTable)
+    .where(lt(schema.deviceTokenTable.lastUsedAt, cutoffTime))
+    .returning();
+
+  return deletedTokens;
+}
+
 export async function setMonthlyCoinExpire(userIds: string[], month: string) {
   const monthlyCoinStats = await db
     .update(schema.userMonthlyCoinStatTable)

@@ -1,6 +1,7 @@
 import cron from "node-cron";
 import { resetDailyStats } from "../repository/treasureBox";
 import {
+  deleteUnusedDeviceTokens,
   getFcmTokensInUserIds,
   getUserIdsInTimezones,
   getUserMonthlyCoinStatsInUserIds,
@@ -290,6 +291,22 @@ export const monthlyCoinExpirationNotificationTask = cron.schedule(
           timezonesAtSpecificTime.length
         } timezones. Total tokens processed: ${i + batchFcmTokens.length}`
       );
+    }
+  }
+);
+
+export const deleteUnusedDeviceTokensTask = cron.schedule(
+  "0 * * * *", // every hour
+  async () => {
+    console.log(
+      `Hourly cron job for deleteUnusedDeviceTokensTask started. Time: ${new Date()}`
+    );
+
+    try {
+      const result = await deleteUnusedDeviceTokens(60 * 24 * 60 * 60 * 1000); // 2 months ago
+      console.log(`Deleted ${result.length} unused device tokens.`);
+    } catch (error) {
+      console.error(`Error during deleteUnusedDeviceTokensTask:`, error);
     }
   }
 );
