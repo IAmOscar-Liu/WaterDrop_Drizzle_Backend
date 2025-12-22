@@ -477,6 +477,7 @@ export const orderItemTable = pgTable(
       .references(() => productTable.id),
 
     quantity: integer("quantity").notNull(),
+    pendingQuantity: integer("pending_quantity").notNull().default(0),
 
     // --- The key fields to handle price change ---
     // 1. Store the price at the time of sale:
@@ -490,6 +491,10 @@ export const orderItemTable = pgTable(
 
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .$onUpdate(() => new Date())
       .notNull(),
   },
   (t) => ({

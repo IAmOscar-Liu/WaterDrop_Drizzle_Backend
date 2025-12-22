@@ -260,6 +260,20 @@
       "when": 1766207212683,
       "tag": "0036_friendly_the_captain",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1766416643821,
+      "tag": "0037_right_valkyrie",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1766417624602,
+      "tag": "0038_goofy_the_anarchist",
+      "breakpoints": true
     }
   ]
 }

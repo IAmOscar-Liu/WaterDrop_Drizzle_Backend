@@ -1,0 +1,2 @@
+ALTER TABLE "order_items" ADD COLUMN "pending_quantity" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "order_items" ADD COLUMN "updated_at" timestamp with time zone DEFAULT now() NOT NULL;

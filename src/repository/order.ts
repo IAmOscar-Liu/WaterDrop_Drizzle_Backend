@@ -68,6 +68,7 @@ export async function createOrder(
     await tx.insert(schema.orderItemTable).values(
       items.map((item) => ({
         ...item,
+        pendingQuantity: item.quantity,
         orderId: newOrder.id,
         lineTotal: item.unitPriceAtSale * item.quantity,
       }))
@@ -129,11 +130,20 @@ export async function updateOrderStatus(
             tx
               .update(schema.productTable)
               .set({
-                reserve: sql`COALESCE(${schema.productTable.reserve}, 0) - ${item.quantity}`,
-                stock: sql`COALESCE(${schema.productTable.stock}, 0) - ${item.quantity}`,
+                reserve: sql`COALESCE(${schema.productTable.reserve}, 0) - ${item.pendingQuantity}`,
+                stock: sql`COALESCE(${schema.productTable.stock}, 0) - ${item.pendingQuantity}`,
                 updatedAt: new Date(),
               })
               .where(eq(schema.productTable.id, item.productId))
+          );
+          promises.push(
+            tx
+              .update(schema.orderItemTable)
+              .set({
+                pendingQuantity: 0,
+                updatedAt: new Date(),
+              })
+              .where(eq(schema.orderItemTable.id, item.id))
           );
         }
       }
@@ -197,10 +207,19 @@ export async function updateOrderStatus(
             tx
               .update(schema.productTable)
               .set({
-                reserve: sql`COALESCE(${schema.productTable.reserve}, 0) - ${item.quantity}`,
+                reserve: sql`COALESCE(${schema.productTable.reserve}, 0) - ${item.pendingQuantity}`,
                 updatedAt: new Date(),
               })
               .where(eq(schema.productTable.id, item.productId))
+          );
+          promises.push(
+            tx
+              .update(schema.orderItemTable)
+              .set({
+                pendingQuantity: 0,
+                updatedAt: new Date(),
+              })
+              .where(eq(schema.orderItemTable.id, item.id))
           );
         }
       }

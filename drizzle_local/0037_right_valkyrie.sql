@@ -1,0 +1,1 @@
+ALTER TABLE "order_items" ADD COLUMN "pending_quantity" integer DEFAULT 0 NOT NULL;
