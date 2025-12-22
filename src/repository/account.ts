@@ -11,9 +11,7 @@ import db from "../lib/initDB";
  * @param accountData The data for the new account.
  * @returns The newly created account.
  */
-export async function createAccount(
-  accountData: schema.NewAccount
-): Promise<Omit<schema.Account, "password">> {
+export async function createAccount(accountData: schema.NewAccount) {
   // In a real app, you would hash the password here.
   // For example, using bcrypt:
   const hashedPassword = await bcrypt.hash(accountData.password, 10);
@@ -25,9 +23,7 @@ export async function createAccount(
     .returning();
   console.log("New account created:", newAccount.id);
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { password, ...accountInfo } = newAccount;
-  return accountInfo;
+  return await getAccountById(newAccount.id);
 }
 
 /**
@@ -40,7 +36,7 @@ export async function createAccount(
 export async function getAccountByEmailAndPassword(
   email: string,
   password: string
-): Promise<Omit<schema.Account, "password">> {
+) {
   const [account] = await db
     .select()
     .from(schema.accountTable)
@@ -58,26 +54,39 @@ export async function getAccountByEmailAndPassword(
     throw new CustomError("Invalid email or password", 404);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { password: _, ...accountInfo } = account;
-  return accountInfo;
+  return await getAccountById(account.id);
 }
 
-export async function getAccountById(
-  accountId: string
-): Promise<Omit<schema.Account, "password">> {
-  const [account] = await db
-    .select()
-    .from(schema.accountTable)
-    .where(eq(schema.accountTable.id, accountId));
+export async function getAccountById(accountId: string): Promise<
+  Omit<schema.Account, "password"> & {
+    parent?: Omit<schema.Account, "password"> | null;
+  }
+> {
+  const account = await db.query.accountTable.findFirst({
+    where: eq(schema.accountTable.id, accountId),
+    with: {
+      group: {
+        with: {
+          parent: true,
+        },
+      },
+    },
+  });
 
   if (!account) {
     throw new CustomError("Account not found", 404);
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { password: _, ...accountInfo } = account;
-  return accountInfo;
+  const { password: _, group, ...accountInfo } = account;
+  const { password: __, ...parentInfo } = account.group?.parent ?? {};
+  return {
+    ...accountInfo,
+    parent:
+      Object.keys(parentInfo).length > 0
+        ? (parentInfo as Omit<schema.Account, "password">)
+        : null,
+  };
 }
 
 export async function isAccountAdmin(accountId: string): Promise<boolean> {
@@ -111,7 +120,7 @@ export async function updateAccount(
       | "updatedAt"
     >
   >
-): Promise<Omit<schema.Account, "password">> {
+) {
   const [updatedAccount] = await db
     .update(schema.accountTable)
     .set({ ...updates, updatedAt: new Date() })
@@ -124,9 +133,7 @@ export async function updateAccount(
 
   console.log("Account updated:", updatedAccount.id);
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { password, ...accountInfo } = updatedAccount;
-  return accountInfo;
+  return await getAccountById(accountId);
 }
 
 export async function updateAccountLastLogin(accountId: string) {
@@ -136,7 +143,11 @@ export async function updateAccountLastLogin(accountId: string) {
     .where(eq(schema.accountTable.id, accountId))
     .returning();
 
-  return updatedAccount;
+  if (!updatedAccount) {
+    throw new CustomError("Account not found", 404);
+  }
+
+  return await getAccountById(accountId);
 }
 
 export async function assignAccountParent(accountId: string, parentId: string) {
@@ -194,7 +205,7 @@ export async function assignAccountParent(accountId: string, parentId: string) {
     `Account "${updatedAccount.name}" has joined group ${accountGroup.id} where parent is "${parentAccount.name}".`
   );
 
-  return updatedAccount;
+  return await getAccountById(accountId);
 }
 
 export async function listAccountEmployees(accountId: string) {
@@ -225,7 +236,7 @@ export async function changeAccountPassword(
   accountId: string,
   oldPassword: string,
   newPassword: string
-): Promise<Omit<schema.Account, "password">> {
+) {
   const [account] = await db
     .select()
     .from(schema.accountTable)
@@ -252,9 +263,7 @@ export async function changeAccountPassword(
 
   if (!updatedAccount) throw new CustomError("Account not found", 404);
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { password, ...accountInfo } = updatedAccount;
-  return accountInfo;
+  return await getAccountById(accountId);
 }
 
 export interface ListAccountsParams {
@@ -304,15 +313,31 @@ export async function listAccounts({
   const totalPages = Math.ceil(total / limit);
 
   // Query for the paginated accounts
-  const accountsWithPassword = await db
-    .select()
-    .from(schema.accountTable)
-    .where(whereClause)
-    .limit(limit)
-    .offset(offset);
+  const accountsWithPassword = await db.query.accountTable.findMany({
+    where: whereClause,
+    with: {
+      group: {
+        with: {
+          parent: true,
+        },
+      },
+    },
+    limit,
+    offset,
+    orderBy: (accounts, { desc }) => [desc(accounts.createdAt)],
+  });
 
   const accounts = accountsWithPassword.map(
-    ({ password, ...accountInfo }) => accountInfo
+    ({ password, group, ...accountInfo }) => {
+      const { password: __, ...parentInfo } = group?.parent ?? {};
+      return {
+        ...accountInfo,
+        parent:
+          Object.keys(parentInfo).length > 0
+            ? (parentInfo as Omit<schema.Account, "password">)
+            : group?.parent ?? null,
+      };
+    }
   );
 
   return { accounts, total, page, limit, totalPages };

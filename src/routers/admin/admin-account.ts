@@ -59,13 +59,23 @@ import isAuth from "../../middleware/isAuth";
  *           format: date-time
  *           description: The date and time the account was last updated.
  *
+ *     AccountWithParent:
+ *       allOf:
+ *         - $ref: '#/components/schemas/Account'
+ *         - type: object
+ *           properties:
+ *             parent:
+ *               $ref: '#/components/schemas/Account'
+ *               nullable: true
+ *               description: The parent account, if this account is an employee.
+ *
  *     ListAccountsResponse:
  *       type: object
  *       properties:
  *         accounts:
  *           type: array
  *           items:
- *             $ref: '#/components/schemas/Account'
+ *             $ref: '#/components/schemas/AccountWithParent'
  *         total:
  *           type: integer
  *           description: Total number of accounts matching the query.
@@ -89,7 +99,7 @@ import isAuth from "../../middleware/isAuth";
  *           type: object
  *           properties:
  *             user:
- *               $ref: '#/components/schemas/Account'
+ *               $ref: '#/components/schemas/AccountWithParent'
  *             token:
  *               type: string
  *               description: JWT access token.
@@ -302,7 +312,7 @@ router.post("/refresh-token", AccountController.refreshToken);
  *                   type: boolean
  *                   example: true
  *                 data:
- *                   $ref: '#/components/schemas/Account'
+ *                   $ref: '#/components/schemas/AccountWithParent'
  *       '401':
  *         description: Unauthorized (e.g., no token provided or token is invalid).
  */
@@ -356,7 +366,7 @@ router.get("/me", isAuth, AccountController.getCurrentUser);
  *                   type: boolean
  *                   example: true
  *                 data:
- *                   $ref: '#/components/schemas/Account'
+ *                   $ref: '#/components/schemas/AccountWithParent'
  *       '401':
  *         description: Unauthorized.
  *       '403':
@@ -403,7 +413,7 @@ router.put("/update", isAuth, AccountController.updateAccount);
  *                   type: boolean
  *                   example: true
  *                 data:
- *                   $ref: '#/components/schemas/Account'
+ *                   $ref: '#/components/schemas/AccountWithParent'
  *       '400':
  *         description: Bad Request (e.g., missing fields).
  *       '401':
@@ -522,7 +532,7 @@ router.get("/list", isAuth, AccountController.listAccounts);
  *                   type: boolean
  *                   example: true
  *                 data:
- *                   $ref: '#/components/schemas/Account'
+ *                   $ref: '#/components/schemas/AccountWithParent'
  *       '404':
  *         description: Account not found.
  *         content:
@@ -564,7 +574,7 @@ router.get("/:id", isAuth, AccountController.getAccount);
  *                   type: boolean
  *                   example: true
  *                 data:
- *                   $ref: '#/components/schemas/Account'
+ *                   $ref: '#/components/schemas/AccountWithParent'
  *       '400':
  *         description: Bad Request (e.g. invalid roles or same IDs).
  *       '404':
