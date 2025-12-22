@@ -13,17 +13,11 @@ import {
 import { ServiceResponse } from "../type/general";
 
 class OrderService {
-  async listOrders({
-    page = 1,
-    limit = 10,
-    userId,
-    statusIn,
-    order = "desc",
-  }: ListOrdersParams): Promise<
-    ServiceResponse<Awaited<ReturnType<typeof listOrders>>>
-  > {
+  async listOrders(
+    params: ListOrdersParams
+  ): Promise<ServiceResponse<Awaited<ReturnType<typeof listOrders>>>> {
     try {
-      const orders = await listOrders({ page, limit, userId, statusIn, order });
+      const orders = await listOrders(params);
       if (orders) {
         return { success: true, data: orders };
       } else {
@@ -38,27 +32,11 @@ class OrderService {
     }
   }
 
-  async listAdminOrders({
-    page = 1,
-    limit = 10,
-    userId,
-    status,
-    order = "desc",
-    startDate,
-    endDate,
-  }: ListAdminOrdersParams): Promise<
-    ServiceResponse<Awaited<ReturnType<typeof listAdminOrders>>>
-  > {
+  async listAdminOrders(
+    params: ListAdminOrdersParams
+  ): Promise<ServiceResponse<Awaited<ReturnType<typeof listAdminOrders>>>> {
     try {
-      const orders = await listAdminOrders({
-        page,
-        limit,
-        userId,
-        status,
-        order,
-        startDate,
-        endDate,
-      });
+      const orders = await listAdminOrders(params);
       if (orders) {
         return { success: true, data: orders };
       } else {

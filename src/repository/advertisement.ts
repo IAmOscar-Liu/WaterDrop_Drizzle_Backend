@@ -3,6 +3,7 @@ import { and, count, eq, gt, gte, lte, sql } from "drizzle-orm";
 import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
 import db from "../lib/initDB";
+import { isAccountAdmin } from "./account";
 
 // --- Advertisement Functions ---
 
@@ -144,8 +145,10 @@ export async function listAdminAdvertisements({
 }: ListAdminAdvertisementsParams) {
   const offset = (page - 1) * limit;
 
-  const whereClause = eq(schema.productTable.sellerId, sellerId);
-  // const whereClause = undefined;
+  const isAdmin = await isAccountAdmin(sellerId);
+  const whereClause = isAdmin
+    ? undefined
+    : eq(schema.productTable.sellerId, sellerId);
 
   // Query for total count
   const totalResult = await db

@@ -3,6 +3,7 @@ import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
 import db from "../lib/initDB";
 import { upsertCartItem } from "./cart";
+import { isAccountAdmin } from "./account";
 
 /**
  * Creates a new order, inserts order items, and updates product reserves.
@@ -312,6 +313,7 @@ export async function listOrders({
 export interface ListAdminOrdersParams {
   page?: number;
   limit?: number;
+  accountId: string;
   userId?: string;
   status: schema.NewOrder["orderStatus"];
   order?: "asc" | "desc";
@@ -322,6 +324,7 @@ export interface ListAdminOrdersParams {
 export async function listAdminOrders({
   page = 1,
   limit = 10,
+  accountId,
   userId,
   status,
   order = "desc",
@@ -330,6 +333,20 @@ export async function listAdminOrders({
 }: ListAdminOrdersParams) {
   const offset = (page - 1) * limit;
   const conditions: (SQL | undefined)[] = [];
+
+  const isAdmin = await isAccountAdmin(accountId);
+  if (!isAdmin) {
+    // Subquery to find order IDs that contain at least one product from the seller
+    const sellerOrderIdsSubquery = db
+      .selectDistinct({ orderId: schema.orderItemTable.orderId })
+      .from(schema.orderItemTable)
+      .innerJoin(
+        schema.productTable,
+        eq(schema.orderItemTable.productId, schema.productTable.id)
+      )
+      .where(eq(schema.productTable.sellerId, accountId));
+    conditions.push(inArray(schema.orderTable.id, sellerOrderIdsSubquery));
+  }
 
   if (userId) {
     conditions.push(eq(schema.orderTable.userId, userId));
@@ -364,6 +381,7 @@ export async function listAdminOrders({
     limit,
     offset,
     with: {
+      items: true,
       user: {
         columns: {
           id: true,

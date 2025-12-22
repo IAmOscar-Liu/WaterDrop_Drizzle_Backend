@@ -14,8 +14,9 @@ import {
 } from "drizzle-orm";
 
 import * as schema from "../db/schema";
-import db from "../lib/initDB";
 import { CustomError } from "../lib/error";
+import db from "../lib/initDB";
+import { isAccountAdmin } from "./account";
 
 // --- Category Functions ---
 
@@ -240,7 +241,10 @@ export async function listProducts({
   }
 
   if (sellerId) {
-    conditions.push(eq(schema.productTable.sellerId, sellerId));
+    const isAdmin = await isAccountAdmin(sellerId);
+    if (!isAdmin) {
+      conditions.push(eq(schema.productTable.sellerId, sellerId));
+    }
   }
 
   if (minPrice !== undefined) {

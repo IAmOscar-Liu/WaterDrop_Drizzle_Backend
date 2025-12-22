@@ -1,7 +1,8 @@
-import { and, count, eq, gte, isNull, lte, ne } from "drizzle-orm";
+import { and, count, eq, gte, isNull, lte, ne, SQL } from "drizzle-orm";
 import * as schema from "../db/schema";
 import db from "../lib/initDB";
 import { CustomError } from "../lib/error";
+import { isAccountAdmin } from "./account";
 
 /**
  * Finds an existing chat room or creates a new one.
@@ -203,9 +204,13 @@ export async function listAdminChatRooms({
   limit = 20,
 }: ListAdminChatRoomsParams) {
   const offset = (page - 1) * limit;
-
+  const conditions: (SQL | undefined)[] = [];
   // Build the conditions for the query
-  const conditions = [eq(schema.chatRoomTable.accountId, accountId)];
+
+  const isAdmin = await isAccountAdmin(accountId);
+  if (!isAdmin) {
+    conditions.push(eq(schema.chatRoomTable.accountId, accountId));
+  }
   if (productId) {
     conditions.push(eq(schema.chatRoomTable.productId, productId));
   }
