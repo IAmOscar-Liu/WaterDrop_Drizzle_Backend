@@ -101,7 +101,15 @@ export async function isAccountAdmin(accountId: string): Promise<boolean> {
 export async function updateAccount(
   accountId: string,
   updates: Partial<
-    Omit<schema.Account, "id" | "password" | "createdAt" | "updatedAt">
+    Omit<
+      schema.Account,
+      | "id"
+      | "accountGroupId"
+      | "password"
+      | "lastLoginAt"
+      | "createdAt"
+      | "updatedAt"
+    >
   >
 ): Promise<Omit<schema.Account, "password">> {
   const [updatedAccount] = await db
@@ -119,6 +127,90 @@ export async function updateAccount(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { password, ...accountInfo } = updatedAccount;
   return accountInfo;
+}
+
+export async function updateAccountLastLogin(accountId: string) {
+  const [updatedAccount] = await db
+    .update(schema.accountTable)
+    .set({ lastLoginAt: new Date() })
+    .where(eq(schema.accountTable.id, accountId))
+    .returning();
+
+  return updatedAccount;
+}
+
+export async function assignAccountParent(accountId: string, parentId: string) {
+  if (accountId === parentId)
+    throw new CustomError("accountId and parentId cannot be the same", 400);
+
+  const [myAccount, parentAccount] = await Promise.all([
+    getAccountById(accountId),
+    getAccountById(parentId),
+  ]);
+  if (!myAccount) throw new CustomError("Account not found", 404);
+  if (!parentAccount)
+    throw new CustomError(`Parent account "${parentId}" not found.`, 404);
+  if (myAccount.role !== "employee")
+    throw new CustomError(
+      "Only employees can be assigned to a parent account",
+      400
+    );
+  if (parentAccount.role !== "admin" && parentAccount.role !== "seller")
+    throw new CustomError(
+      `Parent account "${parentId}" is not an admin or seller.`,
+      400
+    );
+
+  // 2. Find the account group by parentId
+  let [accountGroup] = await db
+    .select()
+    .from(schema.accountGroupTable)
+    .where(eq(schema.accountGroupTable.id, parentId));
+
+  // 3. If account group doesn't exist, create it
+  if (!accountGroup) {
+    console.log(
+      `Parent account ${parentAccount.name} does not have a group, Creating one...`
+    );
+    [accountGroup] = await db
+      .insert(schema.accountGroupTable)
+      .values({ parentId: parentAccount.id })
+      .returning();
+    console.log(`New account group created: ${accountGroup.id}`);
+  }
+
+  // 4. Make current account join the group
+  const [updatedAccount] = await db
+    .update(schema.accountTable)
+    .set({ accountGroupId: accountGroup.id })
+    .where(eq(schema.accountTable.id, accountId))
+    .returning();
+
+  if (!updatedAccount) {
+    throw new CustomError(`Account with id "${accountId}" not found.`, 404);
+  }
+
+  console.log(
+    `Account "${updatedAccount.name}" has joined group ${accountGroup.id} where parent is "${parentAccount.name}".`
+  );
+
+  return updatedAccount;
+}
+
+export async function listAccountEmployees(accountId: string) {
+  const [accountGroup] = await db
+    .select()
+    .from(schema.accountGroupTable)
+    .where(eq(schema.accountGroupTable.parentId, accountId));
+
+  if (!accountGroup) return [];
+
+  const employees = await db
+    .select()
+    .from(schema.accountTable)
+    .where(eq(schema.accountTable.accountGroupId, accountGroup.id));
+
+  return employees.map(({ password, ...accountInfo }) => accountInfo);
 }
 
 /**

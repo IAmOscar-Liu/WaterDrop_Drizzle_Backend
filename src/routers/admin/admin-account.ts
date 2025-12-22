@@ -39,13 +39,17 @@ import isAuth from "../../middleware/isAuth";
  *           description: The address of the account holder.
  *         role:
  *           type: string
- *           enum: [admin, seller]
+ *           enum: [admin, seller, employee]
  *           description: The role of the account.
  *         status:
  *           type: string
  *           enum: [active, inactive, banned]
  *           description: The status of the account.
  *           default: active
+ *         lastLoginAt:
+ *           type: string
+ *           format: date-time
+ *           description: The date and time the account was logged in last time.
  *         createdAt:
  *           type: string
  *           format: date-time
@@ -154,6 +158,9 @@ const router = Router();
  *               address:
  *                 type: string
  *                 example: "123 Main St, Anytown, USA"
+ *               role:
+ *                 type: string
+ *                 enum: [seller, employee]
  *     responses:
  *       '200':
  *         description: Account created successfully. Returns user info and an access token. A refresh token is set in an HTTP-only cookie.
@@ -329,6 +336,9 @@ router.get("/me", isAuth, AccountController.getCurrentUser);
  *                 type: string
  *               address:
  *                 type: string
+ *               role:
+ *                 type: string
+ *                 enum: [seller, employee]
  *               status:
  *                 type: string
  *                 enum: [active, inactive, banned]
@@ -403,6 +413,34 @@ router.put("/change-password", isAuth, AccountController.changeAccountPassword);
 
 /**
  * @swagger
+ * /api/admin/account/list-employees:
+ *   get:
+ *     tags: [Account]
+ *     summary: List employees associated with the current account's group
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       '200':
+ *         description: A list of employee accounts.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Account'
+ *       '401':
+ *         description: Unauthorized.
+ */
+router.get("/list-employees", isAuth, AccountController.listAccountEmployees);
+
+/**
+ * @swagger
  * /api/admin/account/list:
  *   get:
  *     tags: [Account]
@@ -431,7 +469,7 @@ router.put("/change-password", isAuth, AccountController.changeAccountPassword);
  *         name: role
  *         schema:
  *           type: string
- *           enum: [admin, seller]
+ *           enum: [admin, seller, employee]
  *         description: Filter accounts by role.
  *       - in: query
  *         name: status
@@ -493,5 +531,45 @@ router.get("/list", isAuth, AccountController.listAccounts);
  *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.get("/:id", isAuth, AccountController.getAccount);
+
+/**
+ * @swagger
+ * /api/admin/account/assign-parent:
+ *   post:
+ *     tags: [Account]
+ *     summary: Assign an employee account to a parent account (group)
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [parentId]
+ *             properties:
+ *               parentId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: The ID of the parent account (admin or seller).
+ *     responses:
+ *       '200':
+ *         description: Successfully assigned the employee to the parent group.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   $ref: '#/components/schemas/Account'
+ *       '400':
+ *         description: Bad Request (e.g. invalid roles or same IDs).
+ *       '404':
+ *         description: Account not found.
+ */
+router.post("/assign-parent", isAuth, AccountController.assignAccountParent);
 
 export default router;

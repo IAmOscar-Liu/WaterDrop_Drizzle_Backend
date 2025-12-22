@@ -7,7 +7,7 @@ import { isAccountAdmin, ListAccountsParams } from "../repository/account";
 
 class AccountController {
   async register(req: Request, res: Response): Promise<any> {
-    const { name, email, password, phone, address } = req.body;
+    const { name, email, password, phone, address, role } = req.body;
 
     if (!name || !email || !password) {
       return sendJsonResponse(res, {
@@ -31,7 +31,7 @@ class AccountController {
       password,
       phone,
       address,
-      role: "seller", // Assuming 'admin' is a valid role
+      role: role ?? "seller", // Assuming 'admin' is a valid role
     });
     if (result.success) {
       sendRefreshToken(res, result.data);
@@ -200,6 +200,20 @@ class AccountController {
   async getAccount(req: Request, res: Response): Promise<any> {
     const { id } = req.params;
     const result = await accountService.getAdminAccountById(id);
+    sendJsonResponse(res, result);
+  }
+
+  async assignAccountParent(req: RequestWithId, res: Response): Promise<any> {
+    const { parentId } = req.body;
+    const result = await accountService.assignAccountParent(
+      req.userId ?? "",
+      parentId
+    );
+    sendJsonResponse(res, result);
+  }
+
+  async listAccountEmployees(req: RequestWithId, res: Response): Promise<any> {
+    const result = await accountService.listAccountEmployees(req.userId ?? "");
     sendJsonResponse(res, result);
   }
 }

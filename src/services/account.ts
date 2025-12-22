@@ -8,6 +8,9 @@ import {
   updateAccount,
   listAccounts,
   ListAccountsParams,
+  updateAccountLastLogin,
+  assignAccountParent,
+  listAccountEmployees,
 } from "../repository/account";
 import { ServiceResponse } from "../type/general";
 
@@ -16,16 +19,9 @@ class AdminService {
     accountData: schema.NewAccount
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof createAccount>>>> {
     try {
-      const account = await createAccount(accountData); // Replace with real data fetching logic
-      if (account) {
-        return { success: true, data: account };
-      } else {
-        return {
-          success: false,
-          statusCode: 404,
-          message: "account not found",
-        };
-      }
+      let account = await createAccount(accountData); // Replace with real data fetching logic
+      account = await updateAccountLastLogin(account.id);
+      return { success: true, data: account };
     } catch (error) {
       return handleServiceError(error);
     }
@@ -38,16 +34,9 @@ class AdminService {
     ServiceResponse<Awaited<ReturnType<typeof getAccountByEmailAndPassword>>>
   > {
     try {
-      const account = await getAccountByEmailAndPassword(email, password); // Replace with real data fetching logic
-      if (account) {
-        return { success: true, data: account };
-      } else {
-        return {
-          success: false,
-          statusCode: 404,
-          message: "account not found",
-        };
-      }
+      let account = await getAccountByEmailAndPassword(email, password); // Replace with real data fetching logic
+      account = await updateAccountLastLogin(account.id);
+      return { success: true, data: account };
     } catch (error) {
       return handleServiceError(error);
     }
@@ -140,6 +129,31 @@ class AdminService {
           message: "accounts not found",
         };
       }
+    } catch (error) {
+      return handleServiceError(error);
+    }
+  }
+
+  async assignAccountParent(
+    accountId: string,
+    parentId: string
+  ): Promise<ServiceResponse<Awaited<ReturnType<typeof assignAccountParent>>>> {
+    try {
+      const account = await assignAccountParent(accountId, parentId);
+      return { success: true, data: account };
+    } catch (error) {
+      return handleServiceError(error);
+    }
+  }
+
+  async listAccountEmployees(
+    accountId: string
+  ): Promise<
+    ServiceResponse<Awaited<ReturnType<typeof listAccountEmployees>>>
+  > {
+    try {
+      const employees = await listAccountEmployees(accountId);
+      return { success: true, data: employees };
     } catch (error) {
       return handleServiceError(error);
     }
