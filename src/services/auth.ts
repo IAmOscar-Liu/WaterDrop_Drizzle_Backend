@@ -11,6 +11,7 @@ import {
   updateUserTimezone,
   upsertDeviceToken,
   validateReferralCode,
+  updateUserTermsAcceptedAt,
 } from "../repository/user";
 import { ServiceResponse } from "../type/general";
 
@@ -175,6 +176,19 @@ class AuthService {
       } else {
         return { success: false, statusCode: 404, message: "User not found" };
       }
+    } catch (error) {
+      return handleServiceError(error);
+    }
+  }
+
+  async updateTermsAcceptedAt(
+    userId: string
+  ): Promise<
+    ServiceResponse<Awaited<ReturnType<typeof updateUserTermsAcceptedAt>>>
+  > {
+    try {
+      const result = await updateUserTermsAcceptedAt(userId);
+      return { success: true, data: result };
     } catch (error) {
       return handleServiceError(error);
     }

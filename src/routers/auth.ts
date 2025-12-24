@@ -11,6 +11,7 @@ router.post("/device-token", isAuth, AuthController.deviceToken);
 router.get("/daily-stats", isAuth, AuthController.dailyStats);
 router.get("/referral/:referralCode", AuthController.validateReferralCode);
 router.post("/join-group", isAuth, AuthController.joinGroup);
+router.post("/terms-accepted-at", isAuth, AuthController.updateTermsAcceptedAt);
 
 router.post("/reset/daily-stats", isAuth, AuthController.resetDailyStats);
 

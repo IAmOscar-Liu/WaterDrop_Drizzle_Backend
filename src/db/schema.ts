@@ -205,6 +205,7 @@ export const userTable = pgTable(
     phone: text("phone"),
     address: text("address"),
     avatar_url: text("avatar_url"),
+    termsAcceptedAt: timestamp("terms_accepted_at", { withTimezone: true }),
 
     groupId: uuid("group_id").references(() => groupTable.id),
     timezone: text("timezone"),

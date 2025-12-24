@@ -484,3 +484,15 @@ async function getCoinsExpireSoon(userId: string, timezone?: string | null) {
     ? userMonthlyCoinStat.coinsEarned - userMonthlyCoinStat.coinsSpent
     : null;
 }
+
+export async function updateUserTermsAcceptedAt(userId: string) {
+  const [updatedUser] = await db
+    .update(schema.userTable)
+    .set({ termsAcceptedAt: new Date(), updatedAt: new Date() })
+    .where(eq(schema.userTable.id, userId))
+    .returning();
+
+  if (!updatedUser) throw new CustomError("User not found", 404);
+
+  return await getUserById(userId);
+}

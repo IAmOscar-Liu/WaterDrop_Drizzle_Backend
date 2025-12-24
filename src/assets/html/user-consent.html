@@ -211,4 +211,26 @@
       如有任何疑問，請透過App內的「幫助與反饋」與我們聯繫。
     </p>
   </body>
+
+  <script>
+    const sentinel = document.createElement("div");
+    document.body.appendChild(sentinel);
+
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) {
+        if (window.flutter_inappwebview) {
+          window.flutter_inappwebview.callHandler("complete-reading");
+        } else {
+          window.addEventListener(
+            "flutterInAppWebViewPlatformReady",
+            function () {
+              window.flutter_inappwebview.callHandler("complete-reading");
+            }
+          );
+        }
+        observer.disconnect();
+      }
+    });
+    observer.observe(sentinel);
+  </script>
 </html>

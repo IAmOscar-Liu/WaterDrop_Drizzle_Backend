@@ -66,6 +66,11 @@ class AuthController {
     const result = await authService.resetDailyStats(userId);
     sendJsonResponse(res, result);
   }
+
+  async updateTermsAcceptedAt(req: RequestWithId, res: Response): Promise<any> {
+    const result = await authService.updateTermsAcceptedAt(req.userId ?? "");
+    sendJsonResponse(res, result);
+  }
 }
 
 export default new AuthController();
