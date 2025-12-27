@@ -282,6 +282,9 @@ router.get("/:id", isAuth, ProductController.getProduct);
  *               description:
  *                 type: string
  *                 example: "This product is really awesome."
+ *               avatar:
+ *                 type: string
+ *                 example: "http://example.com/avatar.png"
  *               price:
  *                 type: number
  *                 example: 99.99
@@ -355,6 +358,9 @@ router.post("/create", isAuth, ProductController.createProduct);
  *                 type: string
  *               description:
  *                 type: string
+ *               avatar:
+ *                 type: string
+ *                 example: "http://example.com/avatar.png"
  *               price:
  *                 type: number
  *               stock:
