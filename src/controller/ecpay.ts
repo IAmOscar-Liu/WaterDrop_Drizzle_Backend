@@ -23,8 +23,10 @@ class EcPayController {
       ItemName: "測試商品",
       ReturnURL: `${process.env.HOST}/api/ecpay/return`,
       ClientBackURL: `${process.env.HOST}/api/ecpay/clientReturn`,
-      ChoosePayment: "Credit",
-      // IgnorePayment: "CVS#BARCODE#WebATM#ATM#AndroidPay#ApplePay",
+      // ChoosePayment: "Credit",
+      ChoosePayment: "ALL",
+      // IgnorePayment: "CVS#BARCODE#WebATM#AndroidPay#ApplePay",
+      IgnorePayment: "CVS#BARCODE#WebATM#AndroidPay#ApplePay#TWQR#WeiXin",
       EncryptType: 1,
       CustomField1: TEST_ORDER_ID,
     };

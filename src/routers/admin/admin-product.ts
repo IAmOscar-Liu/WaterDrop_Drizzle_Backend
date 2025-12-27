@@ -50,6 +50,8 @@ const router = Router();
  *         price:
  *           type: number
  *           format: double
+ *         sku:
+ *           type: string
  *         stock:
  *           type: integer
  *         reserve:
@@ -312,6 +314,10 @@ router.get("/:id", isAuth, ProductController.getProduct);
  *                 description: The status of the product.
  *                 default: "active"
  *                 example: "active"
+ *               sku:
+ *                 type: string
+ *                 description: The stock keeping unit identifier.
+ *                 example: "SKU123456"
  *               metadata:
  *                 type: object
  *                 description: Additional metadata for the product.
@@ -378,6 +384,10 @@ router.post("/create", isAuth, ProductController.createProduct);
  *                 type: string
  *                 description: The status of the product.
  *                 example: "inactive"
+ *               sku:
+ *                 type: string
+ *                 description: The stock keeping unit identifier.
+ *                 example: "SKU654321"
  *               metadata:
  *                 type: object
  *                 description: Additional metadata for the product.

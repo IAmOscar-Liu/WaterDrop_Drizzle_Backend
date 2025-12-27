@@ -281,6 +281,13 @@
       "when": 1766541395868,
       "tag": "0039_wet_anita_blake",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1766832017676,
+      "tag": "0040_wise_frightful_four",
+      "breakpoints": true
     }
   ]
 }

@@ -294,6 +294,7 @@ export const productTable = pgTable("products", {
   description: text("description").notNull(),
   price: doublePrecision("price").notNull(),
   stock: integer("stock").notNull(),
+  sku: text("sku"),
   reserve: integer("reserve").notNull().default(0),
   images: text("images").array(),
   status: productStatusEnum("status").default("active").notNull(),
