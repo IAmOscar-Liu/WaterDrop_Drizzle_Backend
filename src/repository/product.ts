@@ -150,7 +150,17 @@ export async function updateProduct(
 
     // 3. Return the fully updated product with its relations
     // We re-fetch it to get the latest state including the new category relations.
-    return getProductById(productId);
+    return tx.query.productTable.findFirst({
+      where: eq(schema.productTable.id, productId),
+      with: {
+        advertisement: true,
+        productsToCategories: {
+          with: {
+            category: true,
+          },
+        },
+      },
+    });
   });
 }
 
