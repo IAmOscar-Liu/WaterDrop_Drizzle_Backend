@@ -12,7 +12,7 @@ import {
 import { CustomError } from "./error";
 import {
   getCurrentLocalDateTime,
-  getCurrentYearMonthString,
+  getLastMonthYYYYMM,
   getNumOfDaysInMonth,
 } from "./general";
 import { sendMulticastPushNotification } from "./sendNotification";
@@ -178,13 +178,7 @@ export const monthlyCoinStatExpirationTask = cron.schedule(
       }
 
       // Get the year and month of the *previous* month.
-      // If it's Jan 1st, this will correctly calculate Dec of the previous year.
-      const now = new Date();
-      now.setMonth(now.getMonth() - 1);
-      const yearMonthString = getCurrentYearMonthString(
-        timezonesAtStartOfMonth[0],
-        now
-      ); // yyyy-mm
+      const yearMonthString = getLastMonthYYYYMM(timezonesAtStartOfMonth[0]); // yyyy-mm
 
       // For these users, expire all their monthly stats. The logic to keep the current month active
       // is handled by creating a new entry when coins are earned/spent.
@@ -234,16 +228,13 @@ export const monthlyCoinExpirationNotificationTask = cron.schedule(
       return;
     }
 
-    const now = new Date();
-    now.setMonth(now.getMonth() - 1);
-    const yearMonthString = getCurrentYearMonthString(
-      timezonesAtSpecificTime[0],
-      now
-    ); // yyyy-mm
+    const yearMonthString = getLastMonthYYYYMM(timezonesAtSpecificTime[0]); // yyyy-mm
 
     const userMonthlyCoinStats = (
       await getUserMonthlyCoinStatsInUserIds(userIds, yearMonthString)
     ).filter((stat) => stat.coinsEarned > stat.coinsSpent);
+
+    const { localMonth } = getCurrentLocalDateTime(timezonesAtSpecificTime[0]);
 
     for (let i = 0; i < userMonthlyCoinStats.length; i += RESET_BATCH_SIZE) {
       const batchCoinStats = userMonthlyCoinStats.slice(
@@ -257,10 +248,10 @@ export const monthlyCoinExpirationNotificationTask = cron.schedule(
             userId: stat.userId,
             type: "system_alert",
             title: "金幣即將過期通知",
-            body: `您${now.getMonth() + 1}月份的金幣尚有${
+            body: `您${localMonth - 1}月份的金幣尚有${
               stat.coinsEarned - stat.coinsSpent
             }未使用，即將在 ${
-              now.getMonth() + 3
+              localMonth + 1
             }/01 00:00 過期，快把握時間使用您的金幣吧!`,
           })
         )
@@ -277,8 +268,8 @@ export const monthlyCoinExpirationNotificationTask = cron.schedule(
         tokens: batchFcmTokens,
         notification: {
           title: "金幣即將過期通知",
-          body: `您${now.getMonth() + 1}月份的金幣即將在 ${
-            now.getMonth() + 3
+          body: `您${localMonth - 1}月份的金幣即將在 ${
+            localMonth + 1
           }/01 00:00 過期，快把握時間使用您的金幣吧!`,
         },
         data: {

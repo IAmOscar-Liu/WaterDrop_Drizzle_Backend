@@ -6,7 +6,7 @@ import {
   getUserMonthlyCoinStatsInUserIds,
   setMonthlyCoinExpire,
 } from "./repository/user";
-import { getCurrentYearMonthString } from "./lib/general";
+import { getCurrentLocalDateTime, getLastMonthYYYYMM } from "./lib/general";
 import { sendMulticastPushNotification } from "./lib/sendNotification";
 import bcrypt from "bcrypt";
 
@@ -25,13 +25,13 @@ export async function testScript() {
     return;
   }
 
-  const now = new Date();
-  now.setMonth(now.getMonth() - 1);
-  const yearMonthString = getCurrentYearMonthString("Asia/Taipei", now); // yyyy-mm
+  const yearMonthString = getLastMonthYYYYMM("Asia/Taipei"); // yyyy-mm
 
   const userMonthlyCoinStats = (
     await getUserMonthlyCoinStatsInUserIds(userIds, yearMonthString)
   ).filter((stat) => stat.coinsEarned > stat.coinsSpent);
+
+  const { localMonth } = getCurrentLocalDateTime("Asia/Taipei");
 
   for (let i = 0; i < userMonthlyCoinStats.length; i += RESET_BATCH_SIZE) {
     const batchCoinStats = userMonthlyCoinStats.slice(i, i + RESET_BATCH_SIZE);
@@ -42,10 +42,10 @@ export async function testScript() {
           userId: stat.userId,
           type: "system_alert",
           title: "金幣即將過期通知",
-          body: `您${now.getMonth() + 1}月份的金幣尚有${
+          body: `您${localMonth - 1}月份的金幣尚有${
             stat.coinsEarned - stat.coinsSpent
           }未使用，即將在 ${
-            now.getMonth() + 3
+            localMonth + 1
           }/01 00:00 過期，快把握時間使用您的金幣吧!`,
         })
       )
@@ -62,8 +62,8 @@ export async function testScript() {
       tokens: batchFcmTokens,
       notification: {
         title: "金幣即將過期通知",
-        body: `您${now.getMonth() + 1}月份的金幣即將在 ${
-          now.getMonth() + 3
+        body: `您${localMonth - 1}月份的金幣即將在 ${
+          localMonth + 1
         }/01 00:00 過期，快把握時間使用您的金幣吧!`,
       },
       data: {

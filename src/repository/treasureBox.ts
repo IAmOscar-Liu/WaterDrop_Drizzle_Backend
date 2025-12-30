@@ -1,7 +1,7 @@
 import { and, eq, not, sql } from "drizzle-orm";
 import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
-import { getCurrentYearMonthString } from "../lib/general";
+import { getCurrentYYYYMM } from "../lib/general";
 import db from "../lib/initDB";
 import { spendAdBalance } from "./advertisement";
 
@@ -192,7 +192,7 @@ export async function openTreasureBox(userId: string, treasureBoxId: string) {
       .insert(schema.userMonthlyCoinStatTable)
       .values({
         userId: userId,
-        month: getCurrentYearMonthString(updatedUser.timezone ?? undefined),
+        month: getCurrentYYYYMM(updatedUser.timezone ?? "UTC"),
         coinsEarned: treasureBox.coinsAwarded,
       })
       .onConflictDoUpdate({

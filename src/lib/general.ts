@@ -48,16 +48,17 @@ export function generateInvitationCode(length: number = 6): string {
   return result;
 }
 
-export function getCurrentYearMonthString(timeZone?: string, date?: Date) {
-  const nowInUserTimezone = new Date(
-    (date ?? new Date()).toLocaleString("en-US", {
-      timeZone: timeZone ?? "UTC",
-    })
-  );
+export function getCurrentYYYYMM(timezone: string) {
+  const { localYear, localMonth } = getCurrentLocalDateTime(timezone);
+  return `${localYear}-${localMonth.toString().padStart(2, "0")}`;
+}
 
-  const year = nowInUserTimezone.getFullYear();
-  const month = (nowInUserTimezone.getMonth() + 1).toString().padStart(2, "0");
-  return `${year}-${month}`;
+export function getLastMonthYYYYMM(timezone: string) {
+  const { localYear, localMonth } = getCurrentLocalDateTime(timezone);
+
+  const year = localMonth === 1 ? localYear - 1 : localYear;
+  const month = localMonth === 1 ? 12 : localMonth - 1;
+  return `${year}-${month.toString().padStart(2, "0")}`;
 }
 
 export function getNumOfDaysInMonth(month: number) {

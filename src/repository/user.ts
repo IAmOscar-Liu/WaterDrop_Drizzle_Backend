@@ -13,7 +13,7 @@ import { CustomError } from "../lib/error";
 import {
   generateInvitationCode,
   getCurrentLocalDateTime,
-  getCurrentYearMonthString,
+  getLastMonthYYYYMM,
   getNumOfDaysInMonth,
 } from "../lib/general";
 import { getMemberInfo } from "../lib/getMemberInfo";
@@ -465,9 +465,9 @@ async function getCoinsExpireSoon(userId: string, timezone?: string | null) {
   const { localMonth, localDay } = getCurrentLocalDateTime(timezone);
   if (localDay <= getNumOfDaysInMonth(localMonth) - 7) return null;
 
-  const now = new Date();
-  now.setMonth(now.getMonth() - 1);
-  const yearMonthString = getCurrentYearMonthString(timezone, now);
+  // const now = new Date();
+  // now.setMonth(now.getMonth() - 1);
+  const yearMonthString = getLastMonthYYYYMM(timezone);
 
   const [userMonthlyCoinStat] = await db
     .select()
