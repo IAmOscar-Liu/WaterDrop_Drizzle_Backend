@@ -66,6 +66,10 @@ const router = Router();
  *         avatar_url:
  *           type: string
  *           nullable: true
+ *         termsAcceptedAt:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
  *         groupId:
  *           type: string
  *           nullable: true
@@ -105,6 +109,19 @@ const router = Router();
  *           properties:
  *             user:
  *               $ref: '#/components/schemas/User'
+ *             totalUnread:
+ *               type: integer
+ *             lastMessage:
+ *               type: object
+ *               properties:
+ *                 content:
+ *                   type: string
+ *                 senderType:
+ *                   type: string
+ *                   enum: [user, admin, seller]
+ *                 createdAt:
+ *                   type: string
+ *                   format: date-time
  *
  *     ListChatRoomsResponse:
  *       type: object
