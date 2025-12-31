@@ -30,8 +30,12 @@ export async function testScript() {
   const userMonthlyCoinStats = (
     await getUserMonthlyCoinStatsInUserIds(userIds, yearMonthString)
   ).filter((stat) => stat.coinsEarned > stat.coinsSpent);
+  console.log(userMonthlyCoinStats);
 
-  const { localMonth } = getCurrentLocalDateTime("Asia/Taipei");
+  const { localMonth, localYear } = getCurrentLocalDateTime("Asia/Taipei");
+  const lastMonth = localMonth === 1 ? 12 : localMonth - 1;
+  const nextMonth = localMonth === 12 ? 1 : localMonth + 1;
+  const nextYear = localMonth === 12 ? localYear + 1 : localYear;
 
   for (let i = 0; i < userMonthlyCoinStats.length; i += RESET_BATCH_SIZE) {
     const batchCoinStats = userMonthlyCoinStats.slice(i, i + RESET_BATCH_SIZE);
@@ -42,11 +46,11 @@ export async function testScript() {
           userId: stat.userId,
           type: "system_alert",
           title: "金幣即將過期通知",
-          body: `您${localMonth - 1}月份的金幣尚有${
+          body: `您${lastMonth}月份的金幣尚有${
             stat.coinsEarned - stat.coinsSpent
-          }未使用，即將在 ${
-            localMonth + 1
-          }/01 00:00 過期，快把握時間使用您的金幣吧!`,
+          }未使用，即將在 ${nextYear}/${nextMonth
+            .toString()
+            .padStart(2, "0")}/01 00:00 過期，快把握時間使用您的金幣吧!`,
         })
       )
     );
@@ -62,9 +66,9 @@ export async function testScript() {
       tokens: batchFcmTokens,
       notification: {
         title: "金幣即將過期通知",
-        body: `您${localMonth - 1}月份的金幣即將在 ${
-          localMonth + 1
-        }/01 00:00 過期，快把握時間使用您的金幣吧!`,
+        body: `您${lastMonth}月份的金幣即將在 ${nextYear}/${nextMonth
+          .toString()
+          .padStart(2, "0")}/01 00:00 過期，快把握時間使用您的金幣吧!`,
       },
       data: {
         command: "message",
@@ -94,4 +98,5 @@ async function generateHashPassword(password: string) {
   console.log(`Hashed password: ${hashedPassword}`);
 }
 
-generateHashPassword("test1234");
+// generateHashPassword("test1234");
+testScript();

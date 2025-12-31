@@ -234,7 +234,12 @@ export const monthlyCoinExpirationNotificationTask = cron.schedule(
       await getUserMonthlyCoinStatsInUserIds(userIds, yearMonthString)
     ).filter((stat) => stat.coinsEarned > stat.coinsSpent);
 
-    const { localMonth } = getCurrentLocalDateTime(timezonesAtSpecificTime[0]);
+    const { localMonth, localYear } = getCurrentLocalDateTime(
+      timezonesAtSpecificTime[0]
+    );
+    const lastMonth = localMonth === 1 ? 12 : localMonth - 1;
+    const nextMonth = localMonth === 12 ? 1 : localMonth + 1;
+    const nextYear = localMonth === 12 ? localYear + 1 : localYear;
 
     for (let i = 0; i < userMonthlyCoinStats.length; i += RESET_BATCH_SIZE) {
       const batchCoinStats = userMonthlyCoinStats.slice(
@@ -248,11 +253,11 @@ export const monthlyCoinExpirationNotificationTask = cron.schedule(
             userId: stat.userId,
             type: "system_alert",
             title: "金幣即將過期通知",
-            body: `您${localMonth - 1}月份的金幣尚有${
+            body: `您${lastMonth}月份的金幣尚有${
               stat.coinsEarned - stat.coinsSpent
-            }未使用，即將在 ${
-              localMonth + 1
-            }/01 00:00 過期，快把握時間使用您的金幣吧!`,
+            }未使用，即將在 ${nextYear}/${nextMonth
+              .toString()
+              .padStart(2, "0")}/01 00:00 過期，快把握時間使用您的金幣吧!`,
           })
         )
       );
@@ -268,9 +273,9 @@ export const monthlyCoinExpirationNotificationTask = cron.schedule(
         tokens: batchFcmTokens,
         notification: {
           title: "金幣即將過期通知",
-          body: `您${localMonth - 1}月份的金幣即將在 ${
-            localMonth + 1
-          }/01 00:00 過期，快把握時間使用您的金幣吧!`,
+          body: `您${lastMonth}月份的金幣即將在 ${nextYear}/${nextMonth
+            .toString()
+            .padStart(2, "0")}/01 00:00 過期，快把握時間使用您的金幣吧!`,
         },
         data: {
           command: "message",

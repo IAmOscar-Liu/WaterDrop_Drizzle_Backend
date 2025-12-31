@@ -465,8 +465,6 @@ async function getCoinsExpireSoon(userId: string, timezone?: string | null) {
   const { localMonth, localDay } = getCurrentLocalDateTime(timezone);
   if (localDay <= getNumOfDaysInMonth(localMonth) - 7) return null;
 
-  // const now = new Date();
-  // now.setMonth(now.getMonth() - 1);
   const yearMonthString = getLastMonthYYYYMM(timezone);
 
   const [userMonthlyCoinStat] = await db
