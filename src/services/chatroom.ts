@@ -12,19 +12,16 @@ import { ServiceResponse } from "../type/general";
 import * as schema from "../db/schema";
 
 class ChatroomService {
-  async findOrCreateChatRoom({
-    userId,
-    accountId,
-    productId,
-  }: {
+  async findOrCreateChatRoom(input: {
     userId: string;
     accountId: string;
     productId?: string | null;
+    orderId?: string | null;
   }): Promise<
     ServiceResponse<Awaited<ReturnType<typeof findOrCreateChatRoom>>>
   > {
     try {
-      const chatRoom = await findOrCreateChatRoom(userId, accountId, productId);
+      const chatRoom = await findOrCreateChatRoom(input);
       if (chatRoom) {
         return { success: true, data: chatRoom };
       } else {

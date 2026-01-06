@@ -13,21 +13,61 @@ import { isAccountAdmin } from "./account";
  * @param productId Optional ID of the product the chat is about.
  * @returns The existing or newly created chat room.
  */
-export async function findOrCreateChatRoom(
-  userId: string,
-  accountId: string,
-  productId?: string | null
-) {
+export async function findOrCreateChatRoom({
+  userId,
+  accountId,
+  productId,
+  orderId,
+}: {
+  userId: string;
+  accountId: string;
+  productId?: string | null;
+  orderId?: string | null;
+}) {
   // 1. Try to find an existing chat room
-  const existingRoom = await db.query.chatRoomTable.findFirst({
+  let existingRoom = await db.query.chatRoomTable.findFirst({
     where: and(
       eq(schema.chatRoomTable.userId, userId),
       eq(schema.chatRoomTable.accountId, accountId),
+      orderId
+        ? eq(schema.chatRoomTable.orderId, orderId)
+        : isNull(schema.chatRoomTable.orderId),
       productId
         ? eq(schema.chatRoomTable.productId, productId)
         : isNull(schema.chatRoomTable.productId)
     ),
   });
+
+  // 1.1 Try to find an existing chat room without orderId
+  if (!existingRoom && orderId) {
+    existingRoom = await db.query.chatRoomTable.findFirst({
+      where: and(
+        eq(schema.chatRoomTable.userId, userId),
+        eq(schema.chatRoomTable.accountId, accountId),
+        isNull(schema.chatRoomTable.orderId),
+        productId
+          ? eq(schema.chatRoomTable.productId, productId)
+          : isNull(schema.chatRoomTable.productId)
+      ),
+    });
+    if (existingRoom) {
+      [existingRoom] = await db
+        .update(schema.chatRoomTable)
+        .set({ orderId })
+        .where(eq(schema.chatRoomTable.id, existingRoom.id))
+        .returning();
+    }
+  }
+
+  // const existingRoom = await db.query.chatRoomTable.findFirst({
+  //   where: and(
+  //     eq(schema.chatRoomTable.userId, userId),
+  //     eq(schema.chatRoomTable.accountId, accountId),
+  //     productId
+  //       ? eq(schema.chatRoomTable.productId, productId)
+  //       : isNull(schema.chatRoomTable.productId)
+  //   ),
+  // });
 
   if (existingRoom) {
     console.log("Found existing chat room:", existingRoom.id);
@@ -45,12 +85,21 @@ export async function findOrCreateChatRoom(
 
   // 2. If not found, create a new one
   console.log("No chat room found, creating a new one...");
-  const [newRoom] = await db
+  let [newRoom] = await db
     .insert(schema.chatRoomTable)
     .values({ userId, accountId, productId: productId ?? null })
     .returning();
 
   console.log("New chat room created:", newRoom.id);
+
+  // 2.2 If order is given and not in the room, update it
+  if (orderId && newRoom.orderId !== orderId) {
+    [newRoom] = await db
+      .update(schema.chatRoomTable)
+      .set({ orderId })
+      .where(eq(schema.chatRoomTable.id, newRoom.id))
+      .returning();
+  }
   return newRoom;
 }
 
@@ -238,6 +287,11 @@ export async function listAdminChatRooms({
     offset: offset,
     with: {
       user: true,
+      order: {
+        with: {
+          delivery: true,
+        },
+      },
     },
     extras: {
       unreadCount: sql<number>`(
@@ -277,6 +331,7 @@ export async function listAdminChatRooms({
       lastMessageContent,
       lastMessageSenderType,
       lastMessageCreatedAt,
+      order,
       ...rest
     } = room;
     return {
@@ -288,6 +343,21 @@ export async function listAdminChatRooms({
             senderType:
               lastMessageSenderType as schema.ChatMessage["senderType"],
             createdAt: lastMessageCreatedAt,
+          }
+        : null,
+      order: order
+        ? {
+            id: order.id,
+            orderStatus: order.orderStatus,
+            merchantTradeNo: order.merchantTradeNo,
+            totalAmount: order.totalAmount,
+            discountCoin: order.discountCoin,
+            delivery: order?.delivery
+              ? {
+                  RtnCode: order.delivery.RtnCode,
+                  RtnMsg: order.delivery.RtnMsg,
+                }
+              : null,
           }
         : null,
     };

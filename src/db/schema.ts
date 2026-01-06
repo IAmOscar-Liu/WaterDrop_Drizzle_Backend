@@ -113,6 +113,7 @@ export const chatRoomTable = pgTable(
       .notNull()
       .references(() => accountTable.id),
     productId: uuid("product_id").references(() => productTable.id),
+    orderId: uuid("order_id").references(() => orderTable.id),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -123,10 +124,11 @@ export const chatRoomTable = pgTable(
     status: chatRoomStatusEnum("status").default("active").notNull(),
   },
   (t) => ({
-    chatRoomUnique: uniqueIndex("chat_rooms_user_account_product_uk").on(
+    chatRoomUnique: uniqueIndex("chat_rooms_user_account_product_order_uk").on(
       t.userId,
       t.accountId,
-      t.productId
+      t.productId,
+      t.orderId
     ),
   })
 );
@@ -710,6 +712,10 @@ export const chatRoomRelations = relations(chatRoomTable, ({ one, many }) => ({
     fields: [chatRoomTable.productId],
     references: [productTable.id],
   }),
+  order: one(orderTable, {
+    fields: [chatRoomTable.orderId],
+    references: [orderTable.id],
+  }),
   messages: many(chatMessageTable),
 }));
 
@@ -818,6 +824,7 @@ export const orderRelations = relations(orderTable, ({ one, many }) => ({
     fields: [orderTable.accountId],
     references: [accountTable.id],
   }),
+  chatRooms: many(chatRoomTable),
   items: many(orderItemTable), // An order can have many items
   delivery: one(deliveryTable), // An order has one delivery
 }));

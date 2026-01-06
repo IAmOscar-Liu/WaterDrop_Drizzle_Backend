@@ -122,6 +122,27 @@ const router = Router();
  *                 createdAt:
  *                   type: string
  *                   format: date-time
+ *             order:
+ *               type: object
+ *               properties:
+ *                 id:
+ *                   type: string
+ *                 orderStatus:
+ *                   type: string
+ *                   enum: [pending, paid, failed, expired, canceled]
+ *                 merchantTradeNo:
+ *                   type: string
+ *                 totalAmount:
+ *                   type: integer
+ *                 discountCoin:
+ *                   type: integer
+ *                 delivery:
+ *                   type: object
+ *                   properties:
+ *                     RtnCode:
+ *                       type: string
+ *                     RtnMsg:
+ *                       type: string
  *
  *     ListChatRoomsResponse:
  *       type: object

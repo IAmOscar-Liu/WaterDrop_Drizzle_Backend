@@ -288,6 +288,13 @@
       "when": 1766832017676,
       "tag": "0040_wise_frightful_four",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1767707864212,
+      "tag": "0041_lyrical_chat",
+      "breakpoints": true
     }
   ]
 }

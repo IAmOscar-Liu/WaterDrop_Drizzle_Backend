@@ -5,11 +5,12 @@ import { RequestWithId } from "../type/request";
 
 class ChatroomController {
   async findOrCreateChatRoom(req: RequestWithId, res: Response): Promise<any> {
-    const { accountId, productId } = req.body;
+    const { accountId, productId, orderId } = req.body;
     const result = await chatroomService.findOrCreateChatRoom({
       userId: req.userId ?? "",
       accountId: accountId ? String(accountId) : "",
       productId: productId ? String(productId) : undefined,
+      orderId: orderId ? String(orderId) : undefined,
     });
     sendJsonResponse(res, result);
   }
