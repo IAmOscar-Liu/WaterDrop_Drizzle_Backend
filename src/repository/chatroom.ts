@@ -239,6 +239,131 @@ export async function markMessagesAsRead(
     .returning();
 }
 
+export type ListChatRoomsParams = {
+  userId: string;
+  page?: number;
+  limit?: number;
+};
+
+export async function listChatRooms({
+  userId,
+  page = 1,
+  limit = 20,
+}: ListChatRoomsParams) {
+  const offset = (page - 1) * limit;
+  const conditions: (SQL | undefined)[] = [];
+  // Build the conditions for the query
+  conditions.push(eq(schema.chatRoomTable.userId, userId));
+  conditions.push(eq(schema.chatRoomTable.status, "active"));
+
+  // 1. Get the total count of chat rooms matching the criteria
+  const totalResult = await db
+    .select({ total: count() })
+    .from(schema.chatRoomTable)
+    .where(and(...conditions));
+
+  const total = totalResult[0].total;
+  const totalPages = Math.ceil(total / limit);
+
+  // 2. Get the paginated list of chat rooms
+  // We order by the last message's timestamp (prioritizing rooms with messages), then by room creation date.
+  const roomsData = await db.query.chatRoomTable.findMany({
+    where: and(...conditions),
+    orderBy: (chatRooms, { desc }) => [
+      sql`(SELECT cm.created_at FROM ${schema.chatMessageTable} cm 
+           WHERE cm.chat_room_id = ${chatRooms.id} 
+           ORDER BY cm.created_at DESC LIMIT 1) DESC NULLS LAST`,
+      desc(chatRooms.createdAt),
+    ],
+    limit: limit,
+    offset: offset,
+    with: {
+      product: true,
+      order: {
+        with: {
+          delivery: true,
+        },
+      },
+    },
+    extras: {
+      unreadCount: sql<number>`(
+        SELECT count(*) 
+        FROM ${schema.chatMessageTable} cm
+        WHERE cm.chat_room_id = ${schema.chatRoomTable.id}
+        AND cm.is_read = false
+        AND cm.sender_type != 'user'
+      )`.as("unread_count"),
+      lastMessageContent: sql<string>`(
+        SELECT cm.content 
+        FROM ${schema.chatMessageTable} cm
+        WHERE cm.chat_room_id = ${schema.chatRoomTable.id}
+        ORDER BY cm.created_at DESC 
+        LIMIT 1
+      )`.as("last_message_content"),
+      lastMessageSenderType: sql<string>`(
+        SELECT cm.sender_type 
+        FROM ${schema.chatMessageTable} cm
+        WHERE cm.chat_room_id = ${schema.chatRoomTable.id}
+        ORDER BY cm.created_at DESC 
+        LIMIT 1
+      )`.as("last_message_sender_type"),
+      lastMessageCreatedAt: sql<Date>`(
+        SELECT cm.created_at 
+        FROM ${schema.chatMessageTable} cm
+        WHERE cm.chat_room_id = ${schema.chatRoomTable.id}
+        ORDER BY cm.created_at DESC 
+        LIMIT 1
+      )`.as("last_message_created_at"),
+    },
+  });
+
+  const rooms = roomsData.map((room) => {
+    const {
+      unreadCount,
+      lastMessageContent,
+      lastMessageSenderType,
+      lastMessageCreatedAt,
+      order,
+      ...rest
+    } = room;
+    return {
+      ...rest,
+      totalUnread: Number(unreadCount),
+      lastMessage: lastMessageContent
+        ? {
+            content: lastMessageContent,
+            senderType:
+              lastMessageSenderType as schema.ChatMessage["senderType"],
+            createdAt: lastMessageCreatedAt,
+          }
+        : null,
+      order: order
+        ? {
+            id: order.id,
+            orderStatus: order.orderStatus,
+            merchantTradeNo: order.merchantTradeNo,
+            totalAmount: order.totalAmount,
+            discountCoin: order.discountCoin,
+            delivery: order?.delivery
+              ? {
+                  RtnCode: order.delivery.RtnCode,
+                  RtnMsg: order.delivery.RtnMsg,
+                }
+              : null,
+          }
+        : null,
+    };
+  });
+
+  return {
+    rooms,
+    total,
+    page,
+    limit,
+    totalPages,
+  };
+}
+
 export type ListAdminChatRoomsParams = {
   accountId: string;
   productId?: string;

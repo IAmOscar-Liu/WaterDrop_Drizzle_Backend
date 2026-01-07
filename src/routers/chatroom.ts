@@ -4,6 +4,7 @@ import isAuth from "../middleware/isAuth";
 
 const router = Router();
 
+router.get("/list", isAuth, ChatroomController.listChatRooms);
 router.post("/create", isAuth, ChatroomController.findOrCreateChatRoom);
 router.get("/history/:chatRoomId", isAuth, ChatroomController.getChatHistory);
 router.post("/message/:chatRoomId", isAuth, ChatroomController.sendMessage);

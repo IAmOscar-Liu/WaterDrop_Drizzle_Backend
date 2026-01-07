@@ -3,6 +3,8 @@ import {
   findOrCreateChatRoom,
   getChatHistory,
   GetChatHistoryParams,
+  listChatRooms,
+  ListChatRoomsParams,
   listAdminChatRooms,
   ListAdminChatRoomsParams,
   markMessagesAsRead,
@@ -96,6 +98,25 @@ class ChatroomService {
           success: false,
           statusCode: 404,
           message: "Messages could not be marked as read",
+        };
+      }
+    } catch (error) {
+      return handleServiceError(error);
+    }
+  }
+
+  async listChatRooms(
+    query: ListChatRoomsParams
+  ): Promise<ServiceResponse<Awaited<ReturnType<typeof listChatRooms>>>> {
+    try {
+      const chatRooms = await listChatRooms(query);
+      if (chatRooms) {
+        return { success: true, data: chatRooms };
+      } else {
+        return {
+          success: false,
+          statusCode: 404,
+          message: "Chat rooms could not be retrieved",
         };
       }
     } catch (error) {

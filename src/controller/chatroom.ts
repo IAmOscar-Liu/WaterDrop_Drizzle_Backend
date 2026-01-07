@@ -53,6 +53,16 @@ class ChatroomController {
     sendJsonResponse(res, result);
   }
 
+  async listChatRooms(req: RequestWithId, res: Response) {
+    const { page, limit } = req.query;
+    const result = await chatroomService.listChatRooms({
+      userId: req.userId ?? "",
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+    });
+    sendJsonResponse(res, result);
+  }
+
   async listAdminChatRooms(req: RequestWithId, res: Response): Promise<any> {
     const { productId, page, limit } = req.query;
     const result = await chatroomService.listAdminChatRooms({
