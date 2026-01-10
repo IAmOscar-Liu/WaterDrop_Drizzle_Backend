@@ -1,0 +1,1 @@
+ALTER TABLE "chat_message_attachments" RENAME COLUMN "type" TO "mime_type";

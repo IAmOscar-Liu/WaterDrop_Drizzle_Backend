@@ -38,17 +38,14 @@ class ChatroomService {
     }
   }
 
-  async sendMessage({
-    chatRoomId,
-    senderType,
-    content,
-  }: {
+  async sendMessage(input: {
     chatRoomId: string;
     senderType: schema.ChatMessage["senderType"];
     content: string;
+    attachments?: Omit<schema.NewChatMessageAttachment, "chatMessageId">[];
   }): Promise<ServiceResponse<Awaited<ReturnType<typeof sendChatMessage>>>> {
     try {
-      const message = await sendChatMessage(chatRoomId, senderType, content);
+      const message = await sendChatMessage(input);
       if (message) {
         return { success: true, data: message };
       } else {

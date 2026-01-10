@@ -162,6 +162,13 @@
       "when": 1767713036401,
       "tag": "0022_cloudy_surge",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1768027335131,
+      "tag": "0023_chemical_sersi",
+      "breakpoints": true
     }
   ]
 }

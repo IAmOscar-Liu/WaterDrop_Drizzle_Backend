@@ -29,6 +29,36 @@ const router = Router();
  *         createdAt:
  *           type: string
  *           format: date-time
+ *         attachments:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               id:
+ *                 type: string
+ *                 format: uuid
+ *               name:
+ *                 type: string
+ *                 nullable: true
+ *               createdAt:
+ *                 type: string
+ *                 format: date-time
+ *               updatedAt:
+ *                 type: string
+ *                 format: date-time
+ *               size:
+ *                 type: number
+ *                 nullable: true
+ *               chatMessageId:
+ *                 type: string
+ *                 format: uuid
+ *               url:
+ *                 type: string
+ *                 example: "https://pub-your-bucket.r2.dev/images/uuid.jpg"
+ *               mimeType:
+ *                 type: string
+ *                 nullable: true
+ *                 example: "image/jpeg"
  *
  *     User:
  *       type: object
@@ -112,16 +142,7 @@ const router = Router();
  *             totalUnread:
  *               type: integer
  *             lastMessage:
- *               type: object
- *               properties:
- *                 content:
- *                   type: string
- *                 senderType:
- *                   type: string
- *                   enum: [user, admin, seller]
- *                 createdAt:
- *                   type: string
- *                   format: date-time
+ *               $ref: '#/components/schemas/ChatMessage'
  *             order:
  *               type: object
  *               properties:
@@ -319,14 +340,31 @@ router.get("/history/:chatRoomId", isAuth, ChatroomController.getChatHistory);
  *             type: object
  *             required:
  *               - senderType
- *               - content
  *             properties:
  *               senderType:
  *                 type: string
  *                 enum: [admin, seller]
  *               content:
  *                 type: string
- *                 description: The text content of the message.
+ *                 description: The text content of the message. Required if attachments is empty.
+ *               attachments:
+ *                 type: array
+ *                 nullable: true
+ *                 description: Array of attachments. Required if content is empty.
+ *                 items:
+ *                   type: object
+ *                   required: [url]
+ *                   properties:
+ *                     url:
+ *                       type: string
+ *                       example: "https://pub-your-bucket.r2.dev/images/uuid.jpg"
+ *                     mimeType:
+ *                       type: string
+ *                       example: "image/jpeg"
+ *                     name:
+ *                       type: string
+ *                     size:
+ *                       type: number
  *     responses:
  *       '200':
  *         description: Message sent successfully.

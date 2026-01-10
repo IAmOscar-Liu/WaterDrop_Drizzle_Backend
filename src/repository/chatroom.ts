@@ -1,4 +1,15 @@
-import { and, count, eq, gte, isNull, lte, ne, SQL, sql } from "drizzle-orm";
+import {
+  and,
+  count,
+  eq,
+  gte,
+  inArray,
+  isNull,
+  lte,
+  ne,
+  SQL,
+  sql,
+} from "drizzle-orm";
 import * as schema from "../db/schema";
 import db from "../lib/initDB";
 import { CustomError } from "../lib/error";
@@ -112,34 +123,65 @@ export async function findOrCreateChatRoom({
  * @param content The message content.
  * @returns The newly created chat message.
  */
-export async function sendChatMessage(
-  chatRoomId: string,
-  senderType: schema.ChatMessage["senderType"],
-  content: string
-) {
-  // check if chatroom is active
-  const existingRoom = await db.query.chatRoomTable.findFirst({
-    where: and(
-      eq(schema.chatRoomTable.id, chatRoomId),
-      eq(schema.chatRoomTable.status, "active")
-    ),
+export async function sendChatMessage({
+  chatRoomId,
+  senderType,
+  content,
+  attachments,
+}: {
+  chatRoomId: string;
+  senderType: schema.ChatMessage["senderType"];
+  content?: string;
+  attachments?: Omit<
+    schema.NewChatMessageAttachment,
+    "chatMessageId" | "id" | "createdAt" | "updatedAt"
+  >[];
+}) {
+  return db.transaction(async (tx) => {
+    // check if both content and attachments are null
+    if (!content && (!attachments || attachments.length === 0)) {
+      throw new CustomError("Content and attachments cannot both be null", 400);
+    }
+
+    // check if chatroom is active
+    const existingRoom = await tx.query.chatRoomTable.findFirst({
+      where: and(
+        eq(schema.chatRoomTable.id, chatRoomId),
+        eq(schema.chatRoomTable.status, "active")
+      ),
+    });
+    if (!existingRoom) {
+      throw new CustomError("Chat room not found or not active", 404);
+    }
+
+    // Insert the new message
+    const [newMessage] = await tx
+      .insert(schema.chatMessageTable)
+      .values({
+        chatRoomId,
+        senderType,
+        content,
+      })
+      .returning();
+
+    console.log("New message sent:", newMessage.id);
+
+    if (attachments && attachments.length > 0) {
+      await tx.insert(schema.chatMessageAttachmentTable).values(
+        attachments.map((a) => ({
+          ...a,
+          chatMessageId: newMessage.id,
+        }))
+      );
+    }
+
+    return tx.query.chatMessageTable.findFirst({
+      where: eq(schema.chatMessageTable.id, newMessage.id),
+      with: {
+        attachments: true,
+      },
+    });
   });
-  if (!existingRoom) {
-    throw new CustomError("Chat room not found or not active", 404);
-  }
-
-  // Insert the new message
-  const [newMessage] = await db
-    .insert(schema.chatMessageTable)
-    .values({
-      chatRoomId,
-      senderType,
-      content,
-    })
-    .returning();
-
-  console.log("New message sent:", newMessage.id);
-  return newMessage;
 }
 
 export interface GetChatHistoryParams {
@@ -186,10 +228,20 @@ export async function getChatHistory({
   // Query for the paginated messages, sorted by most recent first
   const messages = await db.query.chatMessageTable.findMany({
     where: and(...conditions),
-    orderBy: (messages, { desc }) => [desc(messages.createdAt)],
     limit: limit,
     offset: offset,
+    orderBy: (messages, { desc }) => [desc(messages.createdAt)],
+    with: {
+      attachments: true,
+    },
   });
+
+  // const messages = await db.query.chatMessageTable.findMany({
+  //   where: and(...conditions),
+  //   orderBy: (messages, { desc }) => [desc(messages.createdAt)],
+  //   limit: limit,
+  //   offset: offset,
+  // });
 
   return {
     messages,
@@ -293,50 +345,45 @@ export async function listChatRooms({
         AND cm.is_read = false
         AND cm.sender_type != 'user'
       )`.as("unread_count"),
-      lastMessageContent: sql<string>`(
-        SELECT cm.content 
+      lastMessageId: sql<string>`(
+        SELECT cm.id
         FROM ${schema.chatMessageTable} cm
         WHERE cm.chat_room_id = ${schema.chatRoomTable.id}
         ORDER BY cm.created_at DESC 
         LIMIT 1
-      )`.as("last_message_content"),
-      lastMessageSenderType: sql<string>`(
-        SELECT cm.sender_type 
-        FROM ${schema.chatMessageTable} cm
-        WHERE cm.chat_room_id = ${schema.chatRoomTable.id}
-        ORDER BY cm.created_at DESC 
-        LIMIT 1
-      )`.as("last_message_sender_type"),
-      lastMessageCreatedAt: sql<Date>`(
-        SELECT cm.created_at 
-        FROM ${schema.chatMessageTable} cm
-        WHERE cm.chat_room_id = ${schema.chatRoomTable.id}
-        ORDER BY cm.created_at DESC 
-        LIMIT 1
-      )`.as("last_message_created_at"),
+      )`.as("last_message_id"),
     },
   });
 
+  const lastMessageIds = roomsData
+    .map((r) => r.lastMessageId)
+    .filter((id): id is string => !!id);
+
+  const lastMessagesMap = new Map<
+    string,
+    schema.ChatMessage & { attachments: schema.ChatMessageAttachment[] | null }
+  >();
+  if (lastMessageIds.length > 0) {
+    const messages = await db.query.chatMessageTable.findMany({
+      where: inArray(schema.chatMessageTable.id, lastMessageIds),
+      with: {
+        attachments: true,
+      },
+    });
+    messages.forEach((m) => lastMessagesMap.set(m.id, m));
+  }
+
   const rooms = roomsData.map((room) => {
-    const {
-      unreadCount,
-      lastMessageContent,
-      lastMessageSenderType,
-      lastMessageCreatedAt,
-      order,
-      ...rest
-    } = room;
+    const { unreadCount, lastMessageId, order, ...rest } = room;
+
+    const lastMessage = lastMessageId
+      ? lastMessagesMap.get(lastMessageId)
+      : null;
+
     return {
       ...rest,
       totalUnread: Number(unreadCount),
-      lastMessage: lastMessageContent
-        ? {
-            content: lastMessageContent,
-            senderType:
-              lastMessageSenderType as schema.ChatMessage["senderType"],
-            createdAt: lastMessageCreatedAt,
-          }
-        : null,
+      lastMessage: lastMessage || null,
       order: order
         ? {
             id: order.id,
@@ -426,50 +473,45 @@ export async function listAdminChatRooms({
         AND cm.is_read = false
         AND cm.sender_type = 'user'
       )`.as("unread_count"),
-      lastMessageContent: sql<string>`(
-        SELECT cm.content 
+      lastMessageId: sql<string>`(
+        SELECT cm.id
         FROM ${schema.chatMessageTable} cm
         WHERE cm.chat_room_id = ${schema.chatRoomTable.id}
         ORDER BY cm.created_at DESC 
         LIMIT 1
-      )`.as("last_message_content"),
-      lastMessageSenderType: sql<string>`(
-        SELECT cm.sender_type 
-        FROM ${schema.chatMessageTable} cm
-        WHERE cm.chat_room_id = ${schema.chatRoomTable.id}
-        ORDER BY cm.created_at DESC 
-        LIMIT 1
-      )`.as("last_message_sender_type"),
-      lastMessageCreatedAt: sql<Date>`(
-        SELECT cm.created_at 
-        FROM ${schema.chatMessageTable} cm
-        WHERE cm.chat_room_id = ${schema.chatRoomTable.id}
-        ORDER BY cm.created_at DESC 
-        LIMIT 1
-      )`.as("last_message_created_at"),
+      )`.as("last_message_id"),
     },
   });
 
+  const lastMessageIds = roomsData
+    .map((r) => r.lastMessageId)
+    .filter((id): id is string => !!id);
+
+  const lastMessagesMap = new Map<
+    string,
+    schema.ChatMessage & { attachments: schema.ChatMessageAttachment[] | null }
+  >();
+  if (lastMessageIds.length > 0) {
+    const messages = await db.query.chatMessageTable.findMany({
+      where: inArray(schema.chatMessageTable.id, lastMessageIds),
+      with: {
+        attachments: true,
+      },
+    });
+    messages.forEach((m) => lastMessagesMap.set(m.id, m));
+  }
+
   const rooms = roomsData.map((room) => {
-    const {
-      unreadCount,
-      lastMessageContent,
-      lastMessageSenderType,
-      lastMessageCreatedAt,
-      order,
-      ...rest
-    } = room;
+    const { unreadCount, lastMessageId, order, ...rest } = room;
+
+    const lastMessage = lastMessageId
+      ? lastMessagesMap.get(lastMessageId)
+      : null;
+
     return {
       ...rest,
       totalUnread: Number(unreadCount),
-      lastMessage: lastMessageContent
-        ? {
-            content: lastMessageContent,
-            senderType:
-              lastMessageSenderType as schema.ChatMessage["senderType"],
-            createdAt: lastMessageCreatedAt,
-          }
-        : null,
+      lastMessage: lastMessage || null,
       order: order
         ? {
             id: order.id,

@@ -139,8 +139,26 @@ export const chatMessageTable = pgTable("chat_messages", {
     .notNull()
     .references(() => chatRoomTable.id, { onDelete: "cascade" }),
   senderType: chatMessageSenderEnum("sender_type").notNull(),
-  content: text("content").notNull(),
+  content: text("content"),
   isRead: boolean("is_read").default(false).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+});
+
+export const chatMessageAttachmentTable = pgTable("chat_message_attachments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  chatMessageId: uuid("chat_message_id")
+    .notNull()
+    .references(() => chatMessageTable.id, { onDelete: "cascade" }),
+  url: text("url").notNull(),
+  mimeType: text("mime_type"),
+  name: text("name"),
+  size: doublePrecision("size"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -719,12 +737,26 @@ export const chatRoomRelations = relations(chatRoomTable, ({ one, many }) => ({
   messages: many(chatMessageTable),
 }));
 
-export const chatMessageRelations = relations(chatMessageTable, ({ one }) => ({
-  chatRoom: one(chatRoomTable, {
-    fields: [chatMessageTable.chatRoomId],
-    references: [chatRoomTable.id],
-  }),
-}));
+export const chatMessageRelations = relations(
+  chatMessageTable,
+  ({ one, many }) => ({
+    chatRoom: one(chatRoomTable, {
+      fields: [chatMessageTable.chatRoomId],
+      references: [chatRoomTable.id],
+    }),
+    attachments: many(chatMessageAttachmentTable),
+  })
+);
+
+export const chatMessageAttachmentRelations = relations(
+  chatMessageAttachmentTable,
+  ({ one }) => ({
+    message: one(chatMessageTable, {
+      fields: [chatMessageAttachmentTable.chatMessageId],
+      references: [chatMessageTable.id],
+    }),
+  })
+);
 
 export const productRelations = relations(productTable, ({ one, many }) => ({
   seller: one(accountTable, {
@@ -932,6 +964,11 @@ export type NewChatRoom = typeof chatRoomTable.$inferInsert;
 
 export type ChatMessage = typeof chatMessageTable.$inferSelect;
 export type NewChatMessage = typeof chatMessageTable.$inferInsert;
+
+export type ChatMessageAttachment =
+  typeof chatMessageAttachmentTable.$inferSelect;
+export type NewChatMessageAttachment =
+  typeof chatMessageAttachmentTable.$inferInsert;
 
 export type AdViewCount = typeof adViewCountTable.$inferSelect;
 export type NewAdViewCount = typeof adViewCountTable.$inferInsert;

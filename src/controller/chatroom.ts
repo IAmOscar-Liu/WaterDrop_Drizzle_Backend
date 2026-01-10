@@ -34,11 +34,12 @@ class ChatroomController {
 
   async sendMessage(req: Request, res: Response): Promise<any> {
     const { chatRoomId } = req.params;
-    const { senderType, content } = req.body;
+    const { senderType, content, attachments } = req.body;
     const result = await chatroomService.sendMessage({
       chatRoomId,
       senderType,
-      content: content ? String(content) : "",
+      content,
+      attachments,
     });
     sendJsonResponse(res, result);
   }
