@@ -12,6 +12,7 @@ class FileController {
 
   async uploadImage(req: Request, res: Response) {
     const file = req.file;
+    const { path } = req.body;
     if (!file) {
       return sendJsonResponse(res, {
         success: false,
@@ -28,12 +29,16 @@ class FileController {
       });
     }
 
-    const result = await fileService.uploadFile(file, "images");
+    const result = await fileService.uploadFile(
+      file,
+      path ? `images/${path}` : "images"
+    );
     sendJsonResponse(res, result);
   }
 
   async uploadVideo(req: Request, res: Response) {
     const file = req.file;
+    const { path } = req.body;
     if (!file) {
       return sendJsonResponse(res, {
         success: false,
@@ -49,7 +54,10 @@ class FileController {
         message: "Invalid file type. Only videos are allowed.",
       });
     }
-    const result = await fileService.uploadFile(file, "videos");
+    const result = await fileService.uploadFile(
+      file,
+      path ? `videos/${path}` : "videos"
+    );
     sendJsonResponse(res, result);
   }
 }

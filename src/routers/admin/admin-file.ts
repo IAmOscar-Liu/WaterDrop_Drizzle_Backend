@@ -34,6 +34,9 @@ const upload = mutler({ dest: "../uploads/" });
  *                 type: string
  *                 format: binary
  *                 description: The image file to upload.
+ *               path:
+ *                 type: string
+ *                 description: The path of the image (e.g. chat/:chatroomId, product/測試商品).
  *     responses:
  *       '200':
  *         description: The URL of the uploaded image.
@@ -75,6 +78,9 @@ router.post(
  *                 type: string
  *                 format: binary
  *                 description: The video file to upload.
+ *               path:
+ *                 type: string
+ *                 description: The path of the video (e.g. chat/:chatroomId, advertisement/測試廣告影片).
  *     responses:
  *       '200':
  *         description: The URL of the uploaded video.
