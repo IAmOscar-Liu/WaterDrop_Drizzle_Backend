@@ -535,6 +535,8 @@ export const deliveryTable = pgTable("deliveries", {
     .unique(),
   merchantTradeNo: text("merchant_trade_no").notNull(),
   AllPayLogisticsID: text("all_pay_logistics_id"),
+  CVSPaymentNo: text("cvs_payment_no"),
+  CVSValidationNo: text("cvs_validation_no"),
   LogisticsType: text("logistics_type").notNull(),
   LogisticsSubType: text("logistics_sub_type").notNull(),
   RtnCode: text("rtn_code"),

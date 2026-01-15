@@ -109,7 +109,7 @@ class EcPayService {
     const hexHash = hash.digest("hex");
 
     //最後，轉成大寫
-    console.log(hexHash.toUpperCase());
+    console.log(`check value: ${hexHash.toUpperCase()}`);
     return hexHash.toUpperCase();
   }
 
@@ -212,6 +212,50 @@ class EcPayService {
     // 您可以在這裡加入更多欄位的驗證...
 
     return null; // 通過所有驗證
+  }
+
+  getPrintTradeDocumentActionUrl(LogisticsSubType?: any) {
+    if (LogisticsSubType === "UNIMARTC2C")
+      return "https://logistics-stage.ecpay.com.tw/Express/PrintUniMartC2COrderInfo";
+    if (LogisticsSubType === "FAMIC2C")
+      return "https://logistics-stage.ecpay.com.tw/Express/PrintFAMIC2COrderInfo";
+    if (LogisticsSubType === "OKMARTC2C")
+      return "https://logistics-stage.ecpay.com.tw/Express/PrintOKMARTC2COrderInfo";
+    return "https://logistics-stage.ecpay.com.tw/helper/printTradeDocument";
+  }
+
+  getPrintTradeDocumentParameters(
+    MerchantID: string,
+    {
+      LogisticsSubType,
+      AllPayLogisticsID,
+      CVSPaymentNo,
+      CVSValidationNo,
+    }: {
+      LogisticsSubType: any;
+      AllPayLogisticsID: any;
+      CVSPaymentNo: any;
+      CVSValidationNo: any;
+    }
+  ) {
+    if (LogisticsSubType === "UNIMARTC2C")
+      return {
+        MerchantID,
+        AllPayLogisticsID,
+        CVSPaymentNo,
+        CVSValidationNo,
+      };
+    if (LogisticsSubType === "FAMIC2C" || LogisticsSubType === "OKMARTC2C")
+      return {
+        MerchantID,
+        AllPayLogisticsID,
+        CVSPaymentNo,
+      };
+    return {
+      MerchantID,
+      AllPayLogisticsID,
+      PrintMode: "1",
+    };
   }
 }
 

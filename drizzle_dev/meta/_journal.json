@@ -169,6 +169,13 @@
       "when": 1768027335131,
       "tag": "0023_chemical_sersi",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1768485697196,
+      "tag": "0024_messy_sentinels",
+      "breakpoints": true
     }
   ]
 }

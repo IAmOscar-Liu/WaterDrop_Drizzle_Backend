@@ -171,17 +171,22 @@ class EcPayController {
   }
 
   async createTestExpress(req: Request, res: Response): Promise<any> {
-    const { ReceiverName, ReceiverCellPhone, ReceiverEmail } = req.query;
+    const {
+      type = "B2C",
+      ReceiverName,
+      ReceiverCellPhone,
+      ReceiverEmail,
+    } = req.query;
 
     if (!ReceiverName || !ReceiverCellPhone || !ReceiverEmail)
       return res.send("Missing required parameters");
 
     const base_param = {
-      MerchantID: "2000132",
+      MerchantID: type === "B2C" ? "2000132" : "2000933",
       MerchantTradeNo: ecpayService.generateTradeNo(),
       MerchantTradeDate: ecpayService.generateMerchantTradeDate(),
       LogisticsType: "CVS",
-      LogisticsSubType: "UNIMART", // 範例：7-ELEVEN
+      LogisticsSubType: type === "B2C" ? "UNIMART" : "UNIMARTC2C", // 範例：7-ELEVEN
       GoodsName: "測試商品",
       GoodsAmount: "300",
       SenderName: "水滴",
@@ -192,14 +197,18 @@ class EcPayController {
       ReceiverCellPhone, // "0978443522",
       ReceiverEmail, // "safaf2@ddd.com",
       ReceiverStoreID: "131386",
+      ...(type === "B2C"
+        ? {}
+        : { SenderCellPhone: process.env.LOGISTICS_SENDER_CELL_PHONE }),
     };
+    console.log(base_param);
 
     const formHtml = ecpayService.generateFormHtml({
       actionUrl: "https://logistics-stage.ecpay.com.tw/Express/Create",
       parameters: base_param,
       checkMacValueOptions: {
-        hashKey: "5294y06JbISpM5x9",
-        hashIV: "v77hoKGq4kWxNNIS",
+        hashKey: type === "B2C" ? "5294y06JbISpM5x9" : "XBERn1YOvpM9nfZc",
+        hashIV: type === "B2C" ? "v77hoKGq4kWxNNIS" : "h1ONHk4P4yqbl5LK",
         algorithm: "md5",
       },
     });
@@ -246,6 +255,7 @@ class EcPayController {
   async createExpress(req: Request, res: Response): Promise<any> {
     const {
       token,
+      type = "B2C",
       MerchantTradeNo,
       LogisticsSubType,
       GoodsName,
@@ -291,6 +301,9 @@ class EcPayController {
       ReceiverCellPhone,
       ReceiverEmail,
       ReceiverStoreID,
+      ...(type === "B2C"
+        ? {}
+        : { SenderCellPhone: process.env.LOGISTICS_SENDER_CELL_PHONE }),
     };
 
     console.log("base_param: ", base_param);
@@ -345,6 +358,8 @@ class EcPayController {
         AllPayLogisticsID: data.AllPayLogisticsID,
         LogisticsType: data.LogisticsType,
         LogisticsSubType: data.LogisticsSubType,
+        CVSPaymentNo: data.CVSPaymentNo ?? null,
+        CVSValidationNo: data.CVSValidationNo ?? null,
         GoodsAmount: Number(data.GoodsAmount),
         ReceiverStoreId: data.ReceiverStoreID,
         RtnCode: data.RtnCode,
@@ -359,24 +374,46 @@ class EcPayController {
   }
 
   async printTradeDocument(req: Request, res: Response) {
-    const { token, AllPayLogisticsID } = req.query;
+    const {
+      token,
+      LogisticsSubType,
+      AllPayLogisticsID,
+      CVSPaymentNo,
+      CVSValidationNo,
+    } = req.query;
 
-    if (!token || !AllPayLogisticsID)
+    if (!token || !LogisticsSubType || !AllPayLogisticsID)
       return res.send("Missing required parameters");
+    if (
+      typeof LogisticsSubType === "string" &&
+      LogisticsSubType.endsWith("C2C")
+    ) {
+      if (
+        LogisticsSubType === "UNIMARTC2C" &&
+        (!CVSPaymentNo || !CVSValidationNo)
+      )
+        return res.send(
+          "CVSPaymentNo and CVSValidationNo are required if LogisticsSubType is UNIMARTC2C"
+        );
+      if (LogisticsSubType === "FAMIC2C" && !CVSPaymentNo)
+        return res.send(
+          "CVSPaymentNo is required if LogisticsSubType is FAMIC2C"
+        );
+      if (LogisticsSubType === "OKMARTC2C" && !CVSPaymentNo)
+        return res.send(
+          "CVSPaymentNo is required if LogisticsSubType is OKMARTC2C"
+        );
+    }
     const payload = validateToken(String(token));
     if (!payload || typeof payload === "string" || !payload.data?.id)
       return res.send("Invalid token");
 
-    const base_param = {
-      MerchantID: process.env.LOGISTICS_MERCHANTID,
-      AllPayLogisticsID,
-      PrintMode: "1",
-    };
-
     const formHtml = ecpayService.generateFormHtml({
-      actionUrl:
-        "https://logistics-stage.ecpay.com.tw/helper/printTradeDocument",
-      parameters: base_param,
+      actionUrl: ecpayService.getPrintTradeDocumentActionUrl(LogisticsSubType),
+      parameters: ecpayService.getPrintTradeDocumentParameters(
+        process.env.LOGISTICS_MERCHANTID!,
+        { LogisticsSubType, AllPayLogisticsID, CVSPaymentNo, CVSValidationNo }
+      ),
       checkMacValueOptions: {
         hashKey: process.env.LOGISTICS_HASH_KEY!,
         hashIV: process.env.LOGISTICS_HASH_IV!,
