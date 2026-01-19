@@ -51,6 +51,12 @@ const router = Router();
  *         AllPayLogisticsID:
  *           type: string
  *           nullable: true
+ *         CVSPaymentNo:
+ *           type: string
+ *           nullable: true
+ *         CVSValidationNo:
+ *           type: string
+ *           nullable: true
  *         LogisticsType:
  *           type: string
  *         LogisticsSubType:
@@ -128,13 +134,27 @@ const router = Router();
  *                 email:
  *                   type: string
  *                   format: email
- *             delivery:
- *               type: object
- *               nullable: true
- *               properties:
- *                 id:
- *                   type: string
- *                   format: uuid
+ *             items:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   id:
+ *                     type: string
+ *                     format: uuid
+ *                   productId:
+ *                     type: string
+ *                     format: uuid
+ *                   productNameAtSale:
+ *                     type: string
+ *             deliveries:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   id:
+ *                     type: string
+ *                     format: uuid
  *
  *     OrderWithRelations:
  *       allOf:
@@ -144,10 +164,73 @@ const router = Router();
  *             items:
  *               type: array
  *               items:
- *                 $ref: '#/components/schemas/OrderItem'
- *             delivery:
- *               $ref: '#/components/schemas/Delivery'
- *               nullable: true
+ *                 allOf:
+ *                   - $ref: '#/components/schemas/OrderItem'
+ *                   - type: object
+ *                     properties:
+ *                       product:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                             format: uuid
+ *                           sellerId:
+ *                             type: string
+ *                             format: uuid
+ *                           name:
+ *                             type: string
+ *                           avatar:
+ *                             type: string
+ *                           description:
+ *                             type: string
+ *                           price:
+ *                             type: number
+ *                           sku:
+ *                             type: string
+ *                           stock:
+ *                             type: integer
+ *                           reserve:
+ *                             type: integer
+ *                           type:
+ *                             type: string
+ *                             enum: [normal, refrigeration, virtual]
+ *                           allowHomeDelivery:
+ *                             type: boolean
+ *                           images:
+ *                             type: array
+ *                             items:
+ *                               type: string
+ *                           status:
+ *                             type: string
+ *                             enum: [active, inactive]
+ *                           metadata:
+ *                             type: object
+ *                           createdAt:
+ *                             type: string
+ *                             format: date-time
+ *                           updatedAt:
+ *                             type: string
+ *                             format: date-time
+ *             deliveries:
+ *               type: array
+ *               items:
+ *                 allOf:
+ *                   - $ref: '#/components/schemas/Delivery'
+ *                   - type: object
+ *                     properties:
+ *                       items:
+ *                         type: array
+ *                         items:
+ *                           type: object
+ *                           properties:
+ *                             id:
+ *                               type: string
+ *                               format: uuid
+ *                             productId:
+ *                               type: string
+ *                               format: uuid
+ *                             productNameAtSale:
+ *                               type: string
  *             user:
  *               type: object
  *               properties:
@@ -266,54 +349,5 @@ router.get("/list", isAuth, OrderController.listAdminOrders);
  *                   $ref: '#/components/schemas/OrderWithRelations'
  */
 router.get("/:id", isAuth, OrderController.getOrder);
-
-/**
- * @swagger
- * /api/admin/order/delivery/{deliveryId}:
- *   put:
- *     tags: [Order]
- *     summary: Update an order's delivery information
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: deliveryId
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *     requestBody:
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               RtnCode:
- *                 type: string
- *                 description: The return code from the logistics provider.
- *               RtnMsg:
- *                 type: string
- *                 description: The return message from the logistics provider.
- *               metadata:
- *                 type: object
- *                 description: Additional metadata from the logistics provider.
- *     responses:
- *       '200':
- *         description: The updated delivery record.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 data:
- *                   $ref: '#/components/schemas/Delivery'
- */
-router.put(
-  "/delivery/:deliveryId",
-  isAuth,
-  OrderController.updateOrderDelivery
-);
 
 export default router;

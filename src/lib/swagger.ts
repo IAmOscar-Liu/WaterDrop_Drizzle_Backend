@@ -15,6 +15,7 @@ const options: swaggerJsDoc.Options = {
     "./src/routers/admin/admin-product.ts",
     "./src/routers/admin/admin-advertisement.ts",
     "./src/routers/admin/admin-order.ts",
+    "./src/routers/admin/admin-delivery.ts",
     "./src/routers/admin/admin-chatroom.ts",
     "./src/routers/admin/admin-file.ts",
     "./src/routers/admin/admin-system.ts",

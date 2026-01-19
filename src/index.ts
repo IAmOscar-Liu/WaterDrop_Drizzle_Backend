@@ -23,6 +23,7 @@ import EcPayRouter from "./routers/ecpay";
 import FileRouter from "./routers/file";
 import NotificationRouter from "./routers/notification";
 import OrderRouter from "./routers/order";
+import DeliveryRouter from "./routers/delivery";
 import ProductRouter from "./routers/product";
 import TreasureBoxRouter from "./routers/treasureBox";
 
@@ -49,7 +50,7 @@ app.use(
   cors({
     origin: "https://waterdropping.com",
     credentials: true,
-  })
+  }),
 );
 
 app.get("/api/test", (_, res) => {
@@ -70,6 +71,7 @@ app.use("/api/cart", CartRouter);
 app.use("/api/chatroom", ChatroomRouter);
 app.use("/api/ecpay", EcPayRouter);
 app.use("/api/order", OrderRouter);
+app.use("/api/delivery", DeliveryRouter);
 app.use("/api/collection", CollectionRouter);
 app.use("/api/notification", NotificationRouter);
 app.use("/api/file", FileRouter);

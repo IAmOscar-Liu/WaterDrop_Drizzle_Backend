@@ -42,6 +42,12 @@ export const productStatusEnum = pgEnum("product_status", [
   "inactive",
 ]);
 
+export const productTypeEnum = pgEnum("product_type", [
+  "normal",
+  "refrigeration",
+  "virtual",
+]);
+
 export const chatMessageSenderEnum = pgEnum("chat_message_sender", [
   "user",
   "admin",
@@ -128,9 +134,9 @@ export const chatRoomTable = pgTable(
       t.userId,
       t.accountId,
       t.productId,
-      t.orderId
+      t.orderId,
     ),
-  })
+  }),
 );
 
 export const chatMessageTable = pgTable("chat_messages", {
@@ -177,7 +183,7 @@ export const accountTable = pgTable("accounts", {
   phone: text("phone"),
   address: text("address"),
   accountGroupId: uuid("account_group_id").references(
-    () => accountGroupTable.id
+    () => accountGroupTable.id,
   ),
   status: accountStatusEnum("status").default("active").notNull(),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
@@ -244,13 +250,13 @@ export const userTable = pgTable(
       oauthCompositeUnique: uniqueIndex("users_oauth_provider_id_uk").on(
         table.oauthProvider,
         table.oauthId,
-        table.email
+        table.email,
       ),
       byReferral: uniqueIndex("users_referral_code_uk").on(table.referralCode),
       byTimezone: index("users_timezone_idx").on(table.timezone),
       // Optional helpful indexes:
     };
-  }
+  },
 );
 
 export const userDailyStatTable = pgTable("user_daily_stats", {
@@ -265,7 +271,7 @@ export const userDailyStatTable = pgTable("user_daily_stats", {
   remainingViews: integer("remaining_views").default(20).notNull(),
   nextTreasureBoxIn: integer("next_treasure_box_in").default(2).notNull(),
   groupAdViewsCountYesterday: integer("group_ad_views_count_yesterday").default(
-    20
+    20,
   ),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
@@ -318,6 +324,8 @@ export const productTable = pgTable("products", {
   reserve: integer("reserve").notNull().default(0),
   images: text("images").array(),
   status: productStatusEnum("status").default("active").notNull(),
+  type: productTypeEnum("type").default("normal").notNull(),
+  allowHomeDelivery: boolean("allow_home_delivery").default(false).notNull(),
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
@@ -381,9 +389,9 @@ export const advertisementTransactionTable = pgTable(
   (t) => ({
     // Index for quickly finding transactions for an advertisement
     adIdIdx: index("advertisement_transactions_ad_id_idx").on(
-      t.advertisementId
+      t.advertisementId,
     ),
-  })
+  }),
 );
 
 export const cartItemTable = pgTable(
@@ -408,9 +416,9 @@ export const cartItemTable = pgTable(
   (t) => ({
     userProductUnique: uniqueIndex("cart_items_user_product_uk").on(
       t.userId,
-      t.productId
+      t.productId,
     ),
-  })
+  }),
 );
 
 export const collectionTable = pgTable(
@@ -430,9 +438,9 @@ export const collectionTable = pgTable(
   (t) => ({
     userProductUnique: uniqueIndex("collections_user_product_uk").on(
       t.userId,
-      t.productId
+      t.productId,
     ),
-  })
+  }),
 );
 
 export const productsToCategoriesTable = pgTable(
@@ -447,7 +455,7 @@ export const productsToCategoriesTable = pgTable(
   },
   (t) => ({
     pk: primaryKey({ columns: [t.productId, t.categoryId] }),
-  })
+  }),
 );
 
 export const adViewCountTable = pgTable("ad_view_counts", {
@@ -497,6 +505,7 @@ export const orderItemTable = pgTable(
     productId: uuid("product_id")
       .notNull()
       .references(() => productTable.id),
+    deliveryId: uuid("delivery_id").references(() => deliveryTable.id),
 
     quantity: integer("quantity").notNull(),
     pendingQuantity: integer("pending_quantity").notNull().default(0),
@@ -522,28 +531,28 @@ export const orderItemTable = pgTable(
   (t) => ({
     orderItemUnique: uniqueIndex("order_items_order_product_uk").on(
       t.orderId,
-      t.productId
+      t.productId,
     ),
-  })
+  }),
 );
 
 export const deliveryTable = pgTable("deliveries", {
   id: uuid("id").defaultRandom().primaryKey(),
   orderId: uuid("order_id")
     .notNull()
-    .references(() => orderTable.id)
-    .unique(),
-  merchantTradeNo: text("merchant_trade_no").notNull(),
+    .references(() => orderTable.id),
+  merchantTradeNo: text("merchant_trade_no"),
   AllPayLogisticsID: text("all_pay_logistics_id"),
   CVSPaymentNo: text("cvs_payment_no"),
   CVSValidationNo: text("cvs_validation_no"),
   LogisticsType: text("logistics_type").notNull(),
-  LogisticsSubType: text("logistics_sub_type").notNull(),
+  LogisticsSubType: text("logistics_sub_type"),
   RtnCode: text("rtn_code"),
   RtnMsg: text("rtn_msg"),
   GoodsAmount: doublePrecision("goods_amount").notNull(),
   ReceiverStoreId: text("receiver_store_id"),
   metadata: jsonb("metadata"),
+  homeDeliveryData: jsonb("home_delivery_data"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -551,6 +560,15 @@ export const deliveryTable = pgTable("deliveries", {
     .defaultNow()
     .$onUpdate(() => new Date())
     .notNull(),
+});
+
+export const merchantTradeTable = pgTable("merchant_trades", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orderId: uuid("order_id")
+    .notNull()
+    .references(() => orderTable.id, { onDelete: "cascade" }),
+  merchantTradeNo: text("merchant_trade_no").notNull(),
+  productIds: uuid("product_ids").array().notNull(),
 });
 
 export const deviceTokenTable = pgTable("device_tokens", {
@@ -592,7 +610,7 @@ export const userMonthlyCoinStatTable = pgTable(
   (t) => ({
     // Composite primary key ensures one entry per user per month
     pk: primaryKey({ columns: [t.userId, t.month] }),
-  })
+  }),
 );
 
 export const userNotificationTable = pgTable(
@@ -623,9 +641,9 @@ export const userNotificationTable = pgTable(
     // Index for quickly finding all unread notifications for a user
     userReadIdx: index("user_notifications_user_read_idx").on(
       t.userId,
-      t.isRead
+      t.isRead,
     ),
-  })
+  }),
 );
 
 // Relations
@@ -678,7 +696,7 @@ export const accountGroupRelations = relations(
       references: [accountTable.id],
     }),
     accounts: many(accountTable),
-  })
+  }),
 );
 
 export const accountWalletRelations = relations(
@@ -688,7 +706,7 @@ export const accountWalletRelations = relations(
       fields: [accountWalletTable.accountId],
       references: [accountTable.id],
     }),
-  })
+  }),
 );
 
 export const userDailyStatRelations = relations(
@@ -698,7 +716,7 @@ export const userDailyStatRelations = relations(
       fields: [userDailyStatTable.userId],
       references: [userTable.id],
     }),
-  })
+  }),
 );
 
 export const treasureBoxRelations = relations(treasureBoxTable, ({ one }) => ({
@@ -747,7 +765,7 @@ export const chatMessageRelations = relations(
       references: [chatRoomTable.id],
     }),
     attachments: many(chatMessageAttachmentTable),
-  })
+  }),
 );
 
 export const chatMessageAttachmentRelations = relations(
@@ -757,7 +775,7 @@ export const chatMessageAttachmentRelations = relations(
       fields: [chatMessageAttachmentTable.chatMessageId],
       references: [chatMessageTable.id],
     }),
-  })
+  }),
 );
 
 export const productRelations = relations(productTable, ({ one, many }) => ({
@@ -786,7 +804,7 @@ export const advertisementRelations = relations(
     views: many(adViewCountTable),
     stats: one(advertisementStatsTable),
     transactions: many(advertisementTransactionTable),
-  })
+  }),
 );
 
 export const categoryRelations = relations(categoryTable, ({ many }) => ({
@@ -804,7 +822,7 @@ export const productsToCategoriesRelations = relations(
       fields: [productsToCategoriesTable.categoryId],
       references: [categoryTable.id],
     }),
-  })
+  }),
 );
 
 export const adViewCountRelations = relations(adViewCountTable, ({ one }) => ({
@@ -825,7 +843,7 @@ export const advertisementStatsRelations = relations(
       fields: [advertisementStatsTable.advertisementId],
       references: [advertisementTable.id],
     }),
-  })
+  }),
 );
 
 export const advertisementTransactionRelations = relations(
@@ -835,7 +853,7 @@ export const advertisementTransactionRelations = relations(
       fields: [advertisementTransactionTable.advertisementId],
       references: [advertisementTable.id],
     }),
-  })
+  }),
 );
 
 export const collectionRelations = relations(collectionTable, ({ one }) => ({
@@ -860,13 +878,28 @@ export const orderRelations = relations(orderTable, ({ one, many }) => ({
   }),
   chatRooms: many(chatRoomTable),
   items: many(orderItemTable), // An order can have many items
-  delivery: one(deliveryTable), // An order has one delivery
+  deliveries: many(deliveryTable), // An order can have deliveries
+  merchantTrades: many(merchantTradeTable),
 }));
+
+export const merchantTradeRelations = relations(
+  merchantTradeTable,
+  ({ one }) => ({
+    order: one(orderTable, {
+      fields: [merchantTradeTable.orderId],
+      references: [orderTable.id],
+    }),
+  }),
+);
 
 export const orderItemRelations = relations(orderItemTable, ({ one }) => ({
   order: one(orderTable, {
     fields: [orderItemTable.orderId],
     references: [orderTable.id],
+  }),
+  delivery: one(deliveryTable, {
+    fields: [orderItemTable.deliveryId],
+    references: [deliveryTable.id],
   }),
   product: one(productTable, {
     fields: [orderItemTable.productId],
@@ -874,11 +907,12 @@ export const orderItemRelations = relations(orderItemTable, ({ one }) => ({
   }),
 }));
 
-export const deliveryRelations = relations(deliveryTable, ({ one }) => ({
+export const deliveryRelations = relations(deliveryTable, ({ one, many }) => ({
   order: one(orderTable, {
     fields: [deliveryTable.orderId],
     references: [orderTable.id],
   }),
+  items: many(orderItemTable), // A delivery can have many items
 }));
 
 export const deviceTokenRelations = relations(deviceTokenTable, ({ one }) => ({
@@ -895,7 +929,7 @@ export const userMonthlyCoinStatRelations = relations(
       fields: [userMonthlyCoinStatTable.userId],
       references: [userTable.id],
     }),
-  })
+  }),
 );
 
 export const userNotificationRelations = relations(
@@ -909,7 +943,7 @@ export const userNotificationRelations = relations(
       fields: [userNotificationTable.orderId],
       references: [orderTable.id],
     }),
-  })
+  }),
 );
 
 // Convenient TS types
@@ -983,6 +1017,9 @@ export type NewOrderItem = typeof orderItemTable.$inferInsert;
 
 export type Delivery = typeof deliveryTable.$inferSelect;
 export type NewDelivery = typeof deliveryTable.$inferInsert;
+
+export type MerchantTrade = typeof merchantTradeTable.$inferSelect;
+export type NewMerchantTrade = typeof merchantTradeTable.$inferInsert;
 
 export type DeviceToken = typeof deviceTokenTable.$inferSelect;
 export type NewDeviceToken = typeof deviceTokenTable.$inferInsert;

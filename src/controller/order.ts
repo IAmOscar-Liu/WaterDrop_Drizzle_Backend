@@ -33,7 +33,7 @@ class OrderController {
       order: order === "asc" ? "asc" : "desc",
       startDate: startDate
         ? new Date(
-            typeof startDate === "number" ? startDate : String(startDate)
+            typeof startDate === "number" ? startDate : String(startDate),
           )
         : undefined,
       endDate: endDate
@@ -66,14 +66,8 @@ class OrderController {
     const result = await orderService.updateOrderStatus(
       orderId,
       status as Exclude<schema.Order["orderStatus"], undefined>,
-      metadata
+      metadata,
     );
-    sendJsonResponse(res, result);
-  }
-
-  async updateOrderDelivery(req: Request, res: Response): Promise<any> {
-    const { deliveryId } = req.params;
-    const result = await orderService.updateOrderDelivery(deliveryId, req.body);
     sendJsonResponse(res, result);
   }
 }

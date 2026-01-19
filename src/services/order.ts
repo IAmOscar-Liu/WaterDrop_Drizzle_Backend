@@ -8,13 +8,12 @@ import {
   ListOrdersParams,
   ListAdminOrdersParams,
   updateOrderStatus,
-  updateDelivery,
 } from "../repository/order";
 import { ServiceResponse } from "../type/general";
 
 class OrderService {
   async listOrders(
-    params: ListOrdersParams
+    params: ListOrdersParams,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof listOrders>>>> {
     try {
       const orders = await listOrders(params);
@@ -33,7 +32,7 @@ class OrderService {
   }
 
   async listAdminOrders(
-    params: ListAdminOrdersParams
+    params: ListAdminOrdersParams,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof listAdminOrders>>>> {
     try {
       const orders = await listAdminOrders(params);
@@ -52,7 +51,7 @@ class OrderService {
   }
 
   async getOrderById(
-    id: string
+    id: string,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof getOrderById>>>> {
     try {
       const order = await getOrderById(id);
@@ -88,7 +87,7 @@ class OrderService {
           totalAmount,
           discountCoin,
         },
-        items
+        items,
       );
       if (order) {
         return { success: true, data: order };
@@ -107,7 +106,7 @@ class OrderService {
   async updateOrderStatus(
     orderId: string,
     status: Exclude<schema.Order["orderStatus"], undefined>,
-    metadata?: any
+    metadata?: any,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof updateOrderStatus>>>> {
     try {
       const order = await updateOrderStatus(orderId, status, metadata);
@@ -118,26 +117,6 @@ class OrderService {
           success: false,
           statusCode: 404,
           message: "order not found",
-        };
-      }
-    } catch (error) {
-      return handleServiceError(error);
-    }
-  }
-
-  async updateOrderDelivery(
-    deliveryId: string,
-    updates: Parameters<typeof updateDelivery>[1]
-  ): Promise<ServiceResponse<Awaited<ReturnType<typeof updateDelivery>>>> {
-    try {
-      const delivery = await updateDelivery(deliveryId, updates);
-      if (delivery) {
-        return { success: true, data: delivery };
-      } else {
-        return {
-          success: false,
-          statusCode: 404,
-          message: "delivery not found",
         };
       }
     } catch (error) {

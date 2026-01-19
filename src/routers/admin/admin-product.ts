@@ -56,6 +56,11 @@ const router = Router();
  *           type: integer
  *         reserve:
  *           type: integer
+ *         type:
+ *           type: string
+ *           enum: [normal, refrigeration, virtual]
+ *         allowHomeDelivery:
+ *           type: boolean
  *         images:
  *           type: array
  *           items:
@@ -63,6 +68,7 @@ const router = Router();
  *           nullable: true
  *         status:
  *           type: string
+ *           enum: [active, inactive]
  *         metadata:
  *           type: object
  *           nullable: true
@@ -293,6 +299,12 @@ router.get("/:id", isAuth, ProductController.getProduct);
  *               stock:
  *                 type: integer
  *                 example: 100
+ *               type:
+ *                 type: string
+ *                 enum: [normal, refrigeration, virtual]
+ *                 default: "normal"
+ *               allowHomeDelivery:
+ *                 type: boolean
  *               images:
  *                 type: array
  *                 items:
@@ -371,6 +383,11 @@ router.post("/create", isAuth, ProductController.createProduct);
  *                 type: number
  *               stock:
  *                 type: integer
+ *               type:
+ *                 type: string
+ *                 enum: [normal, refrigeration, virtual]
+ *               allowHomeDelivery:
+ *                 type: boolean
  *               images:
  *                 type: array
  *                 items:
@@ -475,7 +492,7 @@ router.put("/:id", isAuth, ProductController.updateProduct);
 router.get(
   "/:id/sales-summary",
   isAuth,
-  ProductController.getProductSalesSummary
+  ProductController.getProductSalesSummary,
 );
 
 export default router;

@@ -45,7 +45,7 @@ export async function findOrCreateChatRoom({
         : isNull(schema.chatRoomTable.orderId),
       productId
         ? eq(schema.chatRoomTable.productId, productId)
-        : isNull(schema.chatRoomTable.productId)
+        : isNull(schema.chatRoomTable.productId),
     ),
   });
 
@@ -58,7 +58,7 @@ export async function findOrCreateChatRoom({
         isNull(schema.chatRoomTable.orderId),
         productId
           ? eq(schema.chatRoomTable.productId, productId)
-          : isNull(schema.chatRoomTable.productId)
+          : isNull(schema.chatRoomTable.productId),
       ),
     });
     if (existingRoom) {
@@ -147,7 +147,7 @@ export async function sendChatMessage({
     const existingRoom = await tx.query.chatRoomTable.findFirst({
       where: and(
         eq(schema.chatRoomTable.id, chatRoomId),
-        eq(schema.chatRoomTable.status, "active")
+        eq(schema.chatRoomTable.status, "active"),
       ),
     });
     if (!existingRoom) {
@@ -171,7 +171,7 @@ export async function sendChatMessage({
         attachments.map((a) => ({
           ...a,
           chatMessageId: newMessage.id,
-        }))
+        })),
       );
     }
 
@@ -262,13 +262,13 @@ export async function getChatHistory({
  */
 export async function markMessagesAsRead(
   chatRoomId: string,
-  readerType: schema.ChatMessage["senderType"]
+  readerType: schema.ChatMessage["senderType"],
 ) {
   // check if chatroom is active
   const existingRoom = await db.query.chatRoomTable.findFirst({
     where: and(
       eq(schema.chatRoomTable.id, chatRoomId),
-      eq(schema.chatRoomTable.status, "active")
+      eq(schema.chatRoomTable.status, "active"),
     ),
   });
   if (!existingRoom) {
@@ -276,7 +276,7 @@ export async function markMessagesAsRead(
   }
 
   console.log(
-    `Marking messages in room ${chatRoomId} as read for ${readerType}.`
+    `Marking messages in room ${chatRoomId} as read for ${readerType}.`,
   );
   return db
     .update(schema.chatMessageTable)
@@ -285,8 +285,8 @@ export async function markMessagesAsRead(
       and(
         eq(schema.chatMessageTable.chatRoomId, chatRoomId),
         ne(schema.chatMessageTable.senderType, readerType), // Mark messages from the *other* party
-        eq(schema.chatMessageTable.isRead, false) // Only update unread messages
-      )
+        eq(schema.chatMessageTable.isRead, false), // Only update unread messages
+      ),
     )
     .returning();
 }
@@ -333,7 +333,8 @@ export async function listChatRooms({
       product: true,
       order: {
         with: {
-          delivery: true,
+          items: true,
+          deliveries: true,
         },
       },
     },
@@ -376,6 +377,14 @@ export async function listChatRooms({
   const rooms = roomsData.map((room) => {
     const { unreadCount, lastMessageId, order, ...rest } = room;
 
+    let delivery = null;
+    if (order && room.productId) {
+      const item = order.items.find((i) => i.productId === room.productId);
+      if (item?.deliveryId) {
+        delivery = order.deliveries.find((d) => d.id === item.deliveryId);
+      }
+    }
+
     const lastMessage = lastMessageId
       ? lastMessagesMap.get(lastMessageId)
       : null;
@@ -391,10 +400,12 @@ export async function listChatRooms({
             merchantTradeNo: order.merchantTradeNo,
             totalAmount: order.totalAmount,
             discountCoin: order.discountCoin,
-            delivery: order?.delivery
+            delivery: delivery
               ? {
-                  RtnCode: order.delivery.RtnCode,
-                  RtnMsg: order.delivery.RtnMsg,
+                  LogisticsType: delivery.LogisticsType,
+                  LogisticsSubType: delivery.LogisticsSubType,
+                  RtnCode: delivery.RtnCode,
+                  RtnMsg: delivery.RtnMsg,
                 }
               : null,
           }
@@ -461,7 +472,8 @@ export async function listAdminChatRooms({
       user: true,
       order: {
         with: {
-          delivery: true,
+          items: true,
+          deliveries: true,
         },
       },
     },
@@ -504,6 +516,14 @@ export async function listAdminChatRooms({
   const rooms = roomsData.map((room) => {
     const { unreadCount, lastMessageId, order, ...rest } = room;
 
+    let delivery = null;
+    if (order && room.productId) {
+      const item = order.items.find((i) => i.productId === room.productId);
+      if (item?.deliveryId) {
+        delivery = order.deliveries.find((d) => d.id === item.deliveryId);
+      }
+    }
+
     const lastMessage = lastMessageId
       ? lastMessagesMap.get(lastMessageId)
       : null;
@@ -519,10 +539,12 @@ export async function listAdminChatRooms({
             merchantTradeNo: order.merchantTradeNo,
             totalAmount: order.totalAmount,
             discountCoin: order.discountCoin,
-            delivery: order?.delivery
+            delivery: delivery
               ? {
-                  RtnCode: order.delivery.RtnCode,
-                  RtnMsg: order.delivery.RtnMsg,
+                  LogisticsType: delivery.LogisticsType,
+                  LogisticsSubType: delivery.LogisticsSubType,
+                  RtnCode: delivery.RtnCode,
+                  RtnMsg: delivery.RtnMsg,
                 }
               : null,
           }

@@ -160,6 +160,10 @@ const router = Router();
  *                 delivery:
  *                   type: object
  *                   properties:
+ *                     LogisticsType:
+ *                       type: string
+ *                     LogisticsSubType:
+ *                       type: string
  *                     RtnCode:
  *                       type: string
  *                     RtnMsg:
@@ -436,7 +440,7 @@ router.post("/message/:chatRoomId", isAuth, ChatroomController.sendMessage);
 router.put(
   "/message/:chatRoomId/read",
   isAuth,
-  ChatroomController.markMessagesAsRead
+  ChatroomController.markMessagesAsRead,
 );
 
 export default router;

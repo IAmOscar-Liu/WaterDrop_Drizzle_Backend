@@ -1,0 +1,2 @@
+ALTER TABLE "merchant_trades" ADD COLUMN "order_id" uuid NOT NULL;--> statement-breakpoint
+ALTER TABLE "merchant_trades" ADD CONSTRAINT "merchant_trades_order_id_orders_id_fk" FOREIGN KEY ("order_id") REFERENCES "public"."orders"("id") ON DELETE cascade ON UPDATE no action;

@@ -176,6 +176,13 @@
       "when": 1768485697196,
       "tag": "0024_messy_sentinels",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1768810765338,
+      "tag": "0025_living_la_nuit",
+      "breakpoints": true
     }
   ]
 }

@@ -1,13 +1,14 @@
 import { Request, Response } from "express";
-import { validateToken } from "../lib/token";
 import path from "path";
+import { sendJsonResponse } from "../lib/general";
+import { validateToken } from "../lib/token";
+import { createDelivery } from "../repository/delivery";
 import {
-  createDelivery,
-  getOrderByMerchantTradeNo,
+  createMerchantTrade,
+  getMerchantTradeByMerchantTradeNo,
   updateOrderStatus,
 } from "../repository/order";
 import ecpayService from "../services/ecpay";
-import { sendJsonResponse } from "../lib/general";
 
 const TEST_ORDER_ID = "test_order_12345";
 
@@ -100,7 +101,7 @@ class EcPayController {
       await updateOrderStatus(
         orderId,
         data.RtnCode == 1 ? "paid" : "failed",
-        data
+        data,
       )
         .then((result) => {
           if (!result) throw new Error("Order not found");
@@ -115,7 +116,7 @@ class EcPayController {
   async handleClientReturn(req: Request, res: Response): Promise<any> {
     console.log("clientReturn:", req.body, req.query);
     res.sendFile(
-      path.resolve(process.cwd(), "src/assets/html/clientReturn.html")
+      path.resolve(process.cwd(), "src/assets/html/clientReturn.html"),
     );
   }
 
@@ -151,7 +152,7 @@ class EcPayController {
                 window.flutter_inappwebview.callHandler("logistics-map-callback", ${JSON.stringify(
                   data,
                   null,
-                  2
+                  2,
                 )});
               }
             );
@@ -200,6 +201,7 @@ class EcPayController {
       ...(type === "B2C"
         ? {}
         : { SenderCellPhone: process.env.LOGISTICS_SENDER_CELL_PHONE }),
+      CustomField1: "lalala 123",
     };
     console.log(base_param);
 
@@ -218,7 +220,7 @@ class EcPayController {
 
   async handleTestExpressServerReply(
     req: Request,
-    res: Response
+    res: Response,
   ): Promise<any> {
     const data = req.body;
     console.log("測試運單結果:", data);
@@ -227,7 +229,7 @@ class EcPayController {
 
   async handleTestExpressClientReply(
     req: Request,
-    res: Response
+    res: Response,
   ): Promise<any> {
     res.send(`
      <!DOCTYPE html>
@@ -242,7 +244,7 @@ class EcPayController {
                 window.flutter_inappwebview.callHandler("express-test-reply", ${JSON.stringify(
                   req.body,
                   null,
-                  2
+                  2,
                 )});
               }
             );
@@ -256,7 +258,8 @@ class EcPayController {
     const {
       token,
       type = "B2C",
-      MerchantTradeNo,
+      // MerchantTradeNo,
+      orderId,
       LogisticsSubType,
       GoodsName,
       GoodsAmount,
@@ -264,11 +267,13 @@ class EcPayController {
       ReceiverCellPhone,
       ReceiverEmail,
       ReceiverStoreID,
+      productIds,
     } = req.query;
 
     if (
       !token ||
-      !MerchantTradeNo ||
+      // !MerchantTradeNo ||
+      !orderId ||
       !LogisticsSubType ||
       !GoodsName ||
       !GoodsAmount ||
@@ -282,11 +287,28 @@ class EcPayController {
     if (!payload || typeof payload === "string" || !payload.data?.id)
       return res.send("Invalid token");
 
+    const merchantTradeNo = ecpayService.generateTradeNo();
+
+    let pIds: string[] = [];
+    if (Array.isArray(productIds)) {
+      pIds = productIds.filter((p) => typeof p === "string") as string[];
+    } else if (typeof productIds === "string") {
+      pIds = [productIds];
+    }
+
+    if (pIds.length > 0) {
+      await createMerchantTrade({
+        merchantTradeNo,
+        orderId: String(orderId),
+        productIds: pIds,
+      });
+    }
+
     const maxGoodsAmount = Math.min(20000, Math.floor(Number(GoodsAmount)));
 
     const base_param = {
       MerchantID: process.env.LOGISTICS_MERCHANTID,
-      MerchantTradeNo,
+      MerchantTradeNo: merchantTradeNo,
       MerchantTradeDate: ecpayService.generateMerchantTradeDate(),
       LogisticsType: "CVS",
       LogisticsSubType, // 範例：7-ELEVEN
@@ -335,7 +357,7 @@ class EcPayController {
                 window.flutter_inappwebview.callHandler("express-reply", ${JSON.stringify(
                   req.body,
                   null,
-                  2
+                  2,
                 )});
               }
             );
@@ -350,22 +372,28 @@ class EcPayController {
     console.log("運單結果:", data);
 
     try {
-      const order = await getOrderByMerchantTradeNo(data.MerchantTradeNo);
-      if (!order) throw new Error("Order not found");
-      await createDelivery({
-        orderId: order.id,
-        merchantTradeNo: data.MerchantTradeNo,
-        AllPayLogisticsID: data.AllPayLogisticsID,
-        LogisticsType: data.LogisticsType,
-        LogisticsSubType: data.LogisticsSubType,
-        CVSPaymentNo: data.CVSPaymentNo ?? null,
-        CVSValidationNo: data.CVSValidationNo ?? null,
-        GoodsAmount: Number(data.GoodsAmount),
-        ReceiverStoreId: data.ReceiverStoreID,
-        RtnCode: data.RtnCode,
-        RtnMsg: data.RtnMsg,
-        metadata: data,
-      });
+      const merchantTrade = await getMerchantTradeByMerchantTradeNo(
+        data.MerchantTradeNo,
+      );
+      if (!merchantTrade) throw new Error("Order not found");
+
+      await createDelivery(
+        {
+          orderId: merchantTrade.orderId,
+          merchantTradeNo: merchantTrade.merchantTradeNo,
+          AllPayLogisticsID: data.AllPayLogisticsID,
+          LogisticsType: data.LogisticsType,
+          LogisticsSubType: data.LogisticsSubType,
+          CVSPaymentNo: data.CVSPaymentNo ?? null,
+          CVSValidationNo: data.CVSValidationNo ?? null,
+          GoodsAmount: Number(data.GoodsAmount),
+          ReceiverStoreId: data.ReceiverStoreID,
+          RtnCode: data.RtnCode,
+          RtnMsg: data.RtnMsg,
+          metadata: data,
+        },
+        merchantTrade?.productIds,
+      );
     } catch (error) {
       console.log(error);
     }
@@ -393,15 +421,15 @@ class EcPayController {
         (!CVSPaymentNo || !CVSValidationNo)
       )
         return res.send(
-          "CVSPaymentNo and CVSValidationNo are required if LogisticsSubType is UNIMARTC2C"
+          "CVSPaymentNo and CVSValidationNo are required if LogisticsSubType is UNIMARTC2C",
         );
       if (LogisticsSubType === "FAMIC2C" && !CVSPaymentNo)
         return res.send(
-          "CVSPaymentNo is required if LogisticsSubType is FAMIC2C"
+          "CVSPaymentNo is required if LogisticsSubType is FAMIC2C",
         );
       if (LogisticsSubType === "OKMARTC2C" && !CVSPaymentNo)
         return res.send(
-          "CVSPaymentNo is required if LogisticsSubType is OKMARTC2C"
+          "CVSPaymentNo is required if LogisticsSubType is OKMARTC2C",
         );
     }
     const payload = validateToken(String(token));
@@ -412,7 +440,7 @@ class EcPayController {
       actionUrl: ecpayService.getPrintTradeDocumentActionUrl(LogisticsSubType),
       parameters: ecpayService.getPrintTradeDocumentParameters(
         process.env.LOGISTICS_MERCHANTID!,
-        { LogisticsSubType, AllPayLogisticsID, CVSPaymentNo, CVSValidationNo }
+        { LogisticsSubType, AllPayLogisticsID, CVSPaymentNo, CVSValidationNo },
       ),
       checkMacValueOptions: {
         hashKey: process.env.LOGISTICS_HASH_KEY!,

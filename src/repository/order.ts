@@ -2,8 +2,8 @@ import { and, count, eq, gte, inArray, lt, lte, SQL, sql } from "drizzle-orm";
 import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
 import db from "../lib/initDB";
-import { upsertCartItem } from "./cart";
 import { isAccountAdmin } from "./account";
+import { upsertCartItem } from "./cart";
 
 /**
  * Creates a new order, inserts order items, and updates product reserves.
@@ -13,7 +13,7 @@ import { isAccountAdmin } from "./account";
  */
 export async function createOrder(
   orderData: schema.NewOrder,
-  items: Array<Omit<schema.NewOrderItem, "orderId" | "lineTotal">>
+  items: Array<Omit<schema.NewOrderItem, "orderId" | "lineTotal">>,
 ) {
   return db.transaction(async (tx) => {
     // check if each item's quantity less or equal to (product.stock - product.reserve)
@@ -71,7 +71,7 @@ export async function createOrder(
         pendingQuantity: item.quantity,
         orderId: newOrder.id,
         lineTotal: item.unitPriceAtSale * item.quantity,
-      }))
+      })),
     );
 
     // Update each product's reserve
@@ -83,8 +83,8 @@ export async function createOrder(
             reserve: sql`COALESCE(${schema.productTable.reserve}, 0) + ${item.quantity}`,
             updatedAt: new Date(),
           })
-          .where(eq(schema.productTable.id, item.productId))
-      )
+          .where(eq(schema.productTable.id, item.productId)),
+      ),
     );
 
     return tx.query.orderTable.findFirst({
@@ -103,7 +103,7 @@ export async function createOrder(
 export async function updateOrderStatus(
   orderId: string,
   status: Exclude<schema.NewOrder["orderStatus"], undefined>,
-  metadata?: schema.NewOrder["metadata"]
+  metadata?: schema.NewOrder["metadata"],
 ) {
   return db.transaction(async (tx) => {
     // First, get the order to access its items and user ID
@@ -134,7 +134,7 @@ export async function updateOrderStatus(
                 stock: sql`COALESCE(${schema.productTable.stock}, 0) - ${item.pendingQuantity}`,
                 updatedAt: new Date(),
               })
-              .where(eq(schema.productTable.id, item.productId))
+              .where(eq(schema.productTable.id, item.productId)),
           );
           promises.push(
             tx
@@ -143,7 +143,7 @@ export async function updateOrderStatus(
                 pendingQuantity: 0,
                 updatedAt: new Date(),
               })
-              .where(eq(schema.orderItemTable.id, item.id))
+              .where(eq(schema.orderItemTable.id, item.id)),
           );
         }
       }
@@ -155,7 +155,7 @@ export async function updateOrderStatus(
             .set({
               coins: sql`${schema.userTable.coins} - ${order.discountCoin}`,
             })
-            .where(eq(schema.userTable.id, order.userId))
+            .where(eq(schema.userTable.id, order.userId)),
         );
 
         // Update coinsSpent in userMonthlyCoinStatTable
@@ -165,7 +165,7 @@ export async function updateOrderStatus(
         const monthlyStats = await tx.query.userMonthlyCoinStatTable.findMany({
           where: and(
             eq(schema.userMonthlyCoinStatTable.userId, order.userId),
-            eq(schema.userMonthlyCoinStatTable.expired, false)
+            eq(schema.userMonthlyCoinStatTable.expired, false),
           ),
           orderBy: (stats, { asc }) => [asc(stats.month)],
         });
@@ -178,7 +178,7 @@ export async function updateOrderStatus(
           if (availableCoinsToSpend > 0) {
             const amountToSpendInThisMonth = Math.min(
               remainingDiscountCoins,
-              availableCoinsToSpend
+              availableCoinsToSpend,
             );
 
             promises.push(
@@ -190,9 +190,9 @@ export async function updateOrderStatus(
                 .where(
                   and(
                     eq(schema.userMonthlyCoinStatTable.userId, order.userId),
-                    eq(schema.userMonthlyCoinStatTable.month, stat.month)
-                  )
-                )
+                    eq(schema.userMonthlyCoinStatTable.month, stat.month),
+                  ),
+                ),
             );
             remainingDiscountCoins -= amountToSpendInThisMonth;
           }
@@ -210,7 +210,7 @@ export async function updateOrderStatus(
                 reserve: sql`COALESCE(${schema.productTable.reserve}, 0) - ${item.pendingQuantity}`,
                 updatedAt: new Date(),
               })
-              .where(eq(schema.productTable.id, item.productId))
+              .where(eq(schema.productTable.id, item.productId)),
           );
           promises.push(
             tx
@@ -219,7 +219,7 @@ export async function updateOrderStatus(
                 pendingQuantity: 0,
                 updatedAt: new Date(),
               })
-              .where(eq(schema.orderItemTable.id, item.id))
+              .where(eq(schema.orderItemTable.id, item.id)),
           );
         }
       }
@@ -249,7 +249,7 @@ export async function updateOrderStatus(
             product: true,
           },
         },
-        delivery: true,
+        deliveries: true,
       },
     });
   });
@@ -264,12 +264,12 @@ export async function expireOrders(expireInMs: number) {
     .where(
       and(
         eq(schema.orderTable.orderStatus, "pending"),
-        lt(schema.orderTable.createdAt, cutoffTime)
-      )
+        lt(schema.orderTable.createdAt, cutoffTime),
+      ),
     );
 
   const results = await Promise.all(
-    expiredOrders.map((order) => updateOrderStatus(order.id, "expired"))
+    expiredOrders.map((order) => updateOrderStatus(order.id, "expired")),
   );
   return results;
 }
@@ -298,8 +298,8 @@ export async function listOrders({
     .where(
       and(
         inArray(schema.orderTable.orderStatus, statusIn),
-        eq(schema.orderTable.userId, userId)
-      )
+        eq(schema.orderTable.userId, userId),
+      ),
     );
 
   const total = totalResult[0].total;
@@ -311,7 +311,7 @@ export async function listOrders({
     offset,
     where: and(
       inArray(schema.orderTable.orderStatus, statusIn),
-      eq(schema.orderTable.userId, userId)
+      eq(schema.orderTable.userId, userId),
     ),
     // with: {
     //   items: {
@@ -361,7 +361,7 @@ export async function listAdminOrders({
       .from(schema.orderItemTable)
       .innerJoin(
         schema.productTable,
-        eq(schema.orderItemTable.productId, schema.productTable.id)
+        eq(schema.orderItemTable.productId, schema.productTable.id),
       )
       .where(eq(schema.productTable.sellerId, accountId));
     conditions.push(inArray(schema.orderTable.id, sellerOrderIdsSubquery));
@@ -400,7 +400,13 @@ export async function listAdminOrders({
     limit,
     offset,
     with: {
-      items: true,
+      items: {
+        columns: {
+          id: true,
+          productId: true,
+          productNameAtSale: true,
+        },
+      },
       user: {
         columns: {
           id: true,
@@ -408,7 +414,7 @@ export async function listAdminOrders({
           email: true,
         },
       },
-      delivery: {
+      deliveries: {
         columns: {
           id: true,
         },
@@ -431,7 +437,24 @@ export async function getOrderById(orderId: string) {
           product: true,
         },
       },
-      delivery: true,
+      deliveries: {
+        with: {
+          items: {
+            columns: {
+              id: true,
+              productId: true,
+              productNameAtSale: true,
+            },
+          },
+        },
+      },
+      user: {
+        columns: {
+          id: true,
+          name: true,
+          email: true,
+        },
+      },
     },
   });
 }
@@ -442,30 +465,33 @@ export async function getOrderByMerchantTradeNo(merchantTradeNo: string) {
   });
 }
 
-export async function createDelivery(deliveryData: schema.NewDelivery) {
-  const [newDelivery] = await db
-    .insert(schema.deliveryTable)
-    .values(deliveryData)
+export async function createMerchantTrade({
+  merchantTradeNo,
+  orderId,
+  productIds,
+}: {
+  merchantTradeNo: string;
+  orderId: string;
+  productIds: string[];
+}) {
+  const [merchantTrade] = await db
+    .insert(schema.merchantTradeTable)
+    .values({
+      merchantTradeNo,
+      orderId,
+      productIds,
+    })
     .returning();
-
-  console.log("New Delivery Created:", newDelivery.id);
-
-  return newDelivery;
+  console.log(
+    `merchantTrade created successfully, merchantTradeNo: ${merchantTradeNo}`,
+  );
+  return merchantTrade;
 }
 
-export async function updateDelivery(
-  deliveryId: string,
-  updates: Omit<
-    Partial<schema.NewDelivery>,
-    "id" | "orderId" | "createdAt" | "updatedAt"
-  >
+export async function getMerchantTradeByMerchantTradeNo(
+  merchantTradeNo: string,
 ) {
-  const [updatedDelivery] = await db
-    .update(schema.deliveryTable)
-    .set({ ...updates, updatedAt: new Date() })
-    .where(eq(schema.deliveryTable.id, deliveryId))
-    .returning();
-
-  console.log("Delivery updated:", updatedDelivery.id);
-  return updatedDelivery;
+  return db.query.merchantTradeTable.findFirst({
+    where: eq(schema.merchantTradeTable.merchantTradeNo, merchantTradeNo),
+  });
 }
