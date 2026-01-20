@@ -475,7 +475,19 @@ export async function listAdminChatRooms({
     limit: limit,
     offset: offset,
     with: {
-      user: true,
+      product: {
+        columns: {
+          id: true,
+          name: true,
+        },
+      },
+      user: {
+        columns: {
+          id: true,
+          name: true,
+          email: true,
+        },
+      },
       order: {
         with: {
           items: true,
