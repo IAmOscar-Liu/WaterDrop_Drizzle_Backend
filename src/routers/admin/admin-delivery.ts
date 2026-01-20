@@ -75,6 +75,23 @@ const router = Router();
  *         schema:
  *           type: integer
  *           default: 10
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [pending, shipped, delivered, returned, cancelled]
+ *         required: false
+ *         description: Optional status to filter deliveries by.
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date-time
  *     responses:
  *       '200':
  *         description: A paginated list of deliveries.
@@ -141,6 +158,9 @@ router.get("/:deliveryId", isAuth, DeliveryController.getDelivery);
  *           schema:
  *             type: object
  *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [pending, shipped, delivered, returned, cancelled]
  *               AllPayLogisticsID:
  *                 type: string
  *                 nullable: true

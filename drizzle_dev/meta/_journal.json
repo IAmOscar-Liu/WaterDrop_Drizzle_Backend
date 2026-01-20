@@ -183,6 +183,13 @@
       "when": 1768810765338,
       "tag": "0025_living_la_nuit",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1768921495022,
+      "tag": "0026_steady_johnny_blaze",
+      "breakpoints": true
     }
   ]
 }

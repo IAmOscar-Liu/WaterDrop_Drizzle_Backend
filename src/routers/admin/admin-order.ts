@@ -48,6 +48,9 @@ const router = Router();
  *           format: uuid
  *         merchantTradeNo:
  *           type: string
+ *         status:
+ *           type: string
+ *           enum: [pending, shipped, delivered, returned, cancelled]
  *         AllPayLogisticsID:
  *           type: string
  *           nullable: true

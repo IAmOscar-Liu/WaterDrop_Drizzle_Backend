@@ -232,6 +232,7 @@ export async function updateOrderStatus(
       .set({
         orderStatus: status,
         updatedAt: new Date(),
+        completedAt: status === "paid" ? new Date() : null,
         ...(metadata
           ? {
               metadata,

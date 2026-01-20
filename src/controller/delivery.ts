@@ -3,14 +3,26 @@ import { sendJsonResponse } from "../lib/general";
 import deliveryService from "../services/delivery";
 import { RequestWithId } from "../type/request";
 import ecpayService from "../services/ecpay";
+import { ListAdminDeliveriesParams } from "../repository/delivery";
 
 class DeliveryController {
   async listAdminDeliveries(req: RequestWithId, res: Response): Promise<any> {
-    const { page, limit } = req.query;
+    const { page, limit, status, startDate, endDate } = req.query;
     const result = await deliveryService.listAdminDeliveries({
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
       accountId: req.userId ?? "",
+      status: status
+        ? (String(status) as ListAdminDeliveriesParams["status"])
+        : undefined,
+      startDate: startDate
+        ? new Date(
+            typeof startDate === "number" ? startDate : String(startDate),
+          )
+        : undefined,
+      endDate: endDate
+        ? new Date(typeof endDate === "number" ? endDate : String(endDate))
+        : undefined,
     });
     sendJsonResponse(res, result);
   }

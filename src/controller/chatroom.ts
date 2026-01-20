@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { sendJsonResponse } from "../lib/general";
 import chatroomService from "../services/chatroom";
 import { RequestWithId } from "../type/request";
+import { ListAdminChatRoomsParams } from "../repository/chatroom";
 
 class ChatroomController {
   async findOrCreateChatRoom(req: RequestWithId, res: Response): Promise<any> {
@@ -65,10 +66,13 @@ class ChatroomController {
   }
 
   async listAdminChatRooms(req: RequestWithId, res: Response): Promise<any> {
-    const { productId, page, limit } = req.query;
+    const { productId, status, page, limit } = req.query;
     const result = await chatroomService.listAdminChatRooms({
       accountId: req.userId ?? "",
       productId: productId ? String(productId) : undefined,
+      status: status
+        ? (String(status) as ListAdminChatRoomsParams["status"])
+        : undefined,
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
     });

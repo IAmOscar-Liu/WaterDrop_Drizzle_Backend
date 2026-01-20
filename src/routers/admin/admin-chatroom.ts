@@ -164,6 +164,9 @@ const router = Router();
  *                       type: string
  *                     LogisticsSubType:
  *                       type: string
+ *                     status:
+ *                       type: string
+ *                       enum: [pending, shipped, delivered, returned, cancelled]
  *                     RtnCode:
  *                       type: string
  *                     RtnMsg:
@@ -232,6 +235,13 @@ const router = Router();
  *           type: string
  *         required: false
  *         description: Optional product ID to filter chat rooms by.
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [active, inactive]
+ *         required: false
+ *         description: Optional status to filter chat rooms by.
  *       - in: query
  *         name: page
  *         schema:

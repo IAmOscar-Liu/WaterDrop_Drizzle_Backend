@@ -62,6 +62,14 @@ export const orderStatusEnum = pgEnum("order_status", [
   "canceled",
 ]);
 
+export const deliveryStatusEnum = pgEnum("delivery_status", [
+  "pending",
+  "shipped",
+  "delivered",
+  "returned",
+  "cancelled",
+]);
+
 export const advertisementStatusEnum = pgEnum("advertisement_status", [
   "active",
   "paused",
@@ -492,6 +500,7 @@ export const orderTable = pgTable("orders", {
     .defaultNow()
     .$onUpdate(() => new Date())
     .notNull(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
   metadata: jsonb("metadata"), // Optional: Store additional info like payment method, shipping info, etc.
 });
 
@@ -542,6 +551,7 @@ export const deliveryTable = pgTable("deliveries", {
     .notNull()
     .references(() => orderTable.id),
   merchantTradeNo: text("merchant_trade_no"),
+  status: deliveryStatusEnum("status").default("pending").notNull(),
   AllPayLogisticsID: text("all_pay_logistics_id"),
   CVSPaymentNo: text("cvs_payment_no"),
   CVSValidationNo: text("cvs_validation_no"),

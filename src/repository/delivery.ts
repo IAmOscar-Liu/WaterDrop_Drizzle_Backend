@@ -1,4 +1,4 @@
-import { and, count, eq, inArray, isNotNull, SQL } from "drizzle-orm";
+import { and, count, eq, gte, inArray, isNotNull, lte, SQL } from "drizzle-orm";
 import * as schema from "../db/schema";
 import db from "../lib/initDB";
 import { isAccountAdmin } from "./account";
@@ -67,12 +67,18 @@ export interface ListAdminDeliveriesParams {
   page?: number;
   limit?: number;
   accountId: string;
+  status?: schema.Delivery["status"];
+  startDate?: Date;
+  endDate?: Date;
 }
 
 export async function listAdminDeliveries({
   page = 1,
   limit = 10,
   accountId,
+  status,
+  startDate,
+  endDate,
 }: ListAdminDeliveriesParams) {
   const offset = (page - 1) * limit;
   const conditions: (SQL | undefined)[] = [];
@@ -97,18 +103,26 @@ export async function listAdminDeliveries({
     );
   }
 
-  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+  if (status) {
+    conditions.push(eq(schema.deliveryTable.status, status));
+  }
+  if (startDate) {
+    conditions.push(gte(schema.deliveryTable.createdAt, startDate));
+  }
+  if (endDate) {
+    conditions.push(lte(schema.deliveryTable.createdAt, endDate));
+  }
 
   const totalResult = await db
     .select({ total: count() })
     .from(schema.deliveryTable)
-    .where(whereClause);
+    .where(and(...conditions));
 
   const total = totalResult[0].total;
   const totalPages = Math.ceil(total / limit);
 
   const deliveries = await db.query.deliveryTable.findMany({
-    where: whereClause,
+    where: and(...conditions),
     limit,
     offset,
     with: {

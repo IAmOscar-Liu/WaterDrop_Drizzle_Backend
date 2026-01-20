@@ -404,6 +404,7 @@ export async function listChatRooms({
               ? {
                   LogisticsType: delivery.LogisticsType,
                   LogisticsSubType: delivery.LogisticsSubType,
+                  status: delivery.status,
                   RtnCode: delivery.RtnCode,
                   RtnMsg: delivery.RtnMsg,
                 }
@@ -425,6 +426,7 @@ export async function listChatRooms({
 export type ListAdminChatRoomsParams = {
   accountId: string;
   productId?: string;
+  status?: schema.ChatRoom["status"];
   page?: number;
   limit?: number;
 };
@@ -432,6 +434,7 @@ export type ListAdminChatRoomsParams = {
 export async function listAdminChatRooms({
   accountId,
   productId,
+  status,
   page = 1,
   limit = 20,
 }: ListAdminChatRoomsParams) {
@@ -445,6 +448,9 @@ export async function listAdminChatRooms({
   }
   if (productId) {
     conditions.push(eq(schema.chatRoomTable.productId, productId));
+  }
+  if (status) {
+    conditions.push(eq(schema.chatRoomTable.status, status));
   }
 
   // 1. Get the total count of chat rooms matching the criteria
@@ -543,6 +549,7 @@ export async function listAdminChatRooms({
               ? {
                   LogisticsType: delivery.LogisticsType,
                   LogisticsSubType: delivery.LogisticsSubType,
+                  status: delivery.status,
                   RtnCode: delivery.RtnCode,
                   RtnMsg: delivery.RtnMsg,
                 }

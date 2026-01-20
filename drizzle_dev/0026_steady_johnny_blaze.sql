@@ -1,0 +1,3 @@
+CREATE TYPE "public"."delivery_status" AS ENUM('pending', 'shipped', 'delivered', 'returned', 'cancelled');--> statement-breakpoint
+ALTER TABLE "deliveries" ADD COLUMN "status" "delivery_status" DEFAULT 'pending' NOT NULL;--> statement-breakpoint
+ALTER TABLE "orders" ADD COLUMN "completed_at" timestamp with time zone;
