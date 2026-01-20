@@ -479,6 +479,7 @@ export async function listAdminChatRooms({
         columns: {
           id: true,
           name: true,
+          images: true,
         },
       },
       user: {

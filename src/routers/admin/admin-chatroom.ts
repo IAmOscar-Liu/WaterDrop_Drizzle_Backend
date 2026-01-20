@@ -156,6 +156,11 @@ const router = Router();
  *                   format: uuid
  *                 name:
  *                   type: string
+ *                 images:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                   nullable: true
  *             totalUnread:
  *               type: integer
  *             lastMessage:
