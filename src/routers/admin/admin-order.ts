@@ -79,6 +79,9 @@ const router = Router();
  *         metadata:
  *           type: object
  *           nullable: true
+ *         homeDeliveryData:
+ *           type: object
+ *           nullable: true
  *         createdAt:
  *           type: string
  *           format: date-time

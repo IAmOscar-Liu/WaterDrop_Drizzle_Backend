@@ -184,6 +184,9 @@ router.get("/:deliveryId", isAuth, DeliveryController.getDelivery);
  *               metadata:
  *                 type: object
  *                 description: Additional metadata from the logistics provider.
+ *               homeDeliveryData:
+ *                 type: object
+ *                 description: Delivery information for the app user.
  *     responses:
  *       '200':
  *         description: The updated delivery record.
