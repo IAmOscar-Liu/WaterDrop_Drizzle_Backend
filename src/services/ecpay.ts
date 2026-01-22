@@ -40,7 +40,7 @@ class EcPayService {
       if (Object.hasOwnProperty.call(parameters, key)) {
         // 確保值被轉換為字串，以正確插入 HTML value 屬性
         formHtml += `<input name="${key}" value="${String(
-          parameters[key]
+          parameters[key],
         )}"/>\n`;
       }
     }
@@ -52,7 +52,7 @@ class EcPayService {
         parameters,
         checkMacValueOptions.hashKey,
         checkMacValueOptions.hashIV,
-        checkMacValueOptions.algorithm ?? "sha256"
+        checkMacValueOptions.algorithm ?? "sha256",
       );
 
       formHtml += `<input name="CheckMacValue" value="${checkMacValue}" />\n`;
@@ -69,7 +69,7 @@ class EcPayService {
     params: Record<string, any>,
     HashKey: string,
     HashIV: string,
-    algorithm: string = "sha256"
+    algorithm: string = "sha256",
   ) {
     //將 params 從 Object 換成 Array
     const entries = Object.entries(params);
@@ -142,7 +142,7 @@ class EcPayService {
       ReceiverName,
       ReceiverCellPhone,
       ReceiverEmail,
-      GoodsName,
+      GoodsNames,
       GoodsAmount,
     } = params;
 
@@ -181,20 +181,25 @@ class EcPayService {
     // 4. 驗證 GoodsName (商品名稱):
     // 規定不得輸入 ^ ‘ ` ! @ # % & * + \ ” < > | _ [ ] 等特殊符號，
     // 長度限制: 中文/全形佔2字元、其餘佔1字元，總長度 <= 50
-    if (GoodsName) {
-      const goodsNameStr = String(GoodsName);
+    if (GoodsNames) {
+      // const goodsNameStr = String(GoodsName);
+      const goodsNameStrArr = Array.isArray(GoodsNames)
+        ? GoodsNames.map((g) => String(g))
+        : [String(GoodsNames)];
 
-      // 優先檢核是否有特殊字元
-      const specialCharRegex = /[\^'`!@#%&*+\\"<>|_\[\]‘”]/;
-      if (specialCharRegex.test(goodsNameStr)) {
-        return `商品名稱不得包含 ^ ‘ \` ! @ # % & * + \\ ” < > | _ [ ] 等特殊符號`;
-      }
+      for (let goodsNameStr of goodsNameStrArr) {
+        // 優先檢核是否有特殊字元
+        const specialCharRegex = /[\^'`!@#%&*+\\"<>|_\[\]‘”]/;
+        if (specialCharRegex.test(goodsNameStr)) {
+          return `商品名稱不得包含 ^ ‘ \` ! @ # % & * + \\ ” < > | _ [ ] 等特殊符號`;
+        }
 
-      // 再檢核是否有超過長度限制
-      if (this.getEcpayLength(goodsNameStr) > 50) {
-        return `商品名稱總長度超過 50 字元 (目前長度: ${this.getEcpayLength(
-          goodsNameStr
-        )})`;
+        // 再檢核是否有超過長度限制
+        if (this.getEcpayLength(goodsNameStr) > 50) {
+          return `商品名稱總長度超過 50 字元 (目前長度: ${this.getEcpayLength(
+            goodsNameStr,
+          )})`;
+        }
       }
     }
 
@@ -236,7 +241,7 @@ class EcPayService {
       AllPayLogisticsID: any;
       CVSPaymentNo: any;
       CVSValidationNo: any;
-    }
+    },
   ) {
     if (LogisticsSubType === "UNIMARTC2C")
       return {

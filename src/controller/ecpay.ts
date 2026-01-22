@@ -201,7 +201,7 @@ class EcPayController {
       ...(type === "B2C"
         ? {}
         : { SenderCellPhone: process.env.LOGISTICS_SENDER_CELL_PHONE }),
-      CustomField1: "lalala 123",
+      CustomField1: "CustomField1",
     };
     console.log(base_param);
 
