@@ -358,6 +358,20 @@
       "when": 1768916168835,
       "tag": "0050_dry_whistler",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1769091283388,
+      "tag": "0051_calm_serpent_society",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1769096903540,
+      "tag": "0052_eager_tarot",
+      "breakpoints": true
     }
   ]
 }

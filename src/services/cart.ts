@@ -1,10 +1,14 @@
 import { handleServiceError } from "../lib/error";
-import { listCartItems, upsertCartItem } from "../repository/cart";
+import {
+  listCartItems,
+  upsertCartItem,
+  toggleCartItem,
+} from "../repository/cart";
 import { ServiceResponse } from "../type/general";
 
 class CartServices {
   async listCartItems(
-    userId: string
+    userId: string,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof listCartItems>>>> {
     try {
       const cartItems = await listCartItems(userId);
@@ -33,6 +37,18 @@ class CartServices {
   }): Promise<ServiceResponse<Awaited<ReturnType<typeof upsertCartItem>>>> {
     try {
       const cartItem = await upsertCartItem(userId, productId, quantity);
+      return { success: true, data: cartItem };
+    } catch (error) {
+      return handleServiceError(error);
+    }
+  }
+
+  async toggleCartItem(
+    productId: string,
+    checked: boolean,
+  ): Promise<ServiceResponse<Awaited<ReturnType<typeof toggleCartItem>>>> {
+    try {
+      const cartItem = await toggleCartItem(productId, checked);
       return { success: true, data: cartItem };
     } catch (error) {
       return handleServiceError(error);

@@ -1,4 +1,4 @@
-import { Response } from "express";
+import { Response, Request } from "express";
 import { sendJsonResponse } from "../lib/general";
 import cartServices from "../services/cart";
 import { RequestWithId } from "../type/request";
@@ -12,6 +12,12 @@ class CartController {
       productId,
       quantity,
     });
+    sendJsonResponse(res, result);
+  }
+
+  async toggleCartItem(req: Request, res: Response): Promise<any> {
+    const { productId, checked } = req.body;
+    const result = await cartServices.toggleCartItem(productId, checked);
     sendJsonResponse(res, result);
   }
 

@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import * as schema from "../db/schema";
 import db from "../lib/initDB";
+import { CustomError } from "../lib/error";
 
 /**
  * Adds or updates an item in the user's cart.
@@ -15,7 +16,7 @@ import db from "../lib/initDB";
 export async function upsertCartItem(
   userId: string,
   productId: string,
-  quantity: number
+  quantity: number,
 ) {
   // If quantity is 0 or less, remove the item from the cart.
   if (quantity <= 0) {
@@ -24,8 +25,8 @@ export async function upsertCartItem(
       .where(
         and(
           eq(schema.cartItemTable.userId, userId),
-          eq(schema.cartItemTable.productId, productId)
-        )
+          eq(schema.cartItemTable.productId, productId),
+        ),
       );
     console.log(`Removed product ${productId} from cart for user ${userId}.`);
     return;
@@ -42,9 +43,28 @@ export async function upsertCartItem(
     .returning();
 
   console.log(
-    `Upserted product ${productId} with quantity ${quantity} for user ${userId}.`
+    `Upserted product ${productId} with quantity ${quantity} for user ${userId}.`,
   );
   return upsertedItem;
+}
+
+export async function toggleCartItem(productId: string, checked: boolean) {
+  return db.transaction(async (tx) => {
+    const cartItem = await tx.query.cartItemTable.findFirst({
+      where: eq(schema.cartItemTable.productId, productId),
+    });
+
+    if (!cartItem) {
+      throw new CustomError("Cart item not found", 404);
+    }
+
+    const [updatedCartItem] = await tx
+      .update(schema.cartItemTable)
+      .set({ checked, updatedAt: new Date() })
+      .where(eq(schema.cartItemTable.productId, productId))
+      .returning();
+    return updatedCartItem;
+  });
 }
 
 /**

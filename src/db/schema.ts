@@ -413,6 +413,7 @@ export const cartItemTable = pgTable(
     productId: uuid("product_id")
       .notNull()
       .references(() => productTable.id),
+    checked: boolean("checked").default(true).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
