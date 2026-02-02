@@ -5,13 +5,14 @@ import isAuth from "../middleware/isAuth";
 const router = Router();
 
 router.get("/list", isAuth, ChatroomController.listChatRooms);
+router.get("/:chatRoomId", isAuth, ChatroomController.getChatRoomById);
 router.post("/create", isAuth, ChatroomController.findOrCreateChatRoom);
 router.get("/history/:chatRoomId", isAuth, ChatroomController.getChatHistory);
 router.post("/message/:chatRoomId", isAuth, ChatroomController.sendMessage);
 router.put(
   "/message/:chatRoomId/read",
   isAuth,
-  ChatroomController.markMessagesAsRead
+  ChatroomController.markMessagesAsRead,
 );
 
 export default router;

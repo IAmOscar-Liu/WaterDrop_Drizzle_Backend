@@ -1,17 +1,21 @@
+import { Param } from "drizzle-orm";
+import * as schema from "../db/schema";
 import { handleServiceError } from "../lib/error";
+import { sendMulticastPushNotification } from "../lib/sendNotification";
 import {
   findOrCreateChatRoom,
   getChatHistory,
   GetChatHistoryParams,
-  listChatRooms,
-  ListChatRoomsParams,
+  getChatRoomById,
   listAdminChatRooms,
   ListAdminChatRoomsParams,
+  listChatRooms,
+  ListChatRoomsParams,
   markMessagesAsRead,
   sendChatMessage,
 } from "../repository/chatroom";
+import { getFcmTokensInUserIds } from "../repository/user";
 import { ServiceResponse } from "../type/general";
-import * as schema from "../db/schema";
 
 class ChatroomService {
   async findOrCreateChatRoom(input: {
@@ -38,6 +42,25 @@ class ChatroomService {
     }
   }
 
+  async getChatRoomById(
+    chatRoomId: string,
+  ): Promise<ServiceResponse<Awaited<ReturnType<typeof getChatRoomById>>>> {
+    try {
+      const chatRoom = await getChatRoomById(chatRoomId);
+      if (chatRoom) {
+        return { success: true, data: chatRoom };
+      } else {
+        return {
+          success: false,
+          statusCode: 404,
+          message: "Chat room not found",
+        };
+      }
+    } catch (error) {
+      return handleServiceError(error);
+    }
+  }
+
   async sendMessage(input: {
     chatRoomId: string;
     senderType: schema.ChatMessage["senderType"];
@@ -47,6 +70,8 @@ class ChatroomService {
     try {
       const message = await sendChatMessage(input);
       if (message) {
+        if (input.senderType !== "user")
+          this.sendMessagePushNotification(input);
         return { success: true, data: message };
       } else {
         return {
@@ -60,8 +85,48 @@ class ChatroomService {
     }
   }
 
+  private async sendMessagePushNotification(
+    input: Parameters<typeof sendChatMessage>[0],
+  ) {
+    try {
+      const chatroom = await getChatRoomById(input.chatRoomId);
+      if (!chatroom) throw new Error("Chat room not found");
+      if (!chatroom.product) throw new Error("Product not found in chat room");
+
+      const getChatMessage = () => {
+        if (input.content) return input.content;
+        if (input.attachments && input.attachments.length > 0) {
+          return `${input.attachments.length}個附件`;
+        }
+        return null;
+      };
+
+      const notificationBody = getChatMessage();
+      if (!notificationBody)
+        throw new Error("No content to send in notification");
+
+      const fcmTokens = await getFcmTokensInUserIds([chatroom.userId]);
+      if (fcmTokens.length === 0)
+        throw new Error("No FCM tokens found for user");
+
+      sendMulticastPushNotification({
+        tokens: fcmTokens,
+        notification: {
+          title: chatroom.product.name,
+          body: `賣家: ${notificationBody}`,
+        },
+        data: {
+          command: "chat_message",
+          chatRoomId: input.chatRoomId,
+        },
+      });
+    } catch (error) {
+      console.error("Error sending push notification:", error);
+    }
+  }
+
   async getChatHistory(
-    query: GetChatHistoryParams
+    query: GetChatHistoryParams,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof getChatHistory>>>> {
     try {
       const chatHistory = await getChatHistory(query);
@@ -103,7 +168,7 @@ class ChatroomService {
   }
 
   async listChatRooms(
-    query: ListChatRoomsParams
+    query: ListChatRoomsParams,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof listChatRooms>>>> {
     try {
       const chatRooms = await listChatRooms(query);
@@ -122,7 +187,7 @@ class ChatroomService {
   }
 
   async listAdminChatRooms(
-    query: ListAdminChatRoomsParams
+    query: ListAdminChatRoomsParams,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof listAdminChatRooms>>>> {
     try {
       const chatRooms = await listAdminChatRooms(query);

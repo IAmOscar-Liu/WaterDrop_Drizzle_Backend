@@ -16,6 +16,14 @@ class ChatroomController {
     sendJsonResponse(res, result);
   }
 
+  async getChatRoomById(req: Request, res: Response): Promise<any> {
+    const { chatRoomId } = req.params;
+    const result = await chatroomService.getChatRoomById(
+      chatRoomId ? String(chatRoomId) : "",
+    );
+    sendJsonResponse(res, result);
+  }
+
   async getChatHistory(req: Request, res: Response): Promise<any> {
     const { chatRoomId } = req.params;
     const { page, limit, startAt, endAt } = req.query;

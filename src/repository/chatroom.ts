@@ -114,6 +114,15 @@ export async function findOrCreateChatRoom({
   return newRoom;
 }
 
+export async function getChatRoomById(chatRoomId: string) {
+  return db.query.chatRoomTable.findFirst({
+    with: {
+      product: true,
+    },
+    where: eq(schema.chatRoomTable.id, chatRoomId),
+  });
+}
+
 /**
  * Sends a message in a chat room and marks previous messages from the other party as read.
  * This is performed in a transaction to ensure data integrity.
@@ -174,6 +183,17 @@ export async function sendChatMessage({
         })),
       );
     }
+
+    await tx
+      .update(schema.chatMessageTable)
+      .set({ isRead: true, updatedAt: new Date() })
+      .where(
+        and(
+          eq(schema.chatMessageTable.chatRoomId, chatRoomId),
+          ne(schema.chatMessageTable.senderType, senderType), // Mark messages from the *other* party
+          eq(schema.chatMessageTable.isRead, false), // Only update unread messages
+        ),
+      );
 
     return tx.query.chatMessageTable.findFirst({
       where: eq(schema.chatMessageTable.id, newMessage.id),
