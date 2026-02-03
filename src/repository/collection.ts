@@ -11,19 +11,19 @@ import db from "../lib/initDB";
  * @returns The existing or newly created collection.
  */
 export async function findOrCreateCollection(
-  collectionData: Omit<schema.NewCollection, "id" | "createdAt" | "updatedAt">
+  collectionData: Omit<schema.NewCollection, "id" | "createdAt" | "updatedAt">,
 ) {
   // Check if a collection for this user and product already exists
   const existingCollection = await db.query.collectionTable.findFirst({
     where: and(
       eq(schema.collectionTable.userId, collectionData.userId),
-      eq(schema.collectionTable.productId, collectionData.productId)
+      eq(schema.collectionTable.productId, collectionData.productId),
     ),
   });
 
   if (existingCollection) {
     console.log(
-      `Product ${collectionData.productId} already in user ${collectionData.userId}'s collection.`
+      `Product ${collectionData.productId} already in user ${collectionData.userId}'s collection.`,
     );
     return existingCollection;
   }
@@ -43,8 +43,8 @@ export async function removeCollection(userId: string, productId: string) {
     .where(
       and(
         eq(schema.collectionTable.userId, userId),
-        eq(schema.collectionTable.productId, productId)
-      )
+        eq(schema.collectionTable.productId, productId),
+      ),
     )
     .returning();
 
@@ -84,12 +84,12 @@ export async function listCollections({
       .where(
         or(
           ilike(schema.productTable.name, searchTerm),
-          ilike(schema.productTable.description, searchTerm)
-        )
+          ilike(schema.productTable.description, searchTerm),
+        ),
       );
 
     conditions.push(
-      inArray(schema.collectionTable.productId, matchingProductIds)
+      inArray(schema.collectionTable.productId, matchingProductIds),
     );
   }
 
@@ -110,7 +110,24 @@ export async function listCollections({
     limit,
     offset,
     with: {
-      product: true,
+      product: {
+        with: {
+          seller: {
+            columns: {
+              role: true,
+              name: true,
+              email: true,
+              phone: true,
+              avatar_url: true,
+            },
+          },
+          productsToCategories: {
+            with: {
+              category: true,
+            },
+          },
+        },
+      },
     },
   });
 
