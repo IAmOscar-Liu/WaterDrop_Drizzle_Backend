@@ -62,6 +62,29 @@ export async function getProductById(productId: string) {
   });
 }
 
+export async function getProductWithSellerById(productId: string) {
+  return db.query.productTable.findFirst({
+    where: eq(schema.productTable.id, productId),
+    with: {
+      advertisement: true,
+      seller: {
+        columns: {
+          role: true,
+          name: true,
+          email: true,
+          phone: true,
+          avatar_url: true,
+        },
+      },
+      productsToCategories: {
+        with: {
+          category: true,
+        },
+      },
+    },
+  });
+}
+
 /**
  * Creates a new product and associates it with given categories.
  * @param productData The data for the new product.
@@ -70,7 +93,7 @@ export async function getProductById(productId: string) {
  */
 export async function createProduct(
   productData: schema.NewProduct,
-  categoryIds?: string[]
+  categoryIds?: string[],
 ) {
   return db.transaction(async (tx) => {
     // 1. Create the product
@@ -117,7 +140,7 @@ export async function createProduct(
 export async function updateProduct(
   productId: string,
   productData: Partial<Omit<schema.NewProduct, "id">>,
-  categoryIds?: string[]
+  categoryIds?: string[],
 ) {
   return db.transaction(async (tx) => {
     // 1. Update the product itself
@@ -166,7 +189,7 @@ export async function updateProduct(
 
 export async function decreaseProductStock(
   productId: string,
-  quantity: number
+  quantity: number,
 ) {
   if (quantity <= 0) {
     throw new CustomError("Quantity must be positive", 400);
@@ -181,8 +204,8 @@ export async function decreaseProductStock(
     .where(
       and(
         eq(schema.productTable.id, productId),
-        gte(schema.productTable.stock, quantity)
-      )
+        gte(schema.productTable.stock, quantity),
+      ),
     )
     .returning();
 
@@ -193,7 +216,7 @@ export async function decreaseProductStock(
   return updatedProduct;
 }
 
-export interface ListProductsParams {
+export interface ListAdminProductsParams {
   page?: number;
   limit?: number;
   categoryId?: string;
@@ -202,15 +225,14 @@ export interface ListProductsParams {
   minPrice?: number;
   maxPrice?: number;
   sellerId?: string;
-  hasStock?: boolean;
 }
 
 /**
- * Lists products with pagination, filtering, and searching.
+ * Lists admin products with pagination, filtering, and searching.
  * @param params The pagination and filter parameters.
  * @returns An object containing the product array, total count, and pagination details.
  */
-export async function listProducts({
+export async function listAdminProducts({
   page = 1,
   limit = 10,
   categoryId,
@@ -219,8 +241,7 @@ export async function listProducts({
   sellerId,
   minPrice,
   maxPrice,
-  hasStock,
-}: ListProductsParams) {
+}: ListAdminProductsParams) {
   const offset = (page - 1) * limit;
   const conditions: (SQL | undefined)[] = [];
 
@@ -241,8 +262,8 @@ export async function listProducts({
     conditions.push(
       or(
         ilike(schema.productTable.name, searchTerm),
-        ilike(schema.productTable.description, searchTerm)
-      )
+        ilike(schema.productTable.description, searchTerm),
+      ),
     );
   }
 
@@ -265,9 +286,104 @@ export async function listProducts({
     conditions.push(lte(schema.productTable.price, maxPrice));
   }
 
-  if (hasStock) {
-    conditions.push(gt(schema.productTable.stock, schema.productTable.reserve));
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+  // Query for total count matching the filters
+  const totalResult = await db
+    .select({ total: count() })
+    .from(schema.productTable)
+    .where(whereClause);
+
+  const total = totalResult[0].total;
+  const totalPages = Math.ceil(total / limit);
+
+  // Query for the paginated products with their relations
+  const products = await db.query.productTable.findMany({
+    where: whereClause,
+    with: {
+      advertisement: true,
+      productsToCategories: {
+        with: {
+          category: true,
+        },
+      },
+    },
+    limit: limit,
+    offset: offset,
+    orderBy: (products, { desc }) => [desc(products.createdAt)],
+  });
+
+  return {
+    products,
+    total,
+    page,
+    limit,
+    totalPages,
+  };
+}
+
+export interface ListProductsParams {
+  page?: number;
+  limit?: number;
+  categoryId?: string;
+  search?: string;
+  status?: schema.NewProduct["status"];
+  minPrice?: number;
+  maxPrice?: number;
+}
+
+/**
+ * Lists products with pagination, filtering, and searching.
+ * @param params The pagination and filter parameters.
+ * @returns An object containing the product array, total count, and pagination details.
+ */
+export async function listProducts({
+  page = 1,
+  limit = 10,
+  categoryId,
+  search,
+  status,
+  minPrice,
+  maxPrice,
+}: ListProductsParams) {
+  const offset = (page - 1) * limit;
+  const conditions: (SQL | undefined)[] = [];
+
+  // Only return products that have an associated seller.
+  conditions.push(isNotNull(schema.productTable.sellerId));
+
+  // Add conditions based on filters
+  if (categoryId) {
+    const productIdsWithCategory = db
+      .select({ productId: schema.productsToCategoriesTable.productId })
+      .from(schema.productsToCategoriesTable)
+      .where(eq(schema.productsToCategoriesTable.categoryId, categoryId));
+    conditions.push(inArray(schema.productTable.id, productIdsWithCategory));
   }
+
+  if (search) {
+    const searchTerm = `%${search}%`;
+    conditions.push(
+      or(
+        ilike(schema.productTable.name, searchTerm),
+        ilike(schema.productTable.description, searchTerm),
+      ),
+    );
+  }
+
+  if (status) {
+    conditions.push(eq(schema.productTable.status, status));
+  }
+
+  if (minPrice !== undefined) {
+    conditions.push(gte(schema.productTable.price, minPrice));
+  }
+
+  if (maxPrice !== undefined) {
+    conditions.push(lte(schema.productTable.price, maxPrice));
+  }
+
+  conditions.push(gt(schema.productTable.stock, schema.productTable.reserve));
 
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -285,6 +401,15 @@ export async function listProducts({
     where: whereClause,
     with: {
       advertisement: true,
+      seller: {
+        columns: {
+          role: true,
+          name: true,
+          email: true,
+          phone: true,
+          avatar_url: true,
+        },
+      },
       productsToCategories: {
         with: {
           category: true,
@@ -348,14 +473,14 @@ export async function getProductSalesSummary({
         sql<number>`sum(${schema.orderItemTable.quantity})`.mapWith(Number),
       totalRevenue:
         sql<number>`sum(${schema.orderItemTable.unitPriceAtSale} * ${schema.orderItemTable.quantity})`.mapWith(
-          Number
+          Number,
         ),
     })
     .from(schema.orderItemTable)
     // Here we join orderItemTable with orderTable on the order ID
     .innerJoin(
       schema.orderTable,
-      eq(schema.orderItemTable.orderId, schema.orderTable.id)
+      eq(schema.orderItemTable.orderId, schema.orderTable.id),
     )
     // The 'where' clause applies all conditions, including the one for order status
     .where(and(...conditions));

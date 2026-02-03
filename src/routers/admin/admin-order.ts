@@ -73,15 +73,24 @@ const router = Router();
  *         GoodsAmount:
  *           type: number
  *           format: double
- *         ReceiverStoreId:
- *           type: string
- *           nullable: true
  *         metadata:
  *           type: object
  *           nullable: true
  *         homeDeliveryData:
  *           type: object
  *           nullable: true
+ *           example:
+ *             name: "App user"
+ *             email: "example@test.com"
+ *             phone: "0911222333"
+ *             address: "台北市中正路1號"
+ *         cvsStoreInfo:
+ *           type: object
+ *           description: Store information for convenience store deliveries.
+ *           example:
+ *             storeID: "131386"
+ *             storeName: "建盛門市"
+ *             storeAddress: "新竹市東區建中一路52號1樓"
  *         createdAt:
  *           type: string
  *           format: date-time

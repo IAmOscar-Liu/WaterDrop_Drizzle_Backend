@@ -78,7 +78,24 @@ export async function listCartItems(userId: string) {
   const cartItems = await db.query.cartItemTable.findMany({
     where: eq(schema.cartItemTable.userId, userId),
     with: {
-      product: true, // Include the related product data
+      product: {
+        with: {
+          seller: {
+            columns: {
+              role: true,
+              name: true,
+              email: true,
+              phone: true,
+              avatar_url: true,
+            },
+          },
+          productsToCategories: {
+            with: {
+              category: true,
+            },
+          },
+        },
+      }, // Include the related product data
     },
     orderBy: (cartItems, { desc }) => [desc(cartItems.createdAt)],
   });

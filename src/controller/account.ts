@@ -9,11 +9,11 @@ class AccountController {
   async register(req: Request, res: Response): Promise<any> {
     const { name, email, password, phone, address, role } = req.body;
 
-    if (!name || !email || !password) {
+    if (!name || !email || !password || !phone) {
       return sendJsonResponse(res, {
         success: false,
         statusCode: 400,
-        message: "Name, email, and password are required.",
+        message: "Name, email, password, and phone are required.",
       });
     }
     if (!validatePassword(password)) {
@@ -58,7 +58,7 @@ class AccountController {
     }
     const result = await accountService.getAdminAccountByEmailAndPassword(
       email,
-      password
+      password,
     );
     if (result.success) {
       sendRefreshToken(res, result.data);
@@ -106,7 +106,7 @@ class AccountController {
 
     // Security Best Practice: Verify the user from the token still exists in the DB.
     const accountCheck = await accountService.getAdminAccountById(
-      payload.data.id
+      payload.data.id,
     );
     if (!accountCheck.success) {
       // Clear the invalid cookie and deny the request.
@@ -207,7 +207,7 @@ class AccountController {
     const { parentId } = req.body;
     const result = await accountService.assignAccountParent(
       req.userId ?? "",
-      parentId
+      parentId,
     );
     sendJsonResponse(res, result);
   }

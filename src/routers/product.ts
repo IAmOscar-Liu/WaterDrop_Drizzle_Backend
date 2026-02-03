@@ -6,6 +6,6 @@ const router = Router();
 
 router.get("/categories/list", isAuth, ProductController.listCategory);
 router.get("/list", isAuth, ProductController.listProducts);
-router.get("/:id", isAuth, ProductController.getProduct);
+router.get("/:id", isAuth, ProductController.getProductWithSeller);
 
 export default router;

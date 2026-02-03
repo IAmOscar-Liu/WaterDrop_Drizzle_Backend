@@ -187,6 +187,18 @@ router.get("/:deliveryId", isAuth, DeliveryController.getDelivery);
  *               homeDeliveryData:
  *                 type: object
  *                 description: Delivery information for the app user.
+ *                 example:
+ *                   name: "App user"
+ *                   email: "example@test.com"
+ *                   phone: "0911222333"
+ *                   address: "台北市中正路1號"
+ *               cvsStoreInfo:
+ *                 type: object
+ *                 description: Store information for convenience store deliveries.
+ *                 example:
+ *                   storeID: "131386"
+ *                   storeName: "建盛門市"
+ *                   storeAddress: "新竹市東區建中一路52號1樓"
  *     responses:
  *       '200':
  *         description: The updated delivery record.

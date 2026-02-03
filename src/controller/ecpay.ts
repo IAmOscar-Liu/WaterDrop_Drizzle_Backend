@@ -194,9 +194,9 @@ class EcPayController {
       IsCollection: "N", // 是否代收貨款
       ServerReplyURL: `${process.env.HOST}/api/ecpay/express/test/server-reply`, // 接收門市資訊的後端網址
       ClientReplyURL: `${process.env.HOST}/api/ecpay/express/test/client-reply`,
-      ReceiverName, // "王小明",
-      ReceiverCellPhone, // "0978443522",
-      ReceiverEmail, // "safaf2@ddd.com",
+      ReceiverName: String(ReceiverName), // "王小明",
+      ReceiverCellPhone: String(ReceiverCellPhone), // "0978443522",
+      ReceiverEmail: String(ReceiverEmail), // "safaf2@ddd.com",
       ReceiverStoreID: "131386",
       ...(type === "B2C"
         ? {}
@@ -258,8 +258,8 @@ class EcPayController {
     const {
       token,
       type = "B2C",
-      // MerchantTradeNo,
       orderId,
+      productIds,
       LogisticsSubType,
       GoodsName,
       GoodsAmount,
@@ -267,12 +267,14 @@ class EcPayController {
       ReceiverCellPhone,
       ReceiverEmail,
       ReceiverStoreID,
-      productIds,
+      ReceiverStoreName,
+      ReceiverStoreAddress,
+      ReceiverStoreTelephone,
+      SenderCellPhone,
     } = req.query;
 
     if (
       !token ||
-      // !MerchantTradeNo ||
       !orderId ||
       !LogisticsSubType ||
       !GoodsName ||
@@ -283,6 +285,8 @@ class EcPayController {
       !ReceiverStoreID
     )
       return res.send("Missing required parameters");
+    if (type !== "B2C" && !SenderCellPhone)
+      return res.send("SenderCellPhone is required for C2C type");
     const payload = validateToken(String(token));
     if (!payload || typeof payload === "string" || !payload.data?.id)
       return res.send("Invalid token");
@@ -297,10 +301,20 @@ class EcPayController {
     }
 
     if (pIds.length > 0) {
+      const cvsStoreInfo: Record<string, string> = {};
+      cvsStoreInfo["storeID"] = String(ReceiverStoreID);
+      if (ReceiverStoreName)
+        cvsStoreInfo["storeName"] = String(ReceiverStoreName);
+      if (ReceiverStoreAddress)
+        cvsStoreInfo["storeAddress"] = String(ReceiverStoreAddress);
+      if (ReceiverStoreTelephone)
+        cvsStoreInfo["storeTelephone"] = String(ReceiverStoreTelephone);
+
       await createMerchantTrade({
         merchantTradeNo,
         orderId: String(orderId),
         productIds: pIds,
+        cvsStoreInfo,
       });
     }
 
@@ -319,13 +333,11 @@ class EcPayController {
       IsCollection: "N", // 是否代收貨款
       ServerReplyURL: `${process.env.HOST}/api/ecpay/express/server-reply`, // 接收門市資訊的後端網址
       ClientReplyURL: `${process.env.HOST}/api/ecpay/express/client-reply`, // 接收門市資訊的後端網址
-      ReceiverName,
-      ReceiverCellPhone,
-      ReceiverEmail,
-      ReceiverStoreID,
-      ...(type === "B2C"
-        ? {}
-        : { SenderCellPhone: process.env.LOGISTICS_SENDER_CELL_PHONE }),
+      ReceiverName: String(ReceiverName),
+      ReceiverCellPhone: String(ReceiverCellPhone),
+      ReceiverEmail: String(ReceiverEmail),
+      ReceiverStoreID: String(ReceiverStoreID),
+      ...(type === "B2C" ? {} : { SenderCellPhone: String(SenderCellPhone) }),
     };
 
     console.log("base_param: ", base_param);
@@ -387,9 +399,9 @@ class EcPayController {
           CVSPaymentNo: data.CVSPaymentNo ?? null,
           CVSValidationNo: data.CVSValidationNo ?? null,
           GoodsAmount: Number(data.GoodsAmount),
-          ReceiverStoreId: data.ReceiverStoreID,
           RtnCode: data.RtnCode,
           RtnMsg: data.RtnMsg,
+          cvsStoreInfo: merchantTrade.cvsStoreInfo,
           metadata: data,
         },
         merchantTrade?.productIds,

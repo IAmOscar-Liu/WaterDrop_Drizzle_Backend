@@ -26,7 +26,6 @@ class ProductController {
       status: "active",
       minPrice: minPrice ? Number(minPrice) : undefined,
       maxPrice: maxPrice ? Number(maxPrice) : undefined,
-      hasStock: true,
     });
     sendJsonResponse(res, result);
   }
@@ -34,7 +33,7 @@ class ProductController {
   async listAdminProducts(req: RequestWithId, res: Response): Promise<any> {
     const { page, limit, categoryId, search, status, minPrice, maxPrice } =
       req.query;
-    const result = await productService.listProducts({
+    const result = await productService.listAdminProducts({
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
       categoryId: categoryId ? String(categoryId) : undefined,
@@ -52,6 +51,12 @@ class ProductController {
   async getProduct(req: Request, res: Response): Promise<any> {
     const { id } = req.params;
     const result = await productService.getProductById(id);
+    sendJsonResponse(res, result);
+  }
+
+  async getProductWithSeller(req: Request, res: Response): Promise<any> {
+    const { id } = req.params;
+    const result = await productService.getProductWithSellerById(id);
     sendJsonResponse(res, result);
   }
 

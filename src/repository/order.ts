@@ -470,10 +470,12 @@ export async function createMerchantTrade({
   merchantTradeNo,
   orderId,
   productIds,
+  cvsStoreInfo,
 }: {
   merchantTradeNo: string;
   orderId: string;
   productIds: string[];
+  cvsStoreInfo: Record<string, string>;
 }) {
   const [merchantTrade] = await db
     .insert(schema.merchantTradeTable)
@@ -481,6 +483,7 @@ export async function createMerchantTrade({
       merchantTradeNo,
       orderId,
       productIds,
+      cvsStoreInfo,
     })
     .returning();
   console.log(

@@ -4,8 +4,11 @@ import {
   createCategory,
   createProduct,
   getProductById,
+  getProductWithSellerById,
   listCategory,
   listProducts,
+  listAdminProducts,
+  type ListAdminProductsParams,
   updateProduct,
   getProductSalesSummary,
   type ListProductsParams,
@@ -32,7 +35,7 @@ class ProductService {
   }
 
   async createCategory(
-    categoryData: schema.NewCategory
+    categoryData: schema.NewCategory,
   ): Promise<ServiceResponse<schema.Category>> {
     try {
       const category = await createCategory(categoryData);
@@ -51,8 +54,28 @@ class ProductService {
     }
   }
 
+  async listAdminProducts(
+    params: ListAdminProductsParams,
+  ): Promise<ServiceResponse<Awaited<ReturnType<typeof listAdminProducts>>>> {
+    try {
+      const products = await listAdminProducts(params);
+      if (products) {
+        return { success: true, data: products };
+      } else {
+        return {
+          success: false,
+          statusCode: 404,
+          message: "products not found",
+        };
+      }
+    } catch (error) {
+      // console.error(error);
+      return handleServiceError(error);
+    }
+  }
+
   async listProducts(
-    params: ListProductsParams
+    params: ListProductsParams,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof listProducts>>>> {
     try {
       const products = await listProducts(params);
@@ -72,7 +95,7 @@ class ProductService {
   }
 
   async getProductById(
-    id: string
+    id: string,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof getProductById>>>> {
     try {
       const product = await getProductById(id);
@@ -86,13 +109,33 @@ class ProductService {
         };
       }
     } catch (error) {
-      // console.error(error);
+      return handleServiceError(error);
+    }
+  }
+
+  async getProductWithSellerById(
+    id: string,
+  ): Promise<
+    ServiceResponse<Awaited<ReturnType<typeof getProductWithSellerById>>>
+  > {
+    try {
+      const product = await getProductWithSellerById(id);
+      if (product) {
+        return { success: true, data: product };
+      } else {
+        return {
+          success: false,
+          statusCode: 404,
+          message: "product not found",
+        };
+      }
+    } catch (error) {
       return handleServiceError(error);
     }
   }
 
   async createProduct(
-    productDataWithCategoryIds: schema.NewProduct & { categoryIds?: string[] }
+    productDataWithCategoryIds: schema.NewProduct & { categoryIds?: string[] },
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof createProduct>>>> {
     try {
       const { categoryIds, ...productData } = productDataWithCategoryIds;
@@ -116,7 +159,7 @@ class ProductService {
     productId: string,
     productDataWithCategoryIds: Partial<Omit<schema.NewProduct, "id">> & {
       categoryIds?: string[];
-    }
+    },
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof updateProduct>>>> {
     try {
       const { categoryIds, ...productData } = productDataWithCategoryIds;

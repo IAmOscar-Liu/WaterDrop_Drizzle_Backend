@@ -188,8 +188,9 @@ export const accountTable = pgTable("accounts", {
   password: text("password").notNull(), // This should store a hashed password
   name: text("name"),
   role: accountRoleEnum("role").notNull().default("seller"),
-  phone: text("phone"),
+  phone: text("phone").notNull(),
   address: text("address"),
+  avatar_url: text("avatar_url"),
   accountGroupId: uuid("account_group_id").references(
     () => accountGroupTable.id,
   ),
@@ -561,8 +562,8 @@ export const deliveryTable = pgTable("deliveries", {
   RtnCode: text("rtn_code"),
   RtnMsg: text("rtn_msg"),
   GoodsAmount: doublePrecision("goods_amount").notNull(),
-  ReceiverStoreId: text("receiver_store_id"),
   metadata: jsonb("metadata"),
+  cvsStoreInfo: jsonb("cvs_store_info"),
   homeDeliveryData: jsonb("home_delivery_data"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
@@ -580,6 +581,7 @@ export const merchantTradeTable = pgTable("merchant_trades", {
     .references(() => orderTable.id, { onDelete: "cascade" }),
   merchantTradeNo: text("merchant_trade_no").notNull(),
   productIds: uuid("product_ids").array().notNull(),
+  cvsStoreInfo: jsonb("cvs_store_info"),
 });
 
 export const deviceTokenTable = pgTable("device_tokens", {
