@@ -1,5 +1,6 @@
 import { Router } from "express";
 import DeliveryController from "../../controller/delivery";
+import EcPayController from "../../controller/ecpay";
 import isAuth from "../../middleware/isAuth";
 
 const router = Router();
@@ -213,5 +214,51 @@ router.get("/:deliveryId", isAuth, DeliveryController.getDelivery);
  *                   $ref: '#/components/schemas/DeliveryWithOrderAndItems'
  */
 router.put("/:deliveryId", isAuth, DeliveryController.updateDelivery);
+
+/**
+ * @swagger
+ * /api/admin/delivery/helper/printTradeDocument:
+ *   get:
+ *     tags: [Delivery]
+ *     summary: Generate ECPay trade document HTML
+ *     description: Returns an HTML form that auto-submits to ECPay to print the trade document. Requires a valid JWT token in the query parameters.
+ *     parameters:
+ *       - in: query
+ *         name: token
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Valid JWT access token.
+ *       - in: query
+ *         name: LogisticsSubType
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The logistics subtype (e.g. UNIMART, FAMI, UNIMARTC2C, FAMIC2C, OKMARTC2C).
+ *       - in: query
+ *         name: AllPayLogisticsID
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The logistics ID returned by ECPay.
+ *       - in: query
+ *         name: CVSPaymentNo
+ *         schema:
+ *           type: string
+ *         description: Required for C2C types (FAMIC2C, OKMARTC2C, UNIMARTC2C).
+ *       - in: query
+ *         name: CVSValidationNo
+ *         schema:
+ *           type: string
+ *         description: Required for UNIMARTC2C.
+ *     responses:
+ *       '200':
+ *         description: HTML form for printing the document.
+ *         content:
+ *           text/html:
+ *             schema:
+ *               type: string
+ */
+router.get("/helper/printTradeDocument", EcPayController.printTradeDocument);
 
 export default router;
