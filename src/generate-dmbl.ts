@@ -1,7 +1,12 @@
 import { pgGenerate } from "drizzle-dbml-generator";
 import * as schema from "./db/schema";
+import dotenv from "dotenv";
 import path from "path";
-import "dotenv/config";
+
+const env = process.env.NODE_ENV;
+dotenv.config({
+  path: path.resolve(process.cwd(), env ? `.env.${env}` : ".env"),
+});
 
 async function generateDbml() {
   const dbml = pgGenerate({

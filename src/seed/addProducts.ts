@@ -1,9 +1,14 @@
-import "dotenv/config";
+import dotenv from "dotenv";
 import fs from "fs/promises";
 import path from "path";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "../db/schema";
+
+const env = process.env.NODE_ENV;
+dotenv.config({
+  path: path.resolve(process.cwd(), env ? `.env.${env}` : ".env"),
+});
 
 // --- Database Connection ---
 const client = postgres(process.env.DATABASE_URL!);
@@ -67,7 +72,7 @@ async function seedDatabase() {
 
     await db.transaction(async (tx) => {
       console.log(
-        "🗑️ Clearing old product, advertisement, and category data..."
+        "🗑️ Clearing old product, advertisement, and category data...",
       );
       await tx.delete(schema.productsToCategoriesTable);
       await tx.delete(schema.advertisementTable);

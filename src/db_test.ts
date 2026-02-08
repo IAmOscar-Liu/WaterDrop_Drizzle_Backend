@@ -1,4 +1,5 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+import path from "path";
 import {
   getTreasureBoxesByUserId,
   openTreasureBox,
@@ -20,6 +21,11 @@ import {
   sendChatMessage,
   getChatHistory,
 } from "./repository/chatroom";
+
+const env = process.env.NODE_ENV;
+dotenv.config({
+  path: path.resolve(process.cwd(), env ? `.env.${env}` : ".env"),
+});
 
 // createUser({
 //   name: "test_from_local2",

@@ -1,6 +1,8 @@
+// Make sure to import environment variables at the very beginning
+import "./lib/env";
+
 import cookieParser from "cookie-parser";
 import cors from "cors";
-import "dotenv/config";
 import express from "express";
 import swaggerUi from "swagger-ui-express";
 import {
@@ -19,13 +21,15 @@ import AuthRouter from "./routers/auth";
 import CartRouter from "./routers/cart";
 import ChatroomRouter from "./routers/chatroom";
 import CollectionRouter from "./routers/collection";
+import DeliveryRouter from "./routers/delivery";
 import EcPayRouter from "./routers/ecpay";
 import FileRouter from "./routers/file";
 import NotificationRouter from "./routers/notification";
 import OrderRouter from "./routers/order";
-import DeliveryRouter from "./routers/delivery";
 import ProductRouter from "./routers/product";
 import TreasureBoxRouter from "./routers/treasureBox";
+
+console.log(`HOST: ${process.env.HOST}`);
 
 const app = express();
 const PORT = process.env.PORT ?? 4000;

@@ -1,4 +1,5 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+import path from "path";
 import { eq } from "drizzle-orm";
 import { createNotification } from "./repository/notification";
 import {
@@ -12,6 +13,11 @@ import { sendMulticastPushNotification } from "./lib/sendNotification";
 import bcrypt from "bcrypt";
 import db from "./lib/initDB";
 import * as schema from "./db/schema";
+
+const env = process.env.NODE_ENV;
+dotenv.config({
+  path: path.resolve(process.cwd(), env ? `.env.${env}` : ".env"),
+});
 
 const FCM_MAX_BATCH_SIZE = 100; // Process 100 users at a time. Adjust as needed.
 const RESET_BATCH_SIZE = 100;

@@ -1,5 +1,8 @@
 dist
 node_modules
-.env
+.env.local
+.env.development
+.env.stg
+.env.production
 schema.dbml
 flutter-ad-ecommerce-dev-5d9da-firebase-adminsdk-fbsvc-d73658c022.json
