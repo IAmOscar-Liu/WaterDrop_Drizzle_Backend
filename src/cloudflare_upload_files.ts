@@ -4,9 +4,9 @@ import path from "path";
 import fs from "fs/promises";
 import { updateAdvertisementById } from "./repository/advertisement";
 
-const env = process.env.NODE_ENV;
+const env = process.env.NODE_ENV ?? "local";
 dotenv.config({
-  path: path.resolve(process.cwd(), env ? `.env.${env}` : ".env"),
+  path: path.resolve(process.cwd(), `.env.${env}`),
 });
 
 /**

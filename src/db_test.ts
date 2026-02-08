@@ -22,9 +22,9 @@ import {
   getChatHistory,
 } from "./repository/chatroom";
 
-const env = process.env.NODE_ENV;
+const env = process.env.NODE_ENV ?? "local";
 dotenv.config({
-  path: path.resolve(process.cwd(), env ? `.env.${env}` : ".env"),
+  path: path.resolve(process.cwd(), `.env.${env}`),
 });
 
 // createUser({

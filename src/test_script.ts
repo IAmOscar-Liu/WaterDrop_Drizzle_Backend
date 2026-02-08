@@ -14,9 +14,9 @@ import bcrypt from "bcrypt";
 import db from "./lib/initDB";
 import * as schema from "./db/schema";
 
-const env = process.env.NODE_ENV;
+const env = process.env.NODE_ENV ?? "local";
 dotenv.config({
-  path: path.resolve(process.cwd(), env ? `.env.${env}` : ".env"),
+  path: path.resolve(process.cwd(), `.env.${env}`),
 });
 
 const FCM_MAX_BATCH_SIZE = 100; // Process 100 users at a time. Adjust as needed.
