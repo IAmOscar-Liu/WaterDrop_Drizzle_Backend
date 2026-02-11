@@ -184,6 +184,7 @@ const router = Router();
  *                   properties:
  *                     LogisticsType:
  *                       type: string
+ *                       enum: [CVS, home_delivery, virtual]
  *                     LogisticsSubType:
  *                       type: string
  *                     status:

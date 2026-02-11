@@ -1,6 +1,14 @@
 import { Request, Response } from "express";
 import path from "path";
-import { sendJsonResponse } from "../lib/general";
+import {
+  ECPAY_CHECKOUT_URL,
+  ECPAY_LOGISTIC_BASE_URL,
+} from "../constants/ecpay";
+import {
+  generateInvitationCode,
+  generateRandomString,
+  sendJsonResponse,
+} from "../lib/general";
 import { validateToken } from "../lib/token";
 import { createDelivery } from "../repository/delivery";
 import {
@@ -24,8 +32,7 @@ class EcPayController {
       ItemName: "測試商品",
       ReturnURL: `${process.env.HOST}/api/ecpay/return`,
       ClientBackURL: `${process.env.HOST}/api/ecpay/clientReturn`,
-      // ChoosePayment: "Credit",
-      ChoosePayment: "ALL",
+      ChoosePayment: "Credit",
       // IgnorePayment: "CVS#BARCODE#WebATM#AndroidPay#ApplePay",
       IgnorePayment: "CVS#BARCODE#WebATM#AndroidPay#ApplePay#TWQR#WeiXin",
       EncryptType: 1,
@@ -33,7 +40,7 @@ class EcPayController {
     };
 
     const formHtml = ecpayService.generateFormHtml({
-      actionUrl: "https://payment-stage.ecpay.com.tw/Cashier/AioCheckOut/V5",
+      actionUrl: ECPAY_CHECKOUT_URL,
       parameters: base_param,
       checkMacValueOptions: {
         hashKey: process.env.HASHKEY!,
@@ -70,7 +77,7 @@ class EcPayController {
     };
 
     const formHtml = ecpayService.generateFormHtml({
-      actionUrl: "https://payment-stage.ecpay.com.tw/Cashier/AioCheckOut/V5",
+      actionUrl: ECPAY_CHECKOUT_URL,
       parameters: base_param,
       checkMacValueOptions: {
         hashKey: process.env.HASHKEY!,
@@ -130,7 +137,7 @@ class EcPayController {
     };
 
     const formHtml = ecpayService.generateFormHtml({
-      actionUrl: "https://logistics-stage.ecpay.com.tw/Express/map",
+      actionUrl: `${ECPAY_LOGISTIC_BASE_URL}/Express/map`,
       parameters: mapParams,
     });
 
@@ -206,7 +213,7 @@ class EcPayController {
     console.log(base_param);
 
     const formHtml = ecpayService.generateFormHtml({
-      actionUrl: "https://logistics-stage.ecpay.com.tw/Express/Create",
+      actionUrl: `${ECPAY_LOGISTIC_BASE_URL}/Express/Create`,
       parameters: base_param,
       checkMacValueOptions: {
         hashKey: type === "B2C" ? "5294y06JbISpM5x9" : "XBERn1YOvpM9nfZc",
@@ -343,7 +350,7 @@ class EcPayController {
     console.log("base_param: ", base_param);
 
     const formHtml = ecpayService.generateFormHtml({
-      actionUrl: "https://logistics-stage.ecpay.com.tw/Express/Create",
+      actionUrl: `${ECPAY_LOGISTIC_BASE_URL}/Express/Create`,
       parameters: base_param,
       checkMacValueOptions: {
         hashKey: process.env.LOGISTICS_HASH_KEY!,
@@ -394,7 +401,7 @@ class EcPayController {
           orderId: merchantTrade.orderId,
           merchantTradeNo: merchantTrade.merchantTradeNo,
           AllPayLogisticsID: data.AllPayLogisticsID,
-          LogisticsType: data.LogisticsType,
+          LogisticsType: data.LogisticsType ?? "CVS",
           LogisticsSubType: data.LogisticsSubType,
           CVSPaymentNo: data.CVSPaymentNo ?? null,
           CVSValidationNo: data.CVSValidationNo ?? null,

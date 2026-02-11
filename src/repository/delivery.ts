@@ -1,7 +1,18 @@
-import { and, count, eq, gte, inArray, isNotNull, lte, SQL } from "drizzle-orm";
+import {
+  and,
+  count,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  like,
+  lte,
+  SQL,
+} from "drizzle-orm";
 import * as schema from "../db/schema";
 import db from "../lib/initDB";
 import { isAccountAdmin } from "./account";
+import { CustomError } from "../lib/error";
 
 export async function createDelivery(
   deliveryData: schema.NewDelivery,
@@ -52,6 +63,36 @@ export async function updateDelivery(
 export async function getDeliveryById(deliveryId: string) {
   return db.query.deliveryTable.findFirst({
     where: eq(schema.deliveryTable.id, deliveryId),
+    with: {
+      order: true,
+      items: {
+        with: {
+          product: true,
+        },
+      },
+    },
+  });
+}
+
+export async function getDeliveriesByMerchantTradeNo(
+  merchantTradeNo: string,
+  options?: { matchPrefix: boolean },
+) {
+  const { matchPrefix = false } = options ?? {};
+
+  if (matchPrefix && merchantTradeNo.length < 4) {
+    throw new CustomError(
+      "Merchant trade no must be at least 4 characters for prefix match",
+      400,
+    );
+  }
+
+  const whereClause = matchPrefix
+    ? like(schema.deliveryTable.merchantTradeNo, `${merchantTradeNo}%`)
+    : eq(schema.deliveryTable.merchantTradeNo, merchantTradeNo);
+
+  return db.query.deliveryTable.findMany({
+    where: whereClause,
     with: {
       order: true,
       items: {

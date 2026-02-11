@@ -3,6 +3,7 @@ import { handleServiceError } from "../lib/error";
 import {
   createOrder,
   getOrderById,
+  getOrdersByMerchantTradeNo,
   listOrders,
   listAdminOrders,
   ListOrdersParams,
@@ -69,23 +70,46 @@ class OrderService {
     }
   }
 
+  async getOrdersByMerchantTradeNo(
+    merchantTradeNo: string,
+    options?: { matchPrefix: boolean },
+  ): Promise<
+    ServiceResponse<Awaited<ReturnType<typeof getOrdersByMerchantTradeNo>>>
+  > {
+    try {
+      const orders = await getOrdersByMerchantTradeNo(merchantTradeNo, options);
+      return { success: true, data: orders };
+    } catch (error) {
+      return handleServiceError(error);
+    }
+  }
+
   async createOrder({
     userId,
     items,
+    subTotal,
     totalAmount,
     discountCoin,
+    userLevelAtSale,
+    userMaxDiscountAtSale,
   }: {
     userId: string;
     items: schema.NewOrderItem[];
+    subTotal: number;
     totalAmount: number;
     discountCoin: number;
+    userLevelAtSale?: string;
+    userMaxDiscountAtSale?: number;
   }): Promise<ServiceResponse<Awaited<ReturnType<typeof createOrder>>>> {
     try {
       const order = await createOrder(
         {
           userId,
+          subTotal,
           totalAmount,
           discountCoin,
+          userLevelAtSale,
+          userMaxDiscountAtSale,
         },
         items,
       );

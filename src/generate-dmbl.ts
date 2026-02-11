@@ -1,7 +1,8 @@
+import "./lib/env";
+
+import path from "path";
 import { pgGenerate } from "drizzle-dbml-generator";
 import * as schema from "./db/schema";
-import path from "path";
-import "dotenv/config";
 
 async function generateDbml() {
   const dbml = pgGenerate({

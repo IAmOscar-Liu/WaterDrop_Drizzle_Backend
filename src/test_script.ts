@@ -1,5 +1,8 @@
-import "dotenv/config";
-import { eq } from "drizzle-orm";
+import "./lib/env";
+
+import dotenv from "dotenv";
+import path from "path";
+import { eq, sql } from "drizzle-orm";
 import { createNotification } from "./repository/notification";
 import {
   getFcmTokensInUserIds,
@@ -119,6 +122,15 @@ async function testScript3() {
   }
 }
 
+async function calculateOrderSubTotal() {
+  await db.update(schema.orderTable).set({
+    subTotal: sql`${schema.orderTable.totalAmount} + COALESCE(${schema.orderTable.discountCoin}, 0) / 10.0`,
+  });
+  console.log("calculateOrderSubTotal done");
+}
+
 // generateHashPassword("test1234");
 // testScript();
-testScript3();
+// testScript3();
+
+calculateOrderSubTotal();

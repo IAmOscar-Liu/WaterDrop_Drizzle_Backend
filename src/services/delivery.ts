@@ -4,6 +4,7 @@ import {
   ListAdminDeliveriesParams,
   listAdminDeliveries,
   getDeliveryById,
+  getDeliveriesByMerchantTradeNo,
   createDelivery,
 } from "../repository/delivery";
 import { ServiceResponse } from "../type/general";
@@ -42,6 +43,23 @@ class DeliveryService {
           message: "delivery not found",
         };
       }
+    } catch (error) {
+      return handleServiceError(error);
+    }
+  }
+
+  async getDeliveriesByMerchantTradeNo(
+    merchantTradeNo: string,
+    options?: { matchPrefix: boolean },
+  ): Promise<
+    ServiceResponse<Awaited<ReturnType<typeof getDeliveriesByMerchantTradeNo>>>
+  > {
+    try {
+      const deliveries = await getDeliveriesByMerchantTradeNo(
+        merchantTradeNo,
+        options,
+      );
+      return { success: true, data: deliveries };
     } catch (error) {
       return handleServiceError(error);
     }

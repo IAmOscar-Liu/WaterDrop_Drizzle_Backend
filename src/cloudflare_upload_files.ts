@@ -1,8 +1,13 @@
-import "dotenv/config";
+import dotenv from "dotenv";
 import { uploadFile } from "./lib/cloudflare";
 import path from "path";
 import fs from "fs/promises";
 import { updateAdvertisementById } from "./repository/advertisement";
+
+const env = process.env.NODE_ENV ?? "local";
+dotenv.config({
+  path: path.resolve(process.cwd(), `.env.${env}`),
+});
 
 /**
  * Recursively list all files under assets/videos (or a custom dir).
@@ -14,7 +19,7 @@ import { updateAdvertisementById } from "./repository/advertisement";
  */
 export async function listAllFiles(
   baseDir: string = path.resolve(process.cwd(), "src", "assets", "videos"),
-  options?: { relative: boolean }
+  options?: { relative: boolean },
 ) {
   const { relative = true } = options || {};
   const out: string[] = [];
@@ -66,7 +71,7 @@ export async function listAllFiles(
 async function main() {
   const files = await listAllFiles(
     path.resolve(process.cwd(), "src", "assets", "videos"),
-    { relative: false }
+    { relative: false },
   );
   // console.log(`Found ${files.length} file(s) to upload.`, files);
 

@@ -1,10 +1,11 @@
 import crypto from "crypto";
+import { ECPAY_LOGISTIC_BASE_URL } from "../constants/ecpay";
 import { generateRandomString } from "../lib/general";
 
 class EcPayService {
-  generateTradeNo() {
+  generateTradeNo(length?: number) {
     // return "test" + new Date().getTime();
-    return generateRandomString(20);
+    return generateRandomString(length ?? 20);
   }
 
   generateMerchantTradeDate() {
@@ -221,12 +222,12 @@ class EcPayService {
 
   getPrintTradeDocumentActionUrl(LogisticsSubType?: any) {
     if (LogisticsSubType === "UNIMARTC2C")
-      return "https://logistics-stage.ecpay.com.tw/Express/PrintUniMartC2COrderInfo";
-    if (LogisticsSubType === "FAMIC2C")
-      return "https://logistics-stage.ecpay.com.tw/Express/PrintFAMIC2COrderInfo";
+      return `${ECPAY_LOGISTIC_BASE_URL}/Express/PrintUniMartC2COrderInfo`;
+    if (LogisticsSubType === `FAMIC2C`)
+      return `${ECPAY_LOGISTIC_BASE_URL}/Express/PrintFAMIC2COrderInfo`;
     if (LogisticsSubType === "OKMARTC2C")
-      return "https://logistics-stage.ecpay.com.tw/Express/PrintOKMARTC2COrderInfo";
-    return "https://logistics-stage.ecpay.com.tw/helper/printTradeDocument";
+      return `${ECPAY_LOGISTIC_BASE_URL}/Express/PrintOKMARTC2COrderInfo`;
+    return `${ECPAY_LOGISTIC_BASE_URL}/helper/printTradeDocument`;
   }
 
   getPrintTradeDocumentParameters(

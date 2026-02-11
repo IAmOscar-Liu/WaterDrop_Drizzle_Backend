@@ -1,4 +1,5 @@
-import "dotenv/config";
+import "./lib/env";
+
 import {
   getTreasureBoxesByUserId,
   openTreasureBox,

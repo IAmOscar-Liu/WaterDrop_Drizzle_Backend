@@ -1,4 +1,15 @@
-import { and, count, eq, gte, inArray, lt, lte, SQL, sql } from "drizzle-orm";
+import {
+  and,
+  count,
+  eq,
+  gte,
+  inArray,
+  like,
+  lt,
+  lte,
+  SQL,
+  sql,
+} from "drizzle-orm";
 import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
 import db from "../lib/initDB";
@@ -460,9 +471,50 @@ export async function getOrderById(orderId: string) {
   });
 }
 
-export async function getOrderByMerchantTradeNo(merchantTradeNo: string) {
-  return db.query.orderTable.findFirst({
-    where: eq(schema.orderTable.merchantTradeNo, merchantTradeNo),
+export async function getOrdersByMerchantTradeNo(
+  merchantTradeNo: string,
+  options?: { matchPrefix: boolean },
+) {
+  const { matchPrefix = false } = options ?? {};
+
+  if (matchPrefix && merchantTradeNo.length < 4) {
+    throw new CustomError(
+      "Merchant trade no must be at least 4 characters for prefix match",
+      400,
+    );
+  }
+
+  const whereClause = matchPrefix
+    ? like(schema.orderTable.merchantTradeNo, `${merchantTradeNo}%`)
+    : eq(schema.orderTable.merchantTradeNo, merchantTradeNo);
+
+  return db.query.orderTable.findMany({
+    where: whereClause,
+    with: {
+      items: {
+        with: {
+          product: true,
+        },
+      },
+      deliveries: {
+        with: {
+          items: {
+            columns: {
+              id: true,
+              productId: true,
+              productNameAtSale: true,
+            },
+          },
+        },
+      },
+      user: {
+        columns: {
+          id: true,
+          name: true,
+          email: true,
+        },
+      },
+    },
   });
 }
 
