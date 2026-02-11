@@ -70,6 +70,12 @@ export const deliveryStatusEnum = pgEnum("delivery_status", [
   "cancelled",
 ]);
 
+export const deliveryLogisticsTypeEnum = pgEnum("delivery_logistics_type", [
+  "CVS",
+  "home_delivery",
+  "virtual",
+]);
+
 export const advertisementStatusEnum = pgEnum("advertisement_status", [
   "active",
   "paused",
@@ -490,11 +496,14 @@ export const orderTable = pgTable("orders", {
     .references(() => userTable.id), // The customer who placed the order
   accountId: uuid("account_id").references(() => accountTable.id), // Optional: Reference to a seller/admin if needed for the whole order
   merchantTradeNo: text("merchant_trade_no"),
+  subTotal: doublePrecision("sub_total").notNull(),
   totalAmount: doublePrecision("total_amount").notNull(), // Final calculated total
   discountCoin: integer("discount_coin").default(0), // New field for discount coins used
-  // Optionally add status (e.g., 'pending', 'shipped', 'delivered')
   orderStatus: orderStatusEnum("order_status").default("pending").notNull(),
-  // Optionally add shipping address, payment details, etc.
+
+  userLevelAtSale: text("user_level_at_sale"),
+  userMaxDiscountAtSale: integer("user_max_discount_at_sale"),
+
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -557,7 +566,7 @@ export const deliveryTable = pgTable("deliveries", {
   AllPayLogisticsID: text("all_pay_logistics_id"),
   CVSPaymentNo: text("cvs_payment_no"),
   CVSValidationNo: text("cvs_validation_no"),
-  LogisticsType: text("logistics_type").notNull(),
+  LogisticsType: deliveryLogisticsTypeEnum("logistics_type").notNull(),
   LogisticsSubType: text("logistics_sub_type"),
   RtnCode: text("rtn_code"),
   RtnMsg: text("rtn_msg"),

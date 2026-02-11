@@ -1,6 +1,8 @@
+import "./lib/env";
+
 import dotenv from "dotenv";
 import path from "path";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { createNotification } from "./repository/notification";
 import {
   getFcmTokensInUserIds,
@@ -13,11 +15,6 @@ import { sendMulticastPushNotification } from "./lib/sendNotification";
 import bcrypt from "bcrypt";
 import db from "./lib/initDB";
 import * as schema from "./db/schema";
-
-const env = process.env.NODE_ENV ?? "local";
-dotenv.config({
-  path: path.resolve(process.cwd(), `.env.${env}`),
-});
 
 const FCM_MAX_BATCH_SIZE = 100; // Process 100 users at a time. Adjust as needed.
 const RESET_BATCH_SIZE = 100;
@@ -125,6 +122,15 @@ async function testScript3() {
   }
 }
 
+async function calculateOrderSubTotal() {
+  await db.update(schema.orderTable).set({
+    subTotal: sql`${schema.orderTable.totalAmount} + COALESCE(${schema.orderTable.discountCoin}, 0) / 10.0`,
+  });
+  console.log("calculateOrderSubTotal done");
+}
+
 // generateHashPassword("test1234");
 // testScript();
-testScript3();
+// testScript3();
+
+calculateOrderSubTotal();

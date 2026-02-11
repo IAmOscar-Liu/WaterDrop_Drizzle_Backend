@@ -48,6 +48,20 @@ class DeliveryController {
     sendJsonResponse(res, result);
   }
 
+  async getDeliveriesByMerchantTradeNo(
+    req: Request,
+    res: Response,
+  ): Promise<any> {
+    const { merchantTradeNo } = req.params;
+    const result = await deliveryService.getDeliveriesByMerchantTradeNo(
+      merchantTradeNo,
+      {
+        matchPrefix: true,
+      },
+    );
+    sendJsonResponse(res, result);
+  }
+
   async updateDelivery(req: Request, res: Response): Promise<any> {
     const { deliveryId } = req.params;
     const result = await deliveryService.updateDelivery(deliveryId, req.body);

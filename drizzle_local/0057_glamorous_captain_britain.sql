@@ -1,0 +1,2 @@
+CREATE TYPE "public"."delivery_logistics_type" AS ENUM('CVS', 'home_delivery', 'virtual');--> statement-breakpoint
+ALTER TABLE "deliveries" ALTER COLUMN "logistics_type" SET DATA TYPE "public"."delivery_logistics_type" USING "logistics_type"::"public"."delivery_logistics_type";

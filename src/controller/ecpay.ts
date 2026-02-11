@@ -4,7 +4,11 @@ import {
   ECPAY_CHECKOUT_URL,
   ECPAY_LOGISTIC_BASE_URL,
 } from "../constants/ecpay";
-import { sendJsonResponse } from "../lib/general";
+import {
+  generateInvitationCode,
+  generateRandomString,
+  sendJsonResponse,
+} from "../lib/general";
 import { validateToken } from "../lib/token";
 import { createDelivery } from "../repository/delivery";
 import {
@@ -28,8 +32,7 @@ class EcPayController {
       ItemName: "測試商品",
       ReturnURL: `${process.env.HOST}/api/ecpay/return`,
       ClientBackURL: `${process.env.HOST}/api/ecpay/clientReturn`,
-      // ChoosePayment: "Credit",
-      ChoosePayment: "ALL",
+      ChoosePayment: "Credit",
       // IgnorePayment: "CVS#BARCODE#WebATM#AndroidPay#ApplePay",
       IgnorePayment: "CVS#BARCODE#WebATM#AndroidPay#ApplePay#TWQR#WeiXin",
       EncryptType: 1,
@@ -398,7 +401,7 @@ class EcPayController {
           orderId: merchantTrade.orderId,
           merchantTradeNo: merchantTrade.merchantTradeNo,
           AllPayLogisticsID: data.AllPayLogisticsID,
-          LogisticsType: data.LogisticsType,
+          LogisticsType: data.LogisticsType ?? "CVS",
           LogisticsSubType: data.LogisticsSubType,
           CVSPaymentNo: data.CVSPaymentNo ?? null,
           CVSValidationNo: data.CVSValidationNo ?? null,

@@ -44,12 +44,24 @@ class OrderController {
   }
 
   async createOrder(req: RequestWithId, res: Response): Promise<any> {
-    const { items, totalAmount, discountCoin } = req.body;
+    const {
+      items,
+      subTotal,
+      totalAmount,
+      discountCoin,
+      userLevelAtSale,
+      userMaxDiscountAtSale,
+    } = req.body;
     const result = await orderService.createOrder({
       userId: req.userId ?? "",
       items,
-      totalAmount,
+      subTotal: Number(subTotal),
+      totalAmount: Number(totalAmount),
       discountCoin: discountCoin ? Number(discountCoin) : 0,
+      userLevelAtSale: userLevelAtSale ? String(userLevelAtSale) : undefined,
+      userMaxDiscountAtSale: userMaxDiscountAtSale
+        ? Number(userMaxDiscountAtSale)
+        : undefined,
     });
     sendJsonResponse(res, result);
   }
@@ -57,6 +69,17 @@ class OrderController {
   async getOrder(req: Request, res: Response): Promise<any> {
     const { id } = req.params;
     const result = await orderService.getOrderById(id);
+    sendJsonResponse(res, result);
+  }
+
+  async getOrdersByMerchantTradeNo(req: Request, res: Response): Promise<any> {
+    const { merchantTradeNo } = req.params;
+    const result = await orderService.getOrdersByMerchantTradeNo(
+      merchantTradeNo,
+      {
+        matchPrefix: true,
+      },
+    );
     sendJsonResponse(res, result);
   }
 

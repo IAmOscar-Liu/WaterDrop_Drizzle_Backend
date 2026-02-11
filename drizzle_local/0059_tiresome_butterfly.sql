@@ -1,0 +1,1 @@
+ALTER TABLE "orders" ALTER COLUMN "sub_total" SET NOT NULL;

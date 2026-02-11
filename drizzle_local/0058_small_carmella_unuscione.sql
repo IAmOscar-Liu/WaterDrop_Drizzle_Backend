@@ -1,0 +1,1 @@
+ALTER TABLE "orders" ADD COLUMN "sub_total" double precision;

@@ -140,6 +140,42 @@ router.get("/:deliveryId", isAuth, DeliveryController.getDelivery);
 
 /**
  * @swagger
+ * /api/admin/delivery/merchant-trade-no/{merchantTradeNo}:
+ *   get:
+ *     tags: [Delivery]
+ *     summary: Get deliveries by merchant trade number
+ *     description: Search by merchant trade number prefix. Requires at least 4 characters. Matches from the beginning and returns a list.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: merchantTradeNo
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       '200':
+ *         description: The requested deliveries.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/DeliveryWithOrderAndItems'
+ */
+router.get(
+  "/merchant-trade-no/:merchantTradeNo",
+  isAuth,
+  DeliveryController.getDeliveriesByMerchantTradeNo,
+);
+
+/**
+ * @swagger
  * /api/admin/delivery/{deliveryId}:
  *   put:
  *     tags: [Delivery]
@@ -173,6 +209,7 @@ router.get("/:deliveryId", isAuth, DeliveryController.getDelivery);
  *                 nullable: true
  *               LogisticsType:
  *                 type: string
+ *                 enum: [CVS, home_delivery, virtual]
  *               LogisticsSubType:
  *                 type: string
  *                 nullable: true

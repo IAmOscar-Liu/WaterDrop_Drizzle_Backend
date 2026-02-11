@@ -62,6 +62,7 @@ const router = Router();
  *           nullable: true
  *         LogisticsType:
  *           type: string
+ *           enum: [CVS, home_delivery, virtual]
  *         LogisticsSubType:
  *           type: string
  *         RtnCode:
@@ -114,6 +115,9 @@ const router = Router();
  *         merchantTradeNo:
  *           type: string
  *           nullable: true
+ *         subTotal:
+ *           type: number
+ *           format: double
  *         totalAmount:
  *           type: number
  *           format: double
@@ -123,6 +127,13 @@ const router = Router();
  *         orderStatus:
  *           type: string
  *           enum: [pending, paid, failed]
+ *         userLevelAtSale:
+ *           type: string
+ *           nullable: true
+ *           example: A1
+ *         userMaxDiscountAtSale:
+ *           type: integer
+ *           nullable: true
  *         createdAt:
  *           type: string
  *           format: date-time
@@ -364,5 +375,41 @@ router.get("/list", isAuth, OrderController.listAdminOrders);
  *                   $ref: '#/components/schemas/OrderWithRelations'
  */
 router.get("/:id", isAuth, OrderController.getOrder);
+
+/**
+ * @swagger
+ * /api/admin/order/merchant-trade-no/{merchantTradeNo}:
+ *   get:
+ *     tags: [Order]
+ *     summary: Get orders by merchant trade number
+ *     description: Search by merchant trade number prefix. Requires at least 4 characters. Matches from the beginning and returns a list.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: merchantTradeNo
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       '200':
+ *         description: The requested orders.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/OrderWithRelations'
+ */
+router.get(
+  "/merchant-trade-no/:merchantTradeNo",
+  isAuth,
+  OrderController.getOrdersByMerchantTradeNo,
+);
 
 export default router;

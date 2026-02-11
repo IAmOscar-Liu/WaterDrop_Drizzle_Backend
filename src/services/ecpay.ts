@@ -3,9 +3,9 @@ import { ECPAY_LOGISTIC_BASE_URL } from "../constants/ecpay";
 import { generateRandomString } from "../lib/general";
 
 class EcPayService {
-  generateTradeNo() {
+  generateTradeNo(length?: number) {
     // return "test" + new Date().getTime();
-    return generateRandomString(20);
+    return generateRandomString(length ?? 20);
   }
 
   generateMerchantTradeDate() {
