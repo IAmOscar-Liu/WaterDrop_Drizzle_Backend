@@ -96,27 +96,27 @@ export function getCurrentLocalDateTime(timeZone: string) {
   const parts = formatter.formatToParts(new Date());
   const localYear = parseInt(
     parts.find((p) => p.type === "year")?.value ?? "0",
-    10
+    10,
   );
   const localMonth = parseInt(
     parts.find((p) => p.type === "month")?.value ?? "0",
-    10
+    10,
   );
   const localDay = parseInt(
     parts.find((p) => p.type === "day")?.value ?? "0",
-    10
+    10,
   );
   const localHour = parseInt(
     parts.find((p) => p.type === "hour")?.value ?? "0",
-    10
+    10,
   );
   const localMinute = parseInt(
     parts.find((p) => p.type === "minute")?.value ?? "0",
-    10
+    10,
   );
   const localSecond = parseInt(
     parts.find((p) => p.type === "second")?.value ?? "0",
-    10
+    10,
   );
   return {
     localYear,
@@ -126,29 +126,4 @@ export function getCurrentLocalDateTime(timeZone: string) {
     localMinute,
     localSecond,
   };
-}
-
-/**
- * Validates a password to ensure it meets complex security requirements.
- * - At least 8 characters long
- * - At least one uppercase letter
- * - At least one lowercase letter
- * - At least one number
- * - At least one special character
- *
- * @param password The password string to validate.
- * @returns {boolean} True if the password is valid, false otherwise.
- */
-export function validatePassword(password: string): boolean {
-  const hasMinLength = password.length >= 8;
-  const hasUppercase = /[A-Z]/.test(password);
-  const hasLowercase = /[a-z]/.test(password);
-  const hasNumber = /[0-9]/.test(password);
-  // Matches any character that is not a word character (alphanumeric and underscore) or whitespace.
-  // You can customize this regex to be more or less strict.
-  const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
-
-  return (
-    hasMinLength && hasUppercase && hasLowercase && hasNumber && hasSpecialChar
-  );
 }

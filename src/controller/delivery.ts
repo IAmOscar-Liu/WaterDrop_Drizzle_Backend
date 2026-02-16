@@ -4,6 +4,11 @@ import deliveryService from "../services/delivery";
 import { RequestWithId } from "../type/request";
 import ecpayService from "../services/ecpay";
 import { ListAdminDeliveriesParams } from "../repository/delivery";
+import {
+  HOME_DELIVERY_FEE,
+  HOME_DELIVERY_REFRIG_FEE,
+} from "../constants/delivery";
+import { ECPAY_SHIPPING_FEE } from "../constants/ecpay";
 
 class DeliveryController {
   async listAdminDeliveries(req: RequestWithId, res: Response): Promise<any> {
@@ -66,6 +71,23 @@ class DeliveryController {
     const { deliveryId } = req.params;
     const result = await deliveryService.updateDelivery(deliveryId, req.body);
     sendJsonResponse(res, result);
+  }
+
+  async getShippingFeeAndTaxRate(req: Request, res: Response): Promise<any> {
+    res.json({
+      success: true,
+      data: {
+        transactionFeeRate: Number(process.env.TRANSACTION_FEE_RATE),
+        homeDelivery: HOME_DELIVERY_FEE,
+        homeDeliveryRefrig: HOME_DELIVERY_REFRIG_FEE,
+        FAMI: ECPAY_SHIPPING_FEE.FAMI,
+        UNIMART: ECPAY_SHIPPING_FEE.UNIMART,
+        FAMIC2C: ECPAY_SHIPPING_FEE.FAMIC2C,
+        UNIMARTC2C: ECPAY_SHIPPING_FEE.UNIMARTC2C,
+        HILIFEC2C: ECPAY_SHIPPING_FEE.HILIFEC2C,
+        OKMARTC2C: ECPAY_SHIPPING_FEE.OKMARTC2C,
+      },
+    });
   }
 }
 

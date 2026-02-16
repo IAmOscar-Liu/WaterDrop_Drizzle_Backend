@@ -1,8 +1,50 @@
 import crypto from "crypto";
-import { ECPAY_LOGISTIC_BASE_URL } from "../constants/ecpay";
+import {
+  ECPAY_CHECKOUT_URL,
+  ECPAY_LOGISTIC_BASE_URL,
+} from "../constants/ecpay";
 import { generateRandomString } from "../lib/general";
 
 class EcPayService {
+  getTestMerchantID(realAccount: boolean): string {
+    return !realAccount ? "3002607" : process.env.MERCHANTID!;
+  }
+
+  getTestHashKey(realAccount: boolean): string {
+    return !realAccount ? "pwFHCqoQZGmho4w6" : process.env.HASHKEY!;
+  }
+
+  getTestHashIV(realAccount: boolean): string {
+    return !realAccount ? "EkRm7iFT261dpevs" : process.env.HASHIV!;
+  }
+
+  getTestLogisticMerchantID(realAccount: boolean, isB2C: boolean): string {
+    if (realAccount) return process.env.LOGISTICS_MERCHANTID!;
+    return isB2C ? "2000132" : "2000933";
+  }
+
+  getTestLogisticHashKey(realAccount: boolean, isB2C: boolean): string {
+    if (realAccount) return process.env.LOGISTICS_HASH_KEY!;
+    return isB2C ? "5294y06JbISpM5x9" : "XBERn1YOvpM9nfZc";
+  }
+
+  getTestLogisticHashIV(realAccount: boolean, isB2C: boolean): string {
+    if (realAccount) return process.env.LOGISTICS_HASH_IV!;
+    return isB2C ? "v77hoKGq4kWxNNIS" : "h1ONHk4P4yqbl5LK";
+  }
+
+  getTestCheckoutUrl(realAccount: boolean): string {
+    return !realAccount
+      ? "https://payment-stage.ecpay.com.tw/Cashier/AioCheckOut/V5"
+      : ECPAY_CHECKOUT_URL!;
+  }
+
+  getTestExpressUrl(realAccount: boolean): string {
+    return !realAccount
+      ? "https://logistics-stage.ecpay.com.tw/Express/Create"
+      : `${ECPAY_LOGISTIC_BASE_URL}/Express/Create`;
+  }
+
   generateTradeNo(length?: number) {
     // return "test" + new Date().getTime();
     return generateRandomString(length ?? 20);
@@ -140,6 +182,8 @@ class EcPayService {
    */
   validateLogisticsParams(params: Record<string, any>) {
     const {
+      SenderNames,
+      SenderCellPhones,
       ReceiverName,
       ReceiverCellPhone,
       ReceiverEmail,
@@ -147,7 +191,7 @@ class EcPayService {
       GoodsAmount,
     } = params;
 
-    // 1. 驗證 ReceiverName (收件人姓名)
+    // 1. 驗證 ReceiverName
     // 規定: 字元限制為4~10個字元(例：半形英文可支援4~10個字，中文可支援2~5個字)
     // 不可帶入不符合姓名規則的文字如表情圖示(emoji符號)
     if (ReceiverName) {
@@ -165,10 +209,43 @@ class EcPayService {
       }
     }
 
-    // 2. 驗證 ReceiverCellPhone (收件人手機): 規定長度為 10 碼數字
+    // 1.2 驗證 SenderNames, 規定同上
+    if (Array.isArray(SenderNames)) {
+      console.log(`validating sender names: ${SenderNames}`);
+      for (let SenderName of SenderNames) {
+        if (!SenderName) return `寄件人姓名不存在`;
+
+        const senderNameStr = String(SenderName);
+        const nameLength = this.getEcpayLength(senderNameStr);
+
+        if (nameLength < 4 || nameLength > 10) {
+          return `寄件人姓名長度須介於 4 到 10 個字元之間 (目前長度: ${nameLength})`;
+        }
+
+        // 檢查是否包含表情符號 (emoji)
+        const emojiRegex = /\p{Emoji}/u;
+        if (emojiRegex.test(senderNameStr)) {
+          return `寄件人姓名不可包含表情符號`;
+        }
+      }
+    }
+
+    // 2. 驗證 ReceiverCellPhone (手機): 規定長度為 10 碼數字
     const phoneRegex = /^09\d{8}$/;
     if (ReceiverCellPhone && !phoneRegex.test(String(ReceiverCellPhone))) {
       return `收件人手機格式錯誤，須為 09 開頭的 10 碼數字`;
+    }
+
+    // 2.1 驗證 SenderCellPhone, 規定同上
+    if (Array.isArray(SenderCellPhones)) {
+      console.log(`validating sender cell phones: ${SenderCellPhones}`);
+      for (let SenderCellPhone of SenderCellPhones) {
+        if (!SenderCellPhone) return `寄件人手機不存在`;
+
+        if (!phoneRegex.test(String(SenderCellPhone))) {
+          return `寄件人手機格式錯誤，須為 09 開頭的 10 碼數字`;
+        }
+      }
     }
 
     // 3. 驗證 ReceiverEmail (收件人信箱): 規定長度 <= 100

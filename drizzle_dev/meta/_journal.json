@@ -218,6 +218,27 @@
       "when": 1770747998467,
       "tag": "0030_long_chat",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1771183087322,
+      "tag": "0031_first_sinister_six",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1771183240740,
+      "tag": "0032_glorious_joseph",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1771243759334,
+      "tag": "0033_legal_captain_america",
+      "breakpoints": true
     }
   ]
 }

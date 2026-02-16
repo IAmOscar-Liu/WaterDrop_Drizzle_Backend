@@ -1,0 +1,1 @@
+ALTER TABLE "merchant_trades" ADD COLUMN "shipping_cost" double precision DEFAULT 0;

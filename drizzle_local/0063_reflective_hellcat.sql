@@ -1,0 +1,1 @@
+ALTER TABLE "deliveries" RENAME COLUMN "tax_amount" TO "fee";

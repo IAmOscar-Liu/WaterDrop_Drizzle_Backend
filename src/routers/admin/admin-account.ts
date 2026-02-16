@@ -25,6 +25,9 @@ import isAuth from "../../middleware/isAuth";
  *         name:
  *           type: string
  *           description: The name of the account holder.
+ *         realName:
+ *           type: string
+ *           description: The real name of the account holder.
  *         email:
  *           type: string
  *           format: email
@@ -149,11 +152,14 @@ const router = Router();
  *         application/json:
  *           schema:
  *             type: object
- *             required: [name, email, password, phone]
+ *             required: [name, email, password, phone, realName]
  *             properties:
  *               name:
  *                 type: string
  *                 example: "John Doe"
+ *               realName:
+ *                 type: string
+ *                 example: "王小明"
  *               email:
  *                 type: string
  *                 format: email
@@ -338,6 +344,8 @@ router.get("/me", isAuth, AccountController.getCurrentUser);
  *                 type: string
  *                 description: The user's ID
  *               name:
+ *                 type: string
+ *               realName:
  *                 type: string
  *               email:
  *                 type: string

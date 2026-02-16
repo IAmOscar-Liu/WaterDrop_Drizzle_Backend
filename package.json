@@ -4,6 +4,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "NODE_ENV=local nodemon src/index.ts",
+    "dev:stg": "NODE_ENV=stg nodemon src/index.ts",
     "build": "tsc",
     "start:local": "NODE_ENV=local node dist/index.js",
     "start:dev": "NODE_ENV=development node dist/index.js",
@@ -32,6 +33,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.893.0",
     "@aws-sdk/lib-storage": "^3.893.0",
+    "axios": "^1.13.5",
     "bcrypt": "^6.0.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",

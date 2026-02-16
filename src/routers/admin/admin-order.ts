@@ -74,6 +74,9 @@ const router = Router();
  *         GoodsAmount:
  *           type: number
  *           format: double
+ *         fee:
+ *           type: number
+ *           format: double
  *         metadata:
  *           type: object
  *           nullable: true
@@ -124,9 +127,15 @@ const router = Router();
  *         discountCoin:
  *           type: integer
  *           nullable: true
- *         orderStatus:
- *           type: string
- *           enum: [pending, paid, failed]
+ *         shippingCost:
+ *           type: number
+ *           format: double
+ *         transactionFee:
+ *           type: number
+ *           format: double
+ *         transactionFeeRateAtSale:
+ *           type: number
+ *           format: double
  *         userLevelAtSale:
  *           type: string
  *           nullable: true
@@ -134,6 +143,9 @@ const router = Router();
  *         userMaxDiscountAtSale:
  *           type: integer
  *           nullable: true
+ *         orderStatus:
+ *           type: string
+ *           enum: [pending, paid, failed]
  *         createdAt:
  *           type: string
  *           format: date-time

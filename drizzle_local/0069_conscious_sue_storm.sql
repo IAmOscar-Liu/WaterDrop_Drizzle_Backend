@@ -1,0 +1,1 @@
+ALTER TABLE "orders" ADD COLUMN "tax_rate_at_sale" double precision;

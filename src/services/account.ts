@@ -13,10 +13,11 @@ import {
   listAccountEmployees,
 } from "../repository/account";
 import { ServiceResponse } from "../type/general";
+import ecpayService from "./ecpay";
 
 class AdminService {
   async createAdminAccount(
-    accountData: schema.NewAccount
+    accountData: schema.NewAccount,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof createAccount>>>> {
     try {
       let account = await createAccount(accountData); // Replace with real data fetching logic
@@ -29,7 +30,7 @@ class AdminService {
 
   async getAdminAccountByEmailAndPassword(
     email: string,
-    password: string
+    password: string,
   ): Promise<
     ServiceResponse<Awaited<ReturnType<typeof getAccountByEmailAndPassword>>>
   > {
@@ -43,7 +44,7 @@ class AdminService {
   }
 
   async getAdminAccountById(
-    accountId: string
+    accountId: string,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof getAccountById>>>> {
     try {
       const account = await getAccountById(accountId); // Replace with real data fetching logic
@@ -99,7 +100,7 @@ class AdminService {
       const account = await changeAccountPassword(
         accountId,
         oldPassword,
-        newPassword
+        newPassword,
       ); // Replace with real data fetching logic
       if (account) {
         return { success: true, data: account };
@@ -116,7 +117,7 @@ class AdminService {
   }
 
   async listAdminAccounts(
-    params: ListAccountsParams
+    params: ListAccountsParams,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof listAccounts>>>> {
     try {
       const accounts = await listAccounts(params); // Replace with real data fetching logic
@@ -136,7 +137,7 @@ class AdminService {
 
   async assignAccountParent(
     accountId: string,
-    parentId: string
+    parentId: string,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof assignAccountParent>>>> {
     try {
       const account = await assignAccountParent(accountId, parentId);
@@ -147,7 +148,7 @@ class AdminService {
   }
 
   async listAccountEmployees(
-    accountId: string
+    accountId: string,
   ): Promise<
     ServiceResponse<Awaited<ReturnType<typeof listAccountEmployees>>>
   > {
@@ -157,6 +158,51 @@ class AdminService {
     } catch (error) {
       return handleServiceError(error);
     }
+  }
+
+  /**
+   * Validates a password to ensure it meets complex security requirements.
+   * - At least 8 characters long
+   * - At least one uppercase letter
+   * - At least one lowercase letter
+   * - At least one number
+   * - At least one special character
+   *
+   * @param password The password string to validate.
+   * @returns {boolean} True if the password is valid, false otherwise.
+   */
+  validatePassword(password: string): boolean {
+    const hasMinLength = password.length >= 8;
+    const hasUppercase = /[A-Z]/.test(password);
+    const hasLowercase = /[a-z]/.test(password);
+    const hasNumber = /[0-9]/.test(password);
+    // Matches any character that is not a word character (alphanumeric and underscore) or whitespace.
+    // You can customize this regex to be more or less strict.
+    const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+
+    return (
+      hasMinLength &&
+      hasUppercase &&
+      hasLowercase &&
+      hasNumber &&
+      hasSpecialChar
+    );
+  }
+
+  validateRealName(realName: string) {
+    const nameLength = ecpayService.getEcpayLength(realName);
+    if (nameLength < 4 || nameLength > 10) {
+      return `姓名長度須介於 4 到 10 個字元之間 (目前長度: ${nameLength})`;
+    }
+    return null;
+  }
+
+  validateCellPhone(phone: string) {
+    const phoneRegex = /^09\d{8}$/;
+    if (!phoneRegex.test(phone)) {
+      return `手機格式錯誤，須為 09 開頭的 10 碼數字`;
+    }
+    return null;
   }
 }
 

@@ -1,0 +1,1 @@
+ALTER TABLE "orders" ADD COLUMN "text_rate_at_sale" text;

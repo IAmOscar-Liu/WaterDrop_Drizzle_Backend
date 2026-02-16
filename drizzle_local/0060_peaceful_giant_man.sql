@@ -1,0 +1,1 @@
+ALTER TABLE "accounts" ADD COLUMN "real_name" text;

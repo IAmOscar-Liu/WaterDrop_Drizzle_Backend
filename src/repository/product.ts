@@ -71,6 +71,7 @@ export async function getProductWithSellerById(productId: string) {
         columns: {
           role: true,
           name: true,
+          realName: true,
           email: true,
           phone: true,
           avatar_url: true,
@@ -405,6 +406,7 @@ export async function listProducts({
         columns: {
           role: true,
           name: true,
+          realName: true,
           email: true,
           phone: true,
           avatar_url: true,

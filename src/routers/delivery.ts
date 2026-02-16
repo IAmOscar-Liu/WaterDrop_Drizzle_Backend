@@ -5,5 +5,9 @@ import isAuth from "../middleware/isAuth";
 const router = Router();
 
 router.post("/create", isAuth, DeliveryController.createDelivery);
+router.get(
+  "/shipping-fee-and-tax-rate",
+  DeliveryController.getShippingFeeAndTaxRate,
+);
 
 export default router;

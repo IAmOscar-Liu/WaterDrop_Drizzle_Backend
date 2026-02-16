@@ -1,0 +1,1 @@
+-- ALTER TABLE "orders" ALTER COLUMN "text_rate_at_sale" SET DATA TYPE double precision;

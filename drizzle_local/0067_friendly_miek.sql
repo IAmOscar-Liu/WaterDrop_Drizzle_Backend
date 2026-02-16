@@ -1,0 +1,1 @@
+-- ALTER TABLE "orders" RENAME COLUMN "text_rate_at_sale" TO "tax_rate_at_sale";

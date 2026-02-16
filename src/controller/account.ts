@@ -1,22 +1,23 @@
 import { Request, Response } from "express";
 import accountService from "../services/account";
-import { sendJsonResponse, validatePassword } from "../lib/general";
+import { sendJsonResponse } from "../lib/general";
 import { generateToken, sendRefreshToken, validateToken } from "../lib/token";
 import { RequestWithId } from "../type/request";
 import { isAccountAdmin, ListAccountsParams } from "../repository/account";
 
 class AccountController {
   async register(req: Request, res: Response): Promise<any> {
-    const { name, email, password, phone, address, role } = req.body;
+    const { name, email, password, phone, realName, address, role } = req.body;
 
-    if (!name || !email || !password || !phone) {
+    if (!name || !email || !password || !phone || !realName) {
       return sendJsonResponse(res, {
         success: false,
         statusCode: 400,
-        message: "Name, email, password, and phone are required.",
+        message: "Name, email, password, phone and realName are required.",
       });
     }
-    if (!validatePassword(password)) {
+
+    if (!accountService.validatePassword(password)) {
       return sendJsonResponse(res, {
         success: false,
         statusCode: 400,
@@ -25,12 +26,29 @@ class AccountController {
       });
     }
 
+    const phoneValidationResult = accountService.validateCellPhone(phone);
+    if (phoneValidationResult)
+      return sendJsonResponse(res, {
+        success: false,
+        statusCode: 400,
+        message: phoneValidationResult,
+      });
+
+    const realNameValidationResult = accountService.validateRealName(realName);
+    if (realNameValidationResult)
+      return sendJsonResponse(res, {
+        success: false,
+        statusCode: 400,
+        message: realNameValidationResult,
+      });
+
     const result = await accountService.createAdminAccount({
-      name,
-      email,
-      password,
-      phone,
-      address,
+      name: String(name),
+      email: String(email),
+      password: String(password),
+      phone: String(phone),
+      address: String(address),
+      realName: String(realName),
       role: role ?? "seller", // Assuming 'admin' is a valid role
     });
     if (result.success) {
@@ -128,7 +146,9 @@ class AccountController {
   }
 
   async updateAccount(req: RequestWithId, res: Response): Promise<any> {
-    const { id, ...update } = req.body;
+    const { id, name, realName, email, phone, address, role, status } =
+      req.body;
+
     if (!id) {
       return sendJsonResponse(res, {
         success: false,
@@ -136,6 +156,7 @@ class AccountController {
         message: "id is required.",
       });
     }
+
     if (id !== req.userId && !(await isAccountAdmin(req.userId ?? ""))) {
       return sendJsonResponse(res, {
         success: false,
@@ -143,9 +164,39 @@ class AccountController {
         message: "You are not authorized to update this account.",
       });
     }
+
+    if (typeof realName === "string") {
+      const realNameValidationResult =
+        accountService.validateRealName(realName);
+      if (realNameValidationResult)
+        return sendJsonResponse(res, {
+          success: false,
+          statusCode: 400,
+          message: realNameValidationResult,
+        });
+    }
+
+    if (typeof phone === "string") {
+      const phoneValidationResult = accountService.validateCellPhone(phone);
+      if (phoneValidationResult)
+        return sendJsonResponse(res, {
+          success: false,
+          statusCode: 400,
+          message: phoneValidationResult,
+        });
+    }
+
     const result = await accountService.updateAdminAccount({
       accountId: id,
-      update,
+      update: {
+        ...(name ? { name: String(name) } : {}),
+        ...(realName ? { realName: String(realName) } : {}),
+        ...(email ? { email: String(email) } : {}),
+        ...(phone ? { phone: String(phone) } : {}),
+        ...(address ? { address: String(address) } : {}),
+        ...(role ? { role: role as ListAccountsParams["role"] } : {}),
+        ...(status ? { status: status as ListAccountsParams["status"] } : {}),
+      },
     });
     sendJsonResponse(res, result);
   }
@@ -166,7 +217,7 @@ class AccountController {
         message: "You are not authorized to update this account.",
       });
     }
-    if (!validatePassword(newPassword)) {
+    if (!accountService.validatePassword(newPassword)) {
       return sendJsonResponse(res, {
         success: false,
         statusCode: 400,

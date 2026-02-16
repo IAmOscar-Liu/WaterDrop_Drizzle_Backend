@@ -421,6 +421,83 @@
       "when": 1770748053746,
       "tag": "0059_tiresome_butterfly",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1771182999277,
+      "tag": "0060_peaceful_giant_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1771183297167,
+      "tag": "0061_absent_salo",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1771221457365,
+      "tag": "0062_conscious_payback",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1771221625327,
+      "tag": "0063_reflective_hellcat",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1771222081681,
+      "tag": "0064_smiling_hawkeye",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1771239318103,
+      "tag": "0065_optimal_black_tarantula",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1771239350357,
+      "tag": "0066_cold_fenris",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1771239417646,
+      "tag": "0067_friendly_miek",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1771239993663,
+      "tag": "0068_yummy_lethal_legion",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1771240284899,
+      "tag": "0069_conscious_sue_storm",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1771242309065,
+      "tag": "0070_dusty_quicksilver",
+      "breakpoints": true
     }
   ]
 }

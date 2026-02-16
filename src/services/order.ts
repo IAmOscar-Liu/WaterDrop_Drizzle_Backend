@@ -92,6 +92,9 @@ class OrderService {
     discountCoin,
     userLevelAtSale,
     userMaxDiscountAtSale,
+    shippingCost,
+    transactionFee,
+    transactionFeeRateAtSale,
   }: {
     userId: string;
     items: schema.NewOrderItem[];
@@ -100,6 +103,9 @@ class OrderService {
     discountCoin: number;
     userLevelAtSale?: string;
     userMaxDiscountAtSale?: number;
+    shippingCost?: number;
+    transactionFee?: number;
+    transactionFeeRateAtSale?: number;
   }): Promise<ServiceResponse<Awaited<ReturnType<typeof createOrder>>>> {
     try {
       const order = await createOrder(
@@ -110,6 +116,9 @@ class OrderService {
           discountCoin,
           userLevelAtSale,
           userMaxDiscountAtSale,
+          shippingCost,
+          transactionFee,
+          transactionFeeRateAtSale,
         },
         items,
       );

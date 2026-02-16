@@ -193,6 +193,7 @@ export const accountTable = pgTable("accounts", {
   email: text("email").notNull().unique(),
   password: text("password").notNull(), // This should store a hashed password
   name: text("name"),
+  realName: text("real_name").notNull(),
   role: accountRoleEnum("role").notNull().default("seller"),
   phone: text("phone").notNull(),
   address: text("address"),
@@ -499,8 +500,11 @@ export const orderTable = pgTable("orders", {
   subTotal: doublePrecision("sub_total").notNull(),
   totalAmount: doublePrecision("total_amount").notNull(), // Final calculated total
   discountCoin: integer("discount_coin").default(0), // New field for discount coins used
+  shippingCost: doublePrecision("shipping_cost").default(0), // New field for shipping cost
+  transactionFee: doublePrecision("transaction_fee").default(0), // New field for tax amount
   orderStatus: orderStatusEnum("order_status").default("pending").notNull(),
 
+  transactionFeeRateAtSale: doublePrecision("transaction_fee_rate_at_sale"),
   userLevelAtSale: text("user_level_at_sale"),
   userMaxDiscountAtSale: integer("user_max_discount_at_sale"),
 
@@ -574,6 +578,7 @@ export const deliveryTable = pgTable("deliveries", {
   metadata: jsonb("metadata"),
   cvsStoreInfo: jsonb("cvs_store_info"),
   homeDeliveryData: jsonb("home_delivery_data"),
+  fee: doublePrecision("fee").default(0),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -591,6 +596,7 @@ export const merchantTradeTable = pgTable("merchant_trades", {
   merchantTradeNo: text("merchant_trade_no").notNull(),
   productIds: uuid("product_ids").array().notNull(),
   cvsStoreInfo: jsonb("cvs_store_info"),
+  shippingCost: doublePrecision("shipping_cost").default(0),
 });
 
 export const deviceTokenTable = pgTable("device_tokens", {

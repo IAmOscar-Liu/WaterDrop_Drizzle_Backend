@@ -1,0 +1,1 @@
+ALTER TABLE "orders" DROP COLUMN "text_rate_at_sale";

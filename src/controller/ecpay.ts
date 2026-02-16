@@ -1,14 +1,13 @@
+import axios from "axios";
 import { Request, Response } from "express";
 import path from "path";
+import querystring from "querystring";
 import {
   ECPAY_CHECKOUT_URL,
   ECPAY_LOGISTIC_BASE_URL,
+  ECPAY_QUERY_LOGISTICS_TRADE_INFO_URL,
 } from "../constants/ecpay";
-import {
-  generateInvitationCode,
-  generateRandomString,
-  sendJsonResponse,
-} from "../lib/general";
+import { sendJsonResponse } from "../lib/general";
 import { validateToken } from "../lib/token";
 import { createDelivery } from "../repository/delivery";
 import {
@@ -22,12 +21,14 @@ const TEST_ORDER_ID = "test_order_12345";
 
 class EcPayController {
   async createTestPayment(req: Request, res: Response): Promise<any> {
+    const realAccount = req.query.realAccount === "true";
+
     const base_param = {
-      MerchantID: process.env.MERCHANTID,
+      MerchantID: ecpayService.getTestMerchantID(realAccount),
       MerchantTradeNo: ecpayService.generateTradeNo(),
       MerchantTradeDate: ecpayService.generateMerchantTradeDate(),
       PaymentType: "aio",
-      TotalAmount: "200",
+      TotalAmount: "10",
       TradeDesc: "測試商品描述",
       ItemName: "測試商品",
       ReturnURL: `${process.env.HOST}/api/ecpay/return`,
@@ -40,11 +41,11 @@ class EcPayController {
     };
 
     const formHtml = ecpayService.generateFormHtml({
-      actionUrl: ECPAY_CHECKOUT_URL,
+      actionUrl: ecpayService.getTestCheckoutUrl(realAccount),
       parameters: base_param,
       checkMacValueOptions: {
-        hashKey: process.env.HASHKEY!,
-        hashIV: process.env.HASHIV!,
+        hashKey: ecpayService.getTestHashKey(realAccount),
+        hashIV: ecpayService.getTestHashIV(realAccount),
       },
     });
 
@@ -66,7 +67,7 @@ class EcPayController {
       MerchantTradeDate: ecpayService.generateMerchantTradeDate(),
       PaymentType: "aio",
       IgnorePayment: "CVS#BARCODE#WebATM#ATM#AndroidPay#ApplePay",
-      TotalAmount: Number(totalAmount),
+      TotalAmount: Math.floor(Number(totalAmount)),
       TradeDesc: String(tradeDesc),
       ItemName: String(itemName),
       ReturnURL: `${process.env.HOST}/api/ecpay/return`,
@@ -134,6 +135,7 @@ class EcPayController {
       LogisticsSubType: req.query.logisticsSubType ?? "FAMI", //. "FAMI", // 範例：7-ELEVEN
       IsCollection: "N", // 是否代收貨款
       ServerReplyURL: `${process.env.HOST}/api/ecpay/logistics/map-callback`, // 接收門市資訊的後端網址
+      Device: 1,
     };
 
     const formHtml = ecpayService.generateFormHtml({
@@ -181,6 +183,9 @@ class EcPayController {
   async createTestExpress(req: Request, res: Response): Promise<any> {
     const {
       type = "B2C",
+      SenderName,
+      SenderCellPhone,
+      ReceiverStoreID,
       ReceiverName,
       ReceiverCellPhone,
       ReceiverEmail,
@@ -189,35 +194,52 @@ class EcPayController {
     if (!ReceiverName || !ReceiverCellPhone || !ReceiverEmail)
       return res.send("Missing required parameters");
 
+    const realAccount = req.query.realAccount === "true";
+    if (realAccount) {
+      if (!ReceiverStoreID)
+        return res.send("ReceiverStoreID is required for real account");
+      if (type !== "B2C" && !SenderCellPhone) {
+        return res.send(
+          "SenderCellPhone is required for real account when type is C2C",
+        );
+      }
+    }
+
+    const isB2C = type === "B2C";
+
     const base_param = {
-      MerchantID: type === "B2C" ? "2000132" : "2000933",
+      MerchantID: ecpayService.getTestLogisticMerchantID(realAccount, isB2C),
       MerchantTradeNo: ecpayService.generateTradeNo(),
       MerchantTradeDate: ecpayService.generateMerchantTradeDate(),
       LogisticsType: "CVS",
-      LogisticsSubType: type === "B2C" ? "UNIMART" : "UNIMARTC2C", // 範例：7-ELEVEN
+      LogisticsSubType: isB2C ? "UNIMART" : "UNIMARTC2C", // 範例：7-ELEVEN
       GoodsName: "測試商品",
       GoodsAmount: "300",
-      SenderName: "水滴",
+      SenderName: SenderName || "水滴賣家",
       IsCollection: "N", // 是否代收貨款
       ServerReplyURL: `${process.env.HOST}/api/ecpay/express/test/server-reply`, // 接收門市資訊的後端網址
       ClientReplyURL: `${process.env.HOST}/api/ecpay/express/test/client-reply`,
       ReceiverName: String(ReceiverName), // "王小明",
       ReceiverCellPhone: String(ReceiverCellPhone), // "0978443522",
       ReceiverEmail: String(ReceiverEmail), // "safaf2@ddd.com",
-      ReceiverStoreID: "131386",
-      ...(type === "B2C"
+      ReceiverStoreID: realAccount ? ReceiverStoreID : "131386",
+      ...(isB2C
         ? {}
-        : { SenderCellPhone: process.env.LOGISTICS_SENDER_CELL_PHONE }),
+        : {
+            SenderCellPhone: realAccount
+              ? SenderCellPhone
+              : process.env.LOGISTICS_SENDER_CELL_PHONE,
+          }),
       CustomField1: "CustomField1",
     };
     console.log(base_param);
 
     const formHtml = ecpayService.generateFormHtml({
-      actionUrl: `${ECPAY_LOGISTIC_BASE_URL}/Express/Create`,
+      actionUrl: ecpayService.getTestExpressUrl(realAccount),
       parameters: base_param,
       checkMacValueOptions: {
-        hashKey: type === "B2C" ? "5294y06JbISpM5x9" : "XBERn1YOvpM9nfZc",
-        hashIV: type === "B2C" ? "v77hoKGq4kWxNNIS" : "h1ONHk4P4yqbl5LK",
+        hashKey: ecpayService.getTestLogisticHashKey(realAccount, isB2C),
+        hashIV: ecpayService.getTestLogisticHashIV(realAccount, isB2C),
         algorithm: "md5",
       },
     });
@@ -277,7 +299,9 @@ class EcPayController {
       ReceiverStoreName,
       ReceiverStoreAddress,
       ReceiverStoreTelephone,
+      SenderName,
       SenderCellPhone,
+      shippingCost,
     } = req.query;
 
     if (
@@ -292,8 +316,10 @@ class EcPayController {
       !ReceiverStoreID
     )
       return res.send("Missing required parameters");
-    if (type !== "B2C" && !SenderCellPhone)
-      return res.send("SenderCellPhone is required for C2C type");
+    if (type !== "B2C" && !SenderCellPhone) {
+      return res.send("SenderCellPhone is required when type is C2C");
+    }
+
     const payload = validateToken(String(token));
     if (!payload || typeof payload === "string" || !payload.data?.id)
       return res.send("Invalid token");
@@ -322,6 +348,7 @@ class EcPayController {
         orderId: String(orderId),
         productIds: pIds,
         cvsStoreInfo,
+        shippingCost: shippingCost ? Number(shippingCost) : 0,
       });
     }
 
@@ -336,7 +363,7 @@ class EcPayController {
       GoodsName: String(GoodsName),
       GoodsAmount: String(maxGoodsAmount),
       CollectionAmount: String(maxGoodsAmount),
-      SenderName: "水滴",
+      SenderName: SenderName || "水滴賣家",
       IsCollection: "N", // 是否代收貨款
       ServerReplyURL: `${process.env.HOST}/api/ecpay/express/server-reply`, // 接收門市資訊的後端網址
       ClientReplyURL: `${process.env.HOST}/api/ecpay/express/client-reply`, // 接收門市資訊的後端網址
@@ -410,6 +437,7 @@ class EcPayController {
           RtnMsg: data.RtnMsg,
           cvsStoreInfo: merchantTrade.cvsStoreInfo,
           metadata: data,
+          fee: merchantTrade.shippingCost,
         },
         merchantTrade?.productIds,
       );
@@ -469,6 +497,94 @@ class EcPayController {
     });
 
     return res.send(formHtml);
+  }
+
+  async queryLogisticsTradeInfo(req: Request, res: Response): Promise<any> {
+    const { token, AllPayLogisticsID, MerchantTradeNo } = req.query;
+    if (!token) return res.send("Missing required parameters");
+    if (!AllPayLogisticsID && !MerchantTradeNo)
+      return res.send("AllPayLogisticsID or MerchantTradeNo is required");
+
+    const payload = validateToken(String(token));
+    if (!payload || typeof payload === "string" || !payload.data?.id)
+      return res.send("Invalid token");
+
+    const parameters: Record<string, any> = {
+      MerchantID: process.env.LOGISTICS_MERCHANTID,
+      TimeStamp: Math.floor(Date.now() / 1000),
+    };
+
+    if (AllPayLogisticsID) {
+      parameters["AllPayLogisticsID"] = String(AllPayLogisticsID);
+    }
+    if (MerchantTradeNo) {
+      parameters["MerchantTradeNo"] = String(MerchantTradeNo);
+    }
+
+    const formHtml = ecpayService.generateFormHtml({
+      actionUrl: ECPAY_QUERY_LOGISTICS_TRADE_INFO_URL,
+      parameters,
+      checkMacValueOptions: {
+        hashKey: process.env.LOGISTICS_HASH_KEY!,
+        hashIV: process.env.LOGISTICS_HASH_IV!,
+        algorithm: "md5",
+      },
+    });
+
+    return res.send(formHtml);
+  }
+
+  async queryLogisticsTradeInfoJSON(req: Request, res: Response): Promise<any> {
+    const { AllPayLogisticsID, MerchantTradeNo } = req.query;
+
+    if (!AllPayLogisticsID && !MerchantTradeNo)
+      return res.status(400).json({
+        success: false,
+        error: "AllPayLogisticsID or MerchantTradeNo is required",
+      });
+
+    const parameters: Record<string, any> = {
+      MerchantID: process.env.LOGISTICS_MERCHANTID,
+      TimeStamp: Math.floor(Date.now() / 1000),
+    };
+
+    if (AllPayLogisticsID) {
+      parameters["AllPayLogisticsID"] = String(AllPayLogisticsID);
+    }
+    if (MerchantTradeNo) {
+      parameters["MerchantTradeNo"] = String(MerchantTradeNo);
+    }
+
+    const checkMacValue = ecpayService.generateCheckValue(
+      parameters,
+      process.env.LOGISTICS_HASH_KEY!,
+      process.env.LOGISTICS_HASH_IV!,
+      "md5",
+    );
+
+    parameters["CheckMacValue"] = checkMacValue;
+
+    try {
+      // 使用 axios 發送 POST 到綠界 (注意：不是 res.send(formHtml))
+      const response = await axios.post(
+        ECPAY_QUERY_LOGISTICS_TRADE_INFO_URL,
+        querystring.stringify(parameters), // 轉成 key=value&key2=value2 格式
+        { headers: { "Content-Type": "application/x-www-form-urlencoded" } },
+      );
+
+      // 解析綠界回傳的字串內容
+      // 綠界會回傳像你提供的那串：ActualWeight=null&AllPayLogisticsID=...
+      const resultData = querystring.parse(response.data);
+
+      // 回傳 JSON 給 Client
+      return res.json({
+        success: true,
+        data: resultData,
+      });
+    } catch (error) {
+      console.error("Query ECPay Error:", error);
+      return res.status(500).json({ success: false, message: "查詢失敗" });
+    }
   }
 }
 

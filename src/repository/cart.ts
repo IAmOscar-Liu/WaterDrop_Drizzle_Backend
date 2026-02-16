@@ -84,6 +84,7 @@ export async function listCartItems(userId: string) {
             columns: {
               role: true,
               name: true,
+              realName: true,
               email: true,
               phone: true,
               avatar_url: true,

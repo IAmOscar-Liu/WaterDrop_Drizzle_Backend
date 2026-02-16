@@ -51,6 +51,9 @@ class OrderController {
       discountCoin,
       userLevelAtSale,
       userMaxDiscountAtSale,
+      shippingCost,
+      transactionFee,
+      transactionFeeRateAtSale,
     } = req.body;
     const result = await orderService.createOrder({
       userId: req.userId ?? "",
@@ -61,6 +64,11 @@ class OrderController {
       userLevelAtSale: userLevelAtSale ? String(userLevelAtSale) : undefined,
       userMaxDiscountAtSale: userMaxDiscountAtSale
         ? Number(userMaxDiscountAtSale)
+        : undefined,
+      shippingCost: shippingCost ? Number(shippingCost) : 0,
+      transactionFee: transactionFee ? Number(transactionFee) : 0,
+      transactionFeeRateAtSale: transactionFeeRateAtSale
+        ? Number(transactionFeeRateAtSale)
         : undefined,
     });
     sendJsonResponse(res, result);
