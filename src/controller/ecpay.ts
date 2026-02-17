@@ -148,6 +148,7 @@ class EcPayController {
 
   async handleLogisticsMapCallback(req: Request, res: Response): Promise<any> {
     const data = req.body;
+    console.log("商店結果", data);
     res.send(`
       <!DOCTYPE html>
       <html lang="en">
@@ -183,6 +184,7 @@ class EcPayController {
   async createTestExpress(req: Request, res: Response): Promise<any> {
     const {
       type = "B2C",
+      LogisticsSubType,
       SenderName,
       SenderCellPhone,
       ReceiverStoreID,
@@ -196,6 +198,8 @@ class EcPayController {
 
     const realAccount = req.query.realAccount === "true";
     if (realAccount) {
+      if (!LogisticsSubType)
+        return res.send("LogisticsSubType is required for real account");
       if (!ReceiverStoreID)
         return res.send("ReceiverStoreID is required for real account");
       if (type !== "B2C" && !SenderCellPhone) {
@@ -212,7 +216,11 @@ class EcPayController {
       MerchantTradeNo: ecpayService.generateTradeNo(),
       MerchantTradeDate: ecpayService.generateMerchantTradeDate(),
       LogisticsType: "CVS",
-      LogisticsSubType: isB2C ? "UNIMART" : "UNIMARTC2C", // 範例：7-ELEVEN
+      LogisticsSubType: realAccount
+        ? LogisticsSubType
+        : isB2C
+          ? "UNIMART"
+          : "UNIMARTC2C", // 範例：7-ELEVEN
       GoodsName: "測試商品",
       GoodsAmount: "300",
       SenderName: SenderName || "水滴賣家",

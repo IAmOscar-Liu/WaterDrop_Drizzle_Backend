@@ -7,6 +7,7 @@ import { ListAdminDeliveriesParams } from "../repository/delivery";
 import {
   HOME_DELIVERY_FEE,
   HOME_DELIVERY_REFRIG_FEE,
+  OKMARTC2C_LOW_TMP_DELIVERY,
 } from "../constants/delivery";
 import { ECPAY_SHIPPING_FEE } from "../constants/ecpay";
 
@@ -80,6 +81,7 @@ class DeliveryController {
         transactionFeeRate: Number(process.env.TRANSACTION_FEE_RATE),
         homeDelivery: HOME_DELIVERY_FEE,
         homeDeliveryRefrig: HOME_DELIVERY_REFRIG_FEE,
+        OKMART_LOW_TMP_C2C: OKMARTC2C_LOW_TMP_DELIVERY,
         FAMI: ECPAY_SHIPPING_FEE.FAMI,
         UNIMART: ECPAY_SHIPPING_FEE.UNIMART,
         FAMIC2C: ECPAY_SHIPPING_FEE.FAMIC2C,
