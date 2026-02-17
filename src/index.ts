@@ -4,6 +4,7 @@ import "./lib/env";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import express from "express";
+import morgan from "morgan";
 import swaggerUi from "swagger-ui-express";
 import {
   dailyNotificationTask,
@@ -66,6 +67,7 @@ app.get("/api/test", (_, res) => {
 
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
+app.use(morgan("dev"));
 app.use("/api/admin", AdminRouter);
 app.use("/api/auth", AuthRouter);
 app.use("/api/treasureBox", TreasureBoxRouter);
