@@ -18,15 +18,7 @@ class OrderService {
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof listOrders>>>> {
     try {
       const orders = await listOrders(params);
-      if (orders) {
-        return { success: true, data: orders };
-      } else {
-        return {
-          success: false,
-          statusCode: 404,
-          message: "orders not found",
-        };
-      }
+      return { success: true, data: orders };
     } catch (error) {
       return handleServiceError(error);
     }
@@ -37,15 +29,7 @@ class OrderService {
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof listAdminOrders>>>> {
     try {
       const orders = await listAdminOrders(params);
-      if (orders) {
-        return { success: true, data: orders };
-      } else {
-        return {
-          success: false,
-          statusCode: 404,
-          message: "orders not found",
-        };
-      }
+      return { success: true, data: orders };
     } catch (error) {
       return handleServiceError(error);
     }
@@ -122,15 +106,7 @@ class OrderService {
         },
         items,
       );
-      if (order) {
-        return { success: true, data: order };
-      } else {
-        return {
-          success: false,
-          statusCode: 404,
-          message: "order not found",
-        };
-      }
+      return { success: true, data: order };
     } catch (error) {
       return handleServiceError(error);
     }

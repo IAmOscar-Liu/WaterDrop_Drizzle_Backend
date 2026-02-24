@@ -19,15 +19,7 @@ class ProductService {
   async listCategory(): Promise<ServiceResponse<schema.Category[]>> {
     try {
       const categories = await listCategory();
-      if (categories) {
-        return { success: true, data: categories };
-      } else {
-        return {
-          success: false,
-          statusCode: 404,
-          message: "categories not found",
-        };
-      }
+      return { success: true, data: categories };
     } catch (error) {
       // console.error(error);
       return handleServiceError(error);
@@ -39,15 +31,7 @@ class ProductService {
   ): Promise<ServiceResponse<schema.Category>> {
     try {
       const category = await createCategory(categoryData);
-      if (category) {
-        return { success: true, data: category };
-      } else {
-        return {
-          success: false,
-          statusCode: 404,
-          message: "category not found",
-        };
-      }
+      return { success: true, data: category };
     } catch (error) {
       // console.error(error);
       return handleServiceError(error);
@@ -59,15 +43,7 @@ class ProductService {
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof listAdminProducts>>>> {
     try {
       const products = await listAdminProducts(params);
-      if (products) {
-        return { success: true, data: products };
-      } else {
-        return {
-          success: false,
-          statusCode: 404,
-          message: "products not found",
-        };
-      }
+      return { success: true, data: products };
     } catch (error) {
       // console.error(error);
       return handleServiceError(error);
@@ -79,15 +55,7 @@ class ProductService {
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof listProducts>>>> {
     try {
       const products = await listProducts(params);
-      if (products) {
-        return { success: true, data: products };
-      } else {
-        return {
-          success: false,
-          statusCode: 404,
-          message: "products not found",
-        };
-      }
+      return { success: true, data: products };
     } catch (error) {
       // console.error(error);
       return handleServiceError(error);
@@ -140,15 +108,7 @@ class ProductService {
     try {
       const { categoryIds, ...productData } = productDataWithCategoryIds;
       const product = await createProduct(productData, categoryIds);
-      if (product) {
-        return { success: true, data: product };
-      } else {
-        return {
-          success: false,
-          statusCode: 404,
-          message: "product not found",
-        };
-      }
+      return { success: true, data: product };
     } catch (error) {
       // console.error(error);
       return handleServiceError(error);

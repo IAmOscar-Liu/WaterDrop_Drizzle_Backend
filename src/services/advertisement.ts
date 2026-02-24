@@ -18,47 +18,31 @@ import { ServiceResponse } from "../type/general";
 
 class AdvertisementService {
   async listAdvertisements(
-    params: ListAdvertisementsParams
+    params: ListAdvertisementsParams,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof listAdvertisements>>>> {
     try {
       const advertisements = await listAdvertisements(params); // Replace with real data fetching logic
-      if (advertisements) {
-        return { success: true, data: advertisements };
-      } else {
-        return {
-          success: false,
-          statusCode: 404,
-          message: "advertisements not found",
-        };
-      }
+      return { success: true, data: advertisements };
     } catch (error) {
       return handleServiceError(error);
     }
   }
 
   async listAdminAdvertisements(
-    params: ListAdminAdvertisementsParams
+    params: ListAdminAdvertisementsParams,
   ): Promise<
     ServiceResponse<Awaited<ReturnType<typeof listAdminAdvertisements>>>
   > {
     try {
       const advertisements = await listAdminAdvertisements(params); // Replace with real data fetching logic
-      if (advertisements) {
-        return { success: true, data: advertisements };
-      } else {
-        return {
-          success: false,
-          statusCode: 404,
-          message: "advertisements not found",
-        };
-      }
+      return { success: true, data: advertisements };
     } catch (error) {
       return handleServiceError(error);
     }
   }
 
   async getAdvertisement(
-    advertisementId: string
+    advertisementId: string,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof getAdvertisement>>>> {
     try {
       const advertisement = await getAdvertisement(advertisementId);
@@ -77,19 +61,11 @@ class AdvertisementService {
   }
 
   async createAdvertisement(
-    advertisementData: schema.NewAdvertisement
+    advertisementData: schema.NewAdvertisement,
   ): Promise<ServiceResponse<schema.Advertisement>> {
     try {
       const advertisement = await createAdvertisement(advertisementData);
-      if (advertisement) {
-        return { success: true, data: advertisement };
-      } else {
-        return {
-          success: false,
-          statusCode: 404,
-          message: "advertisement not found",
-        };
-      }
+      return { success: true, data: advertisement };
     } catch (error) {
       return handleServiceError(error);
     }
@@ -97,14 +73,14 @@ class AdvertisementService {
 
   async updateAdvertisement(
     advertisementId: string,
-    advertisementData: Partial<Omit<schema.NewAdvertisement, "id">>
+    advertisementData: Partial<Omit<schema.NewAdvertisement, "id">>,
   ): Promise<
     ServiceResponse<Awaited<ReturnType<typeof updateAdvertisementById>>>
   > {
     try {
       const advertisement = await updateAdvertisementById(
         advertisementId,
-        advertisementData
+        advertisementData,
       );
       if (advertisement) {
         return { success: true, data: advertisement };
@@ -134,7 +110,7 @@ class AdvertisementService {
   }
 
   async listAdViewCount(
-    input: ListAdViewCountParams
+    input: ListAdViewCountParams,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof listAdViewCount>>>> {
     try {
       const count = await listAdViewCount(input);

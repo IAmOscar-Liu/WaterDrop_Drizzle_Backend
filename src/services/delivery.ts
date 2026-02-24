@@ -24,15 +24,7 @@ class DeliveryService {
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof listAdminDeliveries>>>> {
     try {
       const deliveries = await listAdminDeliveries(params);
-      if (deliveries) {
-        return { success: true, data: deliveries };
-      } else {
-        return {
-          success: false,
-          statusCode: 404,
-          message: "deliveries not found",
-        };
-      }
+      return { success: true, data: deliveries };
     } catch (error) {
       return handleServiceError(error);
     }

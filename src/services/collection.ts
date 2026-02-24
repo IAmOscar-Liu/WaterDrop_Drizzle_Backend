@@ -10,40 +10,27 @@ import { ServiceResponse } from "../type/general";
 
 class CollectionService {
   async listCollection(
-    params: ListCollectionsParams
+    params: ListCollectionsParams,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof listCollections>>>> {
     try {
       const collections = await listCollections(params);
-      if (collections) {
-        return { success: true, data: collections };
-      } else {
-        return {
-          success: false,
-          statusCode: 404,
-          message: "collections not found",
-        };
-      }
+      return { success: true, data: collections };
     } catch (error) {
       return handleServiceError(error);
     }
   }
 
   async findOrCreateCollection(
-    collectionData: Omit<schema.NewCollection, "id" | "createdAt" | "updatedAt">
+    collectionData: Omit<
+      schema.NewCollection,
+      "id" | "createdAt" | "updatedAt"
+    >,
   ): Promise<
     ServiceResponse<Awaited<ReturnType<typeof findOrCreateCollection>>>
   > {
     try {
       const collection = await findOrCreateCollection(collectionData);
-      if (collection) {
-        return { success: true, data: collection };
-      } else {
-        return {
-          success: false,
-          statusCode: 404,
-          message: "collection not found",
-        };
-      }
+      return { success: true, data: collection };
     } catch (error) {
       return handleServiceError(error);
     }
@@ -58,15 +45,7 @@ class CollectionService {
   }): Promise<ServiceResponse<Awaited<ReturnType<typeof removeCollection>>>> {
     try {
       const result = await removeCollection(userId, productId);
-      if (result) {
-        return { success: true, data: result };
-      } else {
-        return {
-          success: false,
-          statusCode: 404,
-          message: "collection not found",
-        };
-      }
+      return { success: true, data: result };
     } catch (error) {
       return handleServiceError(error);
     }

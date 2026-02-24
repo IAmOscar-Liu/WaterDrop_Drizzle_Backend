@@ -121,15 +121,7 @@ class AdminService {
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof listAccounts>>>> {
     try {
       const accounts = await listAccounts(params); // Replace with real data fetching logic
-      if (accounts) {
-        return { success: true, data: accounts };
-      } else {
-        return {
-          success: false,
-          statusCode: 404,
-          message: "accounts not found",
-        };
-      }
+      return { success: true, data: accounts };
     } catch (error) {
       return handleServiceError(error);
     }

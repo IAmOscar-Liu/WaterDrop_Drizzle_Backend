@@ -28,15 +28,7 @@ class ChatroomService {
   > {
     try {
       const chatRoom = await findOrCreateChatRoom(input);
-      if (chatRoom) {
-        return { success: true, data: chatRoom };
-      } else {
-        return {
-          success: false,
-          statusCode: 404,
-          message: "Chat room could not be created",
-        };
-      }
+      return { success: true, data: chatRoom };
     } catch (error) {
       return handleServiceError(error);
     }
@@ -130,15 +122,7 @@ class ChatroomService {
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof getChatHistory>>>> {
     try {
       const chatHistory = await getChatHistory(query);
-      if (chatHistory) {
-        return { success: true, data: chatHistory };
-      } else {
-        return {
-          success: false,
-          statusCode: 404,
-          message: "Chat history could not be retrieved",
-        };
-      }
+      return { success: true, data: chatHistory };
     } catch (error) {
       return handleServiceError(error);
     }
@@ -153,15 +137,7 @@ class ChatroomService {
   }): Promise<ServiceResponse<Awaited<ReturnType<typeof markMessagesAsRead>>>> {
     try {
       const updatedMessages = await markMessagesAsRead(chatRoomId, readerType);
-      if (updatedMessages) {
-        return { success: true, data: updatedMessages };
-      } else {
-        return {
-          success: false,
-          statusCode: 404,
-          message: "Messages could not be marked as read",
-        };
-      }
+      return { success: true, data: updatedMessages };
     } catch (error) {
       return handleServiceError(error);
     }
@@ -172,15 +148,7 @@ class ChatroomService {
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof listChatRooms>>>> {
     try {
       const chatRooms = await listChatRooms(query);
-      if (chatRooms) {
-        return { success: true, data: chatRooms };
-      } else {
-        return {
-          success: false,
-          statusCode: 404,
-          message: "Chat rooms could not be retrieved",
-        };
-      }
+      return { success: true, data: chatRooms };
     } catch (error) {
       return handleServiceError(error);
     }
@@ -191,15 +159,7 @@ class ChatroomService {
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof listAdminChatRooms>>>> {
     try {
       const chatRooms = await listAdminChatRooms(query);
-      if (chatRooms) {
-        return { success: true, data: chatRooms };
-      } else {
-        return {
-          success: false,
-          statusCode: 404,
-          message: "Chat rooms could not be retrieved",
-        };
-      }
+      return { success: true, data: chatRooms };
     } catch (error) {
       return handleServiceError(error);
     }

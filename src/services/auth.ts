@@ -23,19 +23,11 @@ type AuthLoginResponse = {
 class AuthService {
   async deviceToken(
     userId: string,
-    fcmToken: string
+    fcmToken: string,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof upsertDeviceToken>>>> {
     try {
       const result = await upsertDeviceToken(userId, fcmToken);
-      if (result) {
-        return { success: true, data: result };
-      } else {
-        return {
-          success: false,
-          statusCode: 404,
-          message: "Failed to create device token",
-        };
-      }
+      return { success: true, data: result };
     } catch (error) {
       return handleServiceError(error);
     }
@@ -100,11 +92,7 @@ class AuthService {
   }): Promise<ServiceResponse<Awaited<ReturnType<typeof updateUser>>>> {
     try {
       const updatedUser = await updateUser(userId, data);
-      if (updatedUser) {
-        return { success: true, data: updatedUser };
-      } else {
-        return { success: false, statusCode: 404, message: "User not found" };
-      }
+      return { success: true, data: updatedUser };
     } catch (error) {
       return handleServiceError(error);
     }
@@ -113,11 +101,7 @@ class AuthService {
   async dailyStats(id: string): Promise<ServiceResponse<schema.UserDailyStat>> {
     try {
       const stats = await getDailyStatByUserId(id);
-      if (stats) {
-        return { success: true, data: stats };
-      } else {
-        return { success: false, statusCode: 404, message: "stats not found" };
-      }
+      return { success: true, data: stats };
     } catch (error) {
       // console.error(error);
       return handleServiceError(error);
@@ -125,21 +109,13 @@ class AuthService {
   }
 
   async validateReferralCode(
-    referralCode: string
+    referralCode: string,
   ): Promise<
     ServiceResponse<Awaited<ReturnType<typeof validateReferralCode>>>
   > {
     try {
       const result = await validateReferralCode(referralCode);
-      if (result) {
-        return { success: true, data: result };
-      } else {
-        return {
-          success: false,
-          statusCode: 404,
-          message: "Referral code not found",
-        };
-      }
+      return { success: true, data: result };
     } catch (error) {
       return handleServiceError(error);
     }
@@ -156,33 +132,25 @@ class AuthService {
   > {
     try {
       const result = await joinGroupByReferralCode(referralCode, userId);
-      if (result) {
-        return { success: true, data: result };
-      } else {
-        return { success: false, statusCode: 404, message: "Group not found" };
-      }
+      return { success: true, data: result };
     } catch (error) {
       return handleServiceError(error);
     }
   }
 
   async resetDailyStats(
-    userId: string
+    userId: string,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof resetDailyStats>>>> {
     try {
       const result = await resetDailyStats(userId);
-      if (result) {
-        return { success: true, data: result };
-      } else {
-        return { success: false, statusCode: 404, message: "User not found" };
-      }
+      return { success: true, data: result };
     } catch (error) {
       return handleServiceError(error);
     }
   }
 
   async updateTermsAcceptedAt(
-    userId: string
+    userId: string,
   ): Promise<
     ServiceResponse<Awaited<ReturnType<typeof updateUserTermsAcceptedAt>>>
   > {

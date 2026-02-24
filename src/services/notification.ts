@@ -13,26 +13,18 @@ import { ServiceResponse } from "../type/general";
 
 class NotificationService {
   async listNotifications(
-    params: ListNotificationsParams
+    params: ListNotificationsParams,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof listNotifications>>>> {
     try {
       const notifications = await listNotifications(params);
-      if (notifications) {
-        return { success: true, data: notifications };
-      } else {
-        return {
-          success: false,
-          statusCode: 404,
-          message: "notifications not found",
-        };
-      }
+      return { success: true, data: notifications };
     } catch (error) {
       return handleServiceError(error);
     }
   }
 
   async getNotificationById(
-    notificationId: string
+    notificationId: string,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof getNotificationById>>>> {
     try {
       const notification = await getNotificationById(notificationId);
@@ -51,40 +43,24 @@ class NotificationService {
   }
 
   async getNotificationStats(
-    userId: string
+    userId: string,
   ): Promise<
     ServiceResponse<Awaited<ReturnType<typeof getNotificationStats>>>
   > {
     try {
       const stats = await getNotificationStats(userId);
-      if (stats) {
-        return { success: true, data: stats };
-      } else {
-        return {
-          success: false,
-          statusCode: 404,
-          message: "stats not found",
-        };
-      }
+      return { success: true, data: stats };
     } catch (error) {
       return handleServiceError(error);
     }
   }
 
   async createNotification(
-    notificationData: Omit<schema.NewUserNotification, "id">
+    notificationData: Omit<schema.NewUserNotification, "id">,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof createNotification>>>> {
     try {
       const notification = await createNotification(notificationData); // Replace with real data fetching logic
-      if (notification) {
-        return { success: true, data: notification };
-      } else {
-        return {
-          success: false,
-          statusCode: 404,
-          message: "notification not found",
-        };
-      }
+      return { success: true, data: notification };
     } catch (error) {
       return handleServiceError(error);
     }
@@ -102,24 +78,16 @@ class NotificationService {
     try {
       const notifications = await markNotificationsAsRead(
         userId,
-        notificationIds
+        notificationIds,
       );
-      if (notifications) {
-        return { success: true, data: notifications };
-      } else {
-        return {
-          success: false,
-          statusCode: 404,
-          message: "notifications not found",
-        };
-      }
+      return { success: true, data: notifications };
     } catch (error) {
       return handleServiceError(error);
     }
   }
 
   async deleteNotifications(
-    notificationIds: string[]
+    notificationIds: string[],
   ): Promise<ServiceResponse<string>> {
     try {
       const deletedCount = await deleteNotifications(notificationIds);

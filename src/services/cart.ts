@@ -12,15 +12,7 @@ class CartServices {
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof listCartItems>>>> {
     try {
       const cartItems = await listCartItems(userId);
-      if (cartItems) {
-        return { success: true, data: cartItems };
-      } else {
-        return {
-          success: false,
-          statusCode: 404,
-          message: "cart items not found",
-        };
-      }
+      return { success: true, data: cartItems };
     } catch (error) {
       return handleServiceError(error);
     }
