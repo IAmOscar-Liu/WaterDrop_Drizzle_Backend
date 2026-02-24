@@ -599,6 +599,24 @@ export const merchantTradeTable = pgTable("merchant_trades", {
   shippingCost: doublePrecision("shipping_cost").default(0),
 });
 
+export const shippingFeeTable = pgTable("shipping_fees", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  accountId: uuid("account_id")
+    .notNull()
+    .references(() => accountTable.id, { onDelete: "cascade" }),
+  homeDelivery: doublePrecision("home_delivery").default(60),
+  homeDeliveryRefrig: doublePrecision("home_delivery_refrigeration").default(
+    160,
+  ),
+  OKMART_LOW_TMP_C2C: doublePrecision("okmart_low_temperature_c2c").default(
+    160,
+  ),
+  FAMIC2C: doublePrecision("fami_c2c").default(69),
+  UNIMARTC2C: doublePrecision("unimart_c2c").default(69),
+  HILIFEC2C: doublePrecision("hilife_c2c").default(58),
+  OKMARTC2C: doublePrecision("okmart_c2c").default(58),
+});
+
 export const deviceTokenTable = pgTable("device_tokens", {
   id: uuid("id").defaultRandom().primaryKey(),
   fcmToken: text("fcm_token").notNull().unique(),
@@ -686,6 +704,7 @@ export const accountRelations = relations(accountTable, ({ one, many }) => ({
     fields: [accountTable.id],
     references: [accountWalletTable.accountId],
   }),
+  shippingFees: many(shippingFeeTable),
 }));
 
 export const usersRelations = relations(userTable, ({ one, many }) => ({
@@ -1048,6 +1067,9 @@ export type NewDelivery = typeof deliveryTable.$inferInsert;
 
 export type MerchantTrade = typeof merchantTradeTable.$inferSelect;
 export type NewMerchantTrade = typeof merchantTradeTable.$inferInsert;
+
+export type ShippingFee = typeof shippingFeeTable.$inferSelect;
+export type NewShippingFee = typeof shippingFeeTable.$inferInsert;
 
 export type DeviceToken = typeof deviceTokenTable.$inferSelect;
 export type NewDeviceToken = typeof deviceTokenTable.$inferInsert;

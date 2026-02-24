@@ -91,6 +91,40 @@ class DeliveryController {
       },
     });
   }
+
+  async upsertShippingFee(req: RequestWithId, res: Response): Promise<any> {
+    const {
+      homeDelivery,
+      homeDeliveryRefrig,
+      UNIMARTC2C,
+      OKMART_LOW_TMP_C2C,
+      FAMIC2C,
+      HILIFEC2C,
+      OKMARTC2C,
+    } = req.body;
+
+    const result = await deliveryService.upsertShippingFee(req.userId ?? "", {
+      ...(typeof homeDelivery === "number" ? { homeDelivery } : {}),
+      ...(typeof homeDeliveryRefrig === "number" ? { homeDeliveryRefrig } : {}),
+      ...(typeof OKMART_LOW_TMP_C2C === "number" ? { OKMART_LOW_TMP_C2C } : {}),
+      ...(typeof UNIMARTC2C === "number" ? { UNIMARTC2C } : {}),
+      ...(typeof FAMIC2C === "number" ? { FAMIC2C } : {}),
+      ...(typeof HILIFEC2C === "number" ? { HILIFEC2C } : {}),
+      ...(typeof OKMARTC2C === "number" ? { OKMARTC2C } : {}),
+    });
+    sendJsonResponse(res, result);
+  }
+
+  async getShippingFee(req: RequestWithId, res: Response): Promise<any> {
+    const result = await deliveryService.getShippingFee(req.userId ?? "");
+    sendJsonResponse(res, result);
+  }
+
+  async getShippingFeeByAccountIds(req: Request, res: Response): Promise<any> {
+    const { accountIds } = req.body;
+    const result = await deliveryService.getShippingFeeByAccountIds(accountIds);
+    sendJsonResponse(res, result);
+  }
 }
 
 export default new DeliveryController();

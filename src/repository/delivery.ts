@@ -174,3 +174,49 @@ export async function listAdminDeliveries({
 
   return { deliveries, total, page, limit, totalPages };
 }
+
+export async function upsertShippingFee(
+  accountId: string,
+  data: Partial<Omit<schema.ShippingFee, "id" | "accountId">>,
+) {
+  if (Object.keys(data).length === 0)
+    throw new CustomError("No data provided", 400);
+
+  for (let key of Object.keys(data)) {
+    if (typeof (data as any)[key] === "number" && (data as any)[key] < 0)
+      throw new CustomError(`${key} must be a positive number`, 400);
+  }
+
+  const existing = await db.query.shippingFeeTable.findFirst({
+    where: eq(schema.shippingFeeTable.accountId, accountId),
+  });
+
+  if (existing) {
+    const [updated] = await db
+      .update(schema.shippingFeeTable)
+      .set({ ...existing, ...data })
+      .where(eq(schema.shippingFeeTable.id, existing.id))
+      .returning();
+    console.log("Shipping fee updated:", updated.id);
+    return updated;
+  }
+
+  const [created] = await db
+    .insert(schema.shippingFeeTable)
+    .values({ accountId, ...data })
+    .returning();
+  console.log("Shipping fee created:", created.id);
+  return created;
+}
+
+export async function getShippingFeeByAccountIds(accountIds: string[]) {
+  return db.query.shippingFeeTable.findMany({
+    where: inArray(schema.shippingFeeTable.accountId, accountIds),
+  });
+}
+
+export async function getShippingFee(accountId: string) {
+  return db.query.shippingFeeTable.findFirst({
+    where: eq(schema.shippingFeeTable.accountId, accountId),
+  });
+}

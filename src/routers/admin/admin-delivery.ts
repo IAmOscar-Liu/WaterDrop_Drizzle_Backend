@@ -55,6 +55,37 @@ const router = Router();
  *           type: integer
  *         totalPages:
  *           type: integer
+ *
+ *     ShippingFee:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: string
+ *           format: uuid
+ *         accountId:
+ *           type: string
+ *           format: uuid
+ *         homeDelivery:
+ *           type: number
+ *           format: double
+ *         homeDeliveryRefrig:
+ *           type: number
+ *           format: double
+ *         OKMART_LOW_TMP_C2C:
+ *           type: number
+ *           format: double
+ *         FAMIC2C:
+ *           type: number
+ *           format: double
+ *         UNIMARTC2C:
+ *           type: number
+ *           format: double
+ *         HILIFEC2C:
+ *           type: number
+ *           format: double
+ *         OKMARTC2C:
+ *           type: number
+ *           format: double
  */
 
 /**
@@ -297,5 +328,74 @@ router.put("/:deliveryId", isAuth, DeliveryController.updateDelivery);
  *               type: string
  */
 router.get("/helper/printTradeDocument", EcPayController.printTradeDocument);
+
+/**
+ * @swagger
+ * /api/admin/delivery/helper/fee:
+ *   get:
+ *     tags: [Delivery]
+ *     summary: Get shipping fees
+ *     description: Retrieve shipping fees for the authenticated account.
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       '200':
+ *         description: The shipping fee settings.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/ShippingFee'
+ */
+router.get("/helper/fee", isAuth, DeliveryController.getShippingFee);
+
+/**
+ * @swagger
+ * /api/admin/delivery/helper/fee:
+ *   post:
+ *     tags: [Delivery]
+ *     summary: Upsert shipping fees
+ *     description: Create or update shipping fees for the authenticated account.
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               homeDelivery:
+ *                 type: number
+ *               homeDeliveryRefrig:
+ *                 type: number
+ *               OKMART_LOW_TMP_C2C:
+ *                 type: number
+ *               UNIMARTC2C:
+ *                 type: number
+ *               FAMIC2C:
+ *                 type: number
+ *               HILIFEC2C:
+ *                 type: number
+ *               OKMARTC2C:
+ *                 type: number
+ *     responses:
+ *       '200':
+ *         description: The updated shipping fee settings.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/ShippingFee'
+ */
+router.post("/helper/fee", isAuth, DeliveryController.upsertShippingFee);
 
 export default router;

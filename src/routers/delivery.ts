@@ -9,5 +9,10 @@ router.get(
   "/shipping-fee-and-tax-rate",
   DeliveryController.getShippingFeeAndTaxRate,
 );
+router.post(
+  "/shipping-fee",
+  isAuth,
+  DeliveryController.getShippingFeeByAccountIds,
+);
 
 export default router;

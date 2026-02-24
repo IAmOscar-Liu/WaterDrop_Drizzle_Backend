@@ -239,6 +239,13 @@
       "when": 1771243759334,
       "tag": "0033_legal_captain_america",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1771949433254,
+      "tag": "0034_tearful_roulette",
+      "breakpoints": true
     }
   ]
 }
