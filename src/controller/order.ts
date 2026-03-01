@@ -101,6 +101,18 @@ class OrderController {
     );
     sendJsonResponse(res, result);
   }
+
+  async sendOrderCompletedNotification(
+    req: RequestWithId,
+    res: Response,
+  ): Promise<any> {
+    const { orderId } = req.body;
+    const result = await orderService.sendOrderCompletedNotification({
+      userId: req.userId ?? "",
+      orderId,
+    });
+    sendJsonResponse(res, result);
+  }
 }
 
 export default new OrderController();

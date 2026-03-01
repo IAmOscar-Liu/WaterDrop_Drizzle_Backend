@@ -1,5 +1,7 @@
 import * as schema from "../db/schema";
-import { handleServiceError } from "../lib/error";
+import { CustomError, handleServiceError } from "../lib/error";
+import { sendMulticastPushNotification } from "../lib/sendNotification";
+import { createNotification } from "../repository/notification";
 import {
   createOrder,
   getOrderById,
@@ -10,6 +12,7 @@ import {
   ListAdminOrdersParams,
   updateOrderStatus,
 } from "../repository/order";
+import { getFcmTokensInUserIds } from "../repository/user";
 import { ServiceResponse } from "../type/general";
 
 class OrderService {
@@ -128,6 +131,49 @@ class OrderService {
           message: "order not found",
         };
       }
+    } catch (error) {
+      return handleServiceError(error);
+    }
+  }
+
+  async sendOrderCompletedNotification({
+    userId,
+    orderId,
+  }: {
+    userId: string;
+    orderId: string;
+  }): Promise<ServiceResponse<Awaited<ReturnType<typeof createNotification>>>> {
+    try {
+      const [order, fcmTokens] = await Promise.all([
+        getOrderById(orderId),
+        getFcmTokensInUserIds([userId]),
+      ]);
+      if (!order) throw new CustomError("Order not found", 404);
+
+      sendMulticastPushNotification({
+        tokens: fcmTokens,
+        notification: {
+          title: "訂單建立通知",
+          body: `您的訂單已成功建立(訂單編號: ${order.merchantTradeNo})`,
+        },
+        data: {
+          command: "order_completed",
+          orderId,
+        },
+      });
+
+      const notification = await createNotification({
+        userId,
+        type: "order_status",
+        title: "訂單建立通知",
+        body: `您的訂單已成功建立(訂單編號: ${order.merchantTradeNo})，如有任何問題，請聯繫客服人員。`,
+        orderId,
+        metadata: {
+          clickAction: "view_order_details",
+        },
+      });
+
+      return { success: true, data: notification };
     } catch (error) {
       return handleServiceError(error);
     }
