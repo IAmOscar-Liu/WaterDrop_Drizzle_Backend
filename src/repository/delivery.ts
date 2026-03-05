@@ -13,6 +13,12 @@ import * as schema from "../db/schema";
 import db from "../lib/initDB";
 import { isAccountAdmin } from "./account";
 import { CustomError } from "../lib/error";
+import {
+  HOME_DELIVERY_FEE,
+  HOME_DELIVERY_REFRIG_FEE,
+  OKMARTC2C_LOW_TMP_DELIVERY,
+} from "../constants/delivery";
+import { ECPAY_SHIPPING_FEE } from "../constants/ecpay";
 
 export async function createDelivery(
   deliveryData: schema.NewDelivery,
@@ -186,6 +192,45 @@ export async function upsertShippingFee(
     if (typeof (data as any)[key] === "number" && (data as any)[key] < 0)
       throw new CustomError(`${key} must be a positive number`, 400);
   }
+
+  if (data.homeDelivery && data.homeDelivery > HOME_DELIVERY_FEE)
+    throw new CustomError(
+      `homeDelivery cannot be greater than ${HOME_DELIVERY_FEE}`,
+      400,
+    );
+  if (data.homeDeliveryRefrig && data.homeDeliveryRefrig > HOME_DELIVERY_FEE)
+    throw new CustomError(
+      `homeDeliveryRefrig cannot be greater than ${HOME_DELIVERY_REFRIG_FEE}`,
+      400,
+    );
+  if (
+    data.OKMART_LOW_TMP_C2C &&
+    data.OKMART_LOW_TMP_C2C > OKMARTC2C_LOW_TMP_DELIVERY
+  )
+    throw new CustomError(
+      `OKMART_LOW_TMP_C2C cannot be greater than ${OKMARTC2C_LOW_TMP_DELIVERY}`,
+      400,
+    );
+  if (data.FAMIC2C && data.FAMIC2C > ECPAY_SHIPPING_FEE.FAMIC2C)
+    throw new CustomError(
+      `FAMIC2C cannot be greater than ${ECPAY_SHIPPING_FEE.FAMIC2C}`,
+      400,
+    );
+  if (data.UNIMARTC2C && data.UNIMARTC2C > ECPAY_SHIPPING_FEE.UNIMARTC2C)
+    throw new CustomError(
+      `UNIMARTC2C cannot be greater than ${ECPAY_SHIPPING_FEE.UNIMARTC2C}`,
+      400,
+    );
+  if (data.HILIFEC2C && data.HILIFEC2C > ECPAY_SHIPPING_FEE.HILIFEC2C)
+    throw new CustomError(
+      `HILIFEC2C cannot be greater than ${ECPAY_SHIPPING_FEE.HILIFEC2C}`,
+      400,
+    );
+  if (data.OKMARTC2C && data.OKMARTC2C > ECPAY_SHIPPING_FEE.OKMARTC2C)
+    throw new CustomError(
+      `OKMARTC2C cannot be greater than ${ECPAY_SHIPPING_FEE.OKMARTC2C}`,
+      400,
+    );
 
   const existing = await db.query.shippingFeeTable.findFirst({
     where: eq(schema.shippingFeeTable.accountId, accountId),
