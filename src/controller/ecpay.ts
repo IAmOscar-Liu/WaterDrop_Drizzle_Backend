@@ -77,6 +77,8 @@ class EcPayController {
       CustomField1: String(orderId),
     };
 
+    console.log("base_param: ", base_param);
+
     const formHtml = ecpayService.generateFormHtml({
       actionUrl: ECPAY_CHECKOUT_URL,
       parameters: base_param,
@@ -310,6 +312,7 @@ class EcPayController {
       SenderName,
       SenderCellPhone,
       shippingCost,
+      shippingCostDeduction,
     } = req.query;
 
     if (
@@ -357,6 +360,9 @@ class EcPayController {
         productIds: pIds,
         cvsStoreInfo,
         shippingCost: shippingCost ? Number(shippingCost) : 0,
+        shippingCostDeduction: shippingCostDeduction
+          ? Number(shippingCostDeduction)
+          : 0,
       });
     }
 
@@ -446,6 +452,7 @@ class EcPayController {
           cvsStoreInfo: merchantTrade.cvsStoreInfo,
           metadata: data,
           fee: merchantTrade.shippingCost,
+          feeDeduction: merchantTrade.shippingCostDeduction,
         },
         merchantTrade?.productIds,
       );

@@ -77,6 +77,9 @@ const router = Router();
  *         fee:
  *           type: number
  *           format: double
+ *         feeDeduction:
+ *           type: number
+ *           format: double
  *         metadata:
  *           type: object
  *           nullable: true
@@ -128,6 +131,9 @@ const router = Router();
  *           type: integer
  *           nullable: true
  *         shippingCost:
+ *           type: number
+ *           format: double
+ *         shippingCostDeduction:
  *           type: number
  *           format: double
  *         transactionFee:

@@ -80,6 +80,7 @@ class OrderService {
     userLevelAtSale,
     userMaxDiscountAtSale,
     shippingCost,
+    shippingCostDeduction,
     transactionFee,
     transactionFeeRateAtSale,
   }: {
@@ -91,6 +92,7 @@ class OrderService {
     userLevelAtSale?: string;
     userMaxDiscountAtSale?: number;
     shippingCost?: number;
+    shippingCostDeduction?: number;
     transactionFee?: number;
     transactionFeeRateAtSale?: number;
   }): Promise<ServiceResponse<Awaited<ReturnType<typeof createOrder>>>> {
@@ -104,6 +106,7 @@ class OrderService {
           userLevelAtSale,
           userMaxDiscountAtSale,
           shippingCost,
+          shippingCostDeduction,
           transactionFee,
           transactionFeeRateAtSale,
         },

@@ -52,6 +52,7 @@ class OrderController {
       userLevelAtSale,
       userMaxDiscountAtSale,
       shippingCost,
+      shippingCostDeduction,
       transactionFee,
       transactionFeeRateAtSale,
     } = req.body;
@@ -66,6 +67,9 @@ class OrderController {
         ? Number(userMaxDiscountAtSale)
         : undefined,
       shippingCost: shippingCost ? Number(shippingCost) : 0,
+      shippingCostDeduction: shippingCostDeduction
+        ? Number(shippingCostDeduction)
+        : 0,
       transactionFee: transactionFee ? Number(transactionFee) : 0,
       transactionFeeRateAtSale: transactionFeeRateAtSale
         ? Number(transactionFeeRateAtSale)

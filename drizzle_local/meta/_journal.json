@@ -505,6 +505,20 @@
       "when": 1771939215253,
       "tag": "0071_mysterious_sentinels",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1772701476694,
+      "tag": "0072_brave_mandarin",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1772701944920,
+      "tag": "0073_nervous_wallop",
+      "breakpoints": true
     }
   ]
 }

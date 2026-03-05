@@ -501,6 +501,7 @@ export const orderTable = pgTable("orders", {
   totalAmount: doublePrecision("total_amount").notNull(), // Final calculated total
   discountCoin: integer("discount_coin").default(0), // New field for discount coins used
   shippingCost: doublePrecision("shipping_cost").default(0), // New field for shipping cost
+  shippingCostDeduction: doublePrecision("shipping_cost_deduction").default(0),
   transactionFee: doublePrecision("transaction_fee").default(0), // New field for tax amount
   orderStatus: orderStatusEnum("order_status").default("pending").notNull(),
 
@@ -579,6 +580,7 @@ export const deliveryTable = pgTable("deliveries", {
   cvsStoreInfo: jsonb("cvs_store_info"),
   homeDeliveryData: jsonb("home_delivery_data"),
   fee: doublePrecision("fee").default(0),
+  feeDeduction: doublePrecision("fee_deduction").default(0),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -597,6 +599,7 @@ export const merchantTradeTable = pgTable("merchant_trades", {
   productIds: uuid("product_ids").array().notNull(),
   cvsStoreInfo: jsonb("cvs_store_info"),
   shippingCost: doublePrecision("shipping_cost").default(0),
+  shippingCostDeduction: doublePrecision("shipping_cost_deduction").default(0),
 });
 
 export const shippingFeeTable = pgTable("shipping_fees", {

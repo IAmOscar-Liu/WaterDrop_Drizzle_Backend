@@ -1,6 +1,5 @@
 import { Router } from "express";
 import EcPayController from "../controller/ecpay";
-import isAuth from "../middleware/isAuth";
 
 const router = Router();
 
