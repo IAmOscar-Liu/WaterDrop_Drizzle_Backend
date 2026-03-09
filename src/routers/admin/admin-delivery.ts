@@ -371,18 +371,25 @@ router.get("/helper/fee", isAuth, DeliveryController.getShippingFee);
  *             properties:
  *               homeDelivery:
  *                 type: number
+ *                 maximum: 60
  *               homeDeliveryRefrig:
  *                 type: number
+ *                 maximum: 160
  *               OKMART_LOW_TMP_C2C:
  *                 type: number
+ *                 maximum: 160
  *               UNIMARTC2C:
  *                 type: number
+ *                 maximum: 69
  *               FAMIC2C:
  *                 type: number
+ *                 maximum: 69
  *               HILIFEC2C:
  *                 type: number
+ *                 maximum: 58
  *               OKMARTC2C:
  *                 type: number
+ *                 maximum: 58
  *     responses:
  *       '200':
  *         description: The updated shipping fee settings.
