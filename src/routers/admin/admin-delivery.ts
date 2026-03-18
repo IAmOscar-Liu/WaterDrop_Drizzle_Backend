@@ -29,6 +29,27 @@ const router = Router();
  *                     properties:
  *                       product:
  *                         $ref: '#/components/schemas/Product'
+ *             logs:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/DeliveryLog'
+ *
+ *     DeliveryLog:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: string
+ *           format: uuid
+ *         deliveryId:
+ *           type: string
+ *           format: uuid
+ *         status:
+ *           type: string
+ *           enum: [pending, shipped, ready_for_pickup, delivered, returned, cancelled, exception, unknown]
+ *         RtnCode:
+ *           type: string
+ *         RtnMsg:
+ *           type: string
  *
  *     DeliveryWithItems:
  *       allOf:
@@ -111,9 +132,16 @@ const router = Router();
  *         name: status
  *         schema:
  *           type: string
- *           enum: [pending, shipped, delivered, returned, cancelled]
+ *           enum: [pending, shipped, ready_for_pickup, delivered, returned, cancelled, exception, unknown]
  *         required: false
  *         description: Optional status to filter deliveries by.
+ *       - in: query
+ *         name: logisticsType
+ *         schema:
+ *           type: string
+ *           enum: ["virtual", "CVS", "home_delivery"]
+ *         required: false
+ *         description: Optional logisticsType to filter deliveries by.
  *       - in: query
  *         name: startDate
  *         schema:
@@ -228,7 +256,7 @@ router.get(
  *             properties:
  *               status:
  *                 type: string
- *                 enum: [pending, shipped, delivered, returned, cancelled]
+ *                 enum: [pending, shipped, ready_for_pickup, delivered, returned, cancelled, exception, unknown]
  *               AllPayLogisticsID:
  *                 type: string
  *                 nullable: true

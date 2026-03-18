@@ -13,6 +13,7 @@ import {
   expireOrdersTask,
   monthlyCoinExpirationNotificationTask,
   monthlyCoinStatExpirationTask,
+  pollLogisticsTradeInfoTask,
 } from "./lib/scheduler";
 import { swaggerSpec } from "./lib/swagger";
 import { errorHandler } from "./middleware/errorHandler";
@@ -35,6 +36,8 @@ console.log(`HOST: ${process.env.HOST}`);
 const app = express();
 const PORT = process.env.PORT ?? 4000;
 
+// pollEcPayLogisticsTradeInfo();
+
 // Start the scheduled task
 dailyResetTask.start();
 dailyNotificationTask.start();
@@ -42,6 +45,7 @@ monthlyCoinStatExpirationTask.start();
 monthlyCoinExpirationNotificationTask.start();
 deleteUnusedDeviceTokensTask.start();
 expireOrdersTask.start();
+pollLogisticsTradeInfoTask.start();
 
 console.log("Cron job has been started.");
 

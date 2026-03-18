@@ -19,6 +19,7 @@ import {
   OKMARTC2C_LOW_TMP_DELIVERY,
 } from "../constants/delivery";
 import { ECPAY_SHIPPING_FEE } from "../constants/ecpay";
+import { sendDeliveryNotification } from "../lib/polling";
 
 export async function createDelivery(
   deliveryData: schema.NewDelivery,
@@ -30,6 +31,15 @@ export async function createDelivery(
     .returning();
 
   console.log("New Delivery Created:", newDelivery.id);
+
+  if (newDelivery.RtnCode && newDelivery.RtnMsg) {
+    await db.insert(schema.deliveryLogTable).values({
+      deliveryId: newDelivery.id,
+      status: newDelivery.status,
+      RtnCode: newDelivery.RtnCode,
+      RtnMsg: newDelivery.RtnMsg,
+    });
+  }
 
   if (productIds && productIds.length > 0) {
     await db
@@ -56,14 +66,56 @@ export async function updateDelivery(
     "id" | "orderId" | "createdAt" | "updatedAt"
   >,
 ) {
+  const latestLog = await db.query.deliveryLogTable.findFirst({
+    where: eq(schema.deliveryLogTable.deliveryId, deliveryId),
+    orderBy: (logs, { desc }) => [desc(logs.createdAt)],
+  });
+
   const [updatedDelivery] = await db
     .update(schema.deliveryTable)
     .set({ ...updates, updatedAt: new Date() })
     .where(eq(schema.deliveryTable.id, deliveryId))
     .returning();
 
+  if (!updatedDelivery) return null;
+
+  const shouldLog =
+    (updates.status !== undefined && updates.status !== latestLog?.status) ||
+    (updates.RtnCode !== undefined && updates.RtnCode !== latestLog?.RtnCode) ||
+    (updates.RtnMsg !== undefined && updates.RtnMsg !== latestLog?.RtnMsg);
+
+  if (shouldLog) {
+    await db.insert(schema.deliveryLogTable).values({
+      deliveryId: updatedDelivery.id,
+      status:
+        updates.status !== undefined
+          ? updates.status
+          : (latestLog?.status ?? updatedDelivery.status),
+      RtnCode:
+        updates.RtnCode !== undefined
+          ? updates.RtnCode
+          : (latestLog?.RtnCode ?? updatedDelivery.RtnCode),
+      RtnMsg:
+        updates.RtnMsg !== undefined
+          ? updates.RtnMsg
+          : (latestLog?.RtnMsg ?? updatedDelivery.RtnMsg),
+    });
+  }
+
   console.log("Delivery updated:", updatedDelivery.id);
-  return await getDeliveryById(updatedDelivery.id);
+  const newDeliveryDetails = await getDeliveryById(updatedDelivery.id);
+  if (shouldLog) {
+    await sendDeliveryNotification({
+      lastStatus: latestLog?.status,
+      update: {
+        status: updates.status,
+        RtnCode: updates.RtnCode,
+        RtnMsg: updates.RtnMsg,
+      },
+      delivery: newDeliveryDetails,
+    });
+  }
+  return newDeliveryDetails;
 }
 
 export async function getDeliveryById(deliveryId: string) {
@@ -75,6 +127,9 @@ export async function getDeliveryById(deliveryId: string) {
         with: {
           product: true,
         },
+      },
+      logs: {
+        orderBy: (logs, { desc }) => [desc(logs.createdAt)],
       },
     },
   });
@@ -114,6 +169,7 @@ export interface ListAdminDeliveriesParams {
   page?: number;
   limit?: number;
   accountId: string;
+  logisticsType?: schema.Delivery["LogisticsType"];
   status?: schema.Delivery["status"];
   startDate?: Date;
   endDate?: Date;
@@ -123,6 +179,7 @@ export async function listAdminDeliveries({
   page = 1,
   limit = 10,
   accountId,
+  logisticsType,
   status,
   startDate,
   endDate,
@@ -152,6 +209,9 @@ export async function listAdminDeliveries({
 
   if (status) {
     conditions.push(eq(schema.deliveryTable.status, status));
+  }
+  if (logisticsType) {
+    conditions.push(eq(schema.deliveryTable.LogisticsType, logisticsType));
   }
   if (startDate) {
     conditions.push(gte(schema.deliveryTable.createdAt, startDate));

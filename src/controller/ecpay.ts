@@ -9,6 +9,11 @@ import {
 } from "../constants/ecpay";
 import { sendJsonResponse } from "../lib/general";
 import { validateToken } from "../lib/token";
+import {
+  getLogisticsStatus,
+  getLogisticsStatusText,
+  LogisticsType,
+} from "../lib/logisticsStatus";
 import { createDelivery } from "../repository/delivery";
 import {
   createMerchantTrade,
@@ -590,6 +595,22 @@ class EcPayController {
       // 解析綠界回傳的字串內容
       // 綠界會回傳像你提供的那串：ActualWeight=null&AllPayLogisticsID=...
       const resultData = querystring.parse(response.data);
+
+      if (
+        typeof resultData.LogisticsType === "string" &&
+        resultData.LogisticsStatus
+      ) {
+        const type = resultData.LogisticsType.replace(
+          "CVS_",
+          "",
+        ) as LogisticsType;
+        const status = String(resultData.LogisticsStatus);
+        (resultData as any).LogisticsStatusText = getLogisticsStatusText(
+          type,
+          status,
+        );
+        (resultData as any).DeliveryStatus = getLogisticsStatus(type, status);
+      }
 
       // 回傳 JSON 給 Client
       return res.json({

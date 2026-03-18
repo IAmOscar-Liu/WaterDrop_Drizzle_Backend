@@ -519,6 +519,48 @@
       "when": 1772701944920,
       "tag": "0073_nervous_wallop",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1773668480102,
+      "tag": "0074_amazing_silvermane",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1773722526671,
+      "tag": "0075_aromatic_sumo",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1773745290576,
+      "tag": "0076_puzzling_captain_universe",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1773745482777,
+      "tag": "0077_pale_thunderbolts",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1773750997284,
+      "tag": "0078_nasty_gravity",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1773763027542,
+      "tag": "0079_known_vin_gonzales",
+      "breakpoints": true
     }
   ]
 }

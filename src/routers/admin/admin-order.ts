@@ -50,7 +50,7 @@ const router = Router();
  *           type: string
  *         status:
  *           type: string
- *           enum: [pending, shipped, delivered, returned, cancelled]
+ *           enum: [pending, shipped, ready_for_pickup, delivered, returned, cancelled, exception, unknown]
  *         AllPayLogisticsID:
  *           type: string
  *           nullable: true
@@ -102,6 +102,28 @@ const router = Router();
  *           type: string
  *           format: date-time
  *         updatedAt:
+ *           type: string
+ *           format: date-time
+ *
+ *     DeliveryLog:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: string
+ *           format: uuid
+ *         deliveryId:
+ *           type: string
+ *           format: uuid
+ *         status:
+ *           type: string
+ *           enum: [pending, shipped, ready_for_pickup, delivered, returned, cancelled, exception, unknown]
+ *         RtnCode:
+ *           type: string
+ *           nullable: true
+ *         RtnMsg:
+ *           type: string
+ *           nullable: true
+ *         createdAt:
  *           type: string
  *           format: date-time
  *
@@ -262,6 +284,11 @@ const router = Router();
  *                   - $ref: '#/components/schemas/Delivery'
  *                   - type: object
  *                     properties:
+ *                       logs:
+ *                         type: array
+ *                         description: Reverse-chronological delivery status logs.
+ *                         items:
+ *                           $ref: '#/components/schemas/DeliveryLog'
  *                       items:
  *                         type: array
  *                         items:

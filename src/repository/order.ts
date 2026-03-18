@@ -458,6 +458,9 @@ export async function getOrderById(orderId: string) {
               productNameAtSale: true,
             },
           },
+          logs: {
+            orderBy: (logs, { desc }) => [desc(logs.createdAt)],
+          },
         },
       },
       user: {

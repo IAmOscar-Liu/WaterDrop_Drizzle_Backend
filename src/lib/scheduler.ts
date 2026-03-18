@@ -18,6 +18,7 @@ import {
 import { sendMulticastPushNotification } from "./sendNotification";
 import { createNotification } from "../repository/notification";
 import { expireOrders } from "../repository/order";
+import { pollEcPayLogisticsTradeInfo } from "./polling";
 
 const RESET_BATCH_SIZE = 100; // Process 100 users at a time. Adjust as needed.
 
@@ -26,7 +27,7 @@ export const dailyResetTask = cron.schedule(
   "*/30 * * * *", // every 30 minutes
   async () => {
     console.log(
-      `30 minute cron job for dailyResetTask started. Time: ${new Date()}`
+      `30 minute cron job for dailyResetTask started. Time: ${new Date()}`,
     );
 
     const timezones = (Intl as any).supportedValuesOf("timeZone") as string[];
@@ -42,7 +43,7 @@ export const dailyResetTask = cron.schedule(
 
     console.log(
       `${timezonesAtMidnight.length} timezones at midnight:`,
-      timezonesAtMidnight.join(", ")
+      timezonesAtMidnight.join(", "),
     );
 
     const userIds = await getUserIdsInTimezones(timezonesAtMidnight);
@@ -54,14 +55,14 @@ export const dailyResetTask = cron.schedule(
         batchUserIds.map((userId) =>
           updateGroupAdViewsCountYesterday(userId).catch((err) => {
             console.error(`Error resetting stats for user ${userId}:`, err);
-          })
-        )
+          }),
+        ),
       );
 
       console.log(
         `✅ Daily reset complete for current ${
           timezonesAtMidnight.length
-        } timezones. Total users processed: ${i + batchUserIds.length}`
+        } timezones. Total users processed: ${i + batchUserIds.length}`,
       );
     }
 
@@ -73,17 +74,17 @@ export const dailyResetTask = cron.schedule(
           resetDailyStats(userId).catch((err) => {
             if (err instanceof CustomError && err.statusCode === 404) return;
             console.error(`Error resetting stats for user ${userId}:`, err);
-          })
-        )
+          }),
+        ),
       );
 
       console.log(
         `✅ Daily reset complete for current ${
           timezonesAtMidnight.length
-        } timezones. Total users processed: ${i + batchUserIds.length}`
+        } timezones. Total users processed: ${i + batchUserIds.length}`,
       );
     }
-  }
+  },
 );
 
 const FCM_MAX_BATCH_SIZE = 100; // Process 100 users at a time. Adjust as needed.
@@ -93,7 +94,7 @@ export const dailyNotificationTask = cron.schedule(
   "*/30 * * * *", // every 30 minutes
   async () => {
     console.log(
-      `30 minute cron job for dailyNotificationTask started. Time: ${new Date()}`
+      `30 minute cron job for dailyNotificationTask started. Time: ${new Date()}`,
     );
 
     const timezones = (Intl as any).supportedValuesOf("timeZone") as string[];
@@ -109,7 +110,7 @@ export const dailyNotificationTask = cron.schedule(
 
     console.log(
       `${timezonesAtSpecificTime.length} timezones at 21:00:`,
-      timezonesAtSpecificTime.join(", ")
+      timezonesAtSpecificTime.join(", "),
     );
 
     const userIds = (await getUserStatsInTimezones(timezonesAtSpecificTime))
@@ -134,10 +135,10 @@ export const dailyNotificationTask = cron.schedule(
       console.log(
         `✅ Daily notification complete for current ${
           timezonesAtSpecificTime.length
-        } timezones. Total tokens processed: ${i + batchFcmTokens.length}`
+        } timezones. Total tokens processed: ${i + batchFcmTokens.length}`,
       );
     }
-  }
+  },
 );
 
 // New cron job for monthly coin stat expiration
@@ -147,7 +148,7 @@ export const monthlyCoinStatExpirationTask = cron.schedule(
   "*/30 * 1,28,29,30,31 * *", // Every 30 minutes, on day the last day and 1 of the month
   async () => {
     console.log(
-      `30 minute cron job for monthlyCoinStatExpirationTask started. Time: ${new Date()}`
+      `30 minute cron job for monthlyCoinStatExpirationTask started. Time: ${new Date()}`,
     );
 
     try {
@@ -167,7 +168,7 @@ export const monthlyCoinStatExpirationTask = cron.schedule(
 
       console.log(
         `Found ${timezonesAtStartOfMonth.length} timezones at the start of a month:`,
-        timezonesAtStartOfMonth.join(", ")
+        timezonesAtStartOfMonth.join(", "),
       );
 
       const userIds = await getUserIdsInTimezones(timezonesAtStartOfMonth);
@@ -185,19 +186,19 @@ export const monthlyCoinStatExpirationTask = cron.schedule(
       await setMonthlyCoinExpire(userIds, yearMonthString);
 
       console.log(
-        `✅ Monthly coin stat expiration complete for ${userIds.length} users.`
+        `✅ Monthly coin stat expiration complete for ${userIds.length} users.`,
       );
     } catch (error) {
       console.error("Error during monthly coin stat expiration:", error);
     }
-  }
+  },
 );
 
 export const monthlyCoinExpirationNotificationTask = cron.schedule(
   "*/30 * 21-31 * *", // Every 30 minutes, 8 days before the end of the month
   async () => {
     console.log(
-      `30 minute cron job for monthlyCoinExpirationNotificationTask started. Time: ${new Date()}`
+      `30 minute cron job for monthlyCoinExpirationNotificationTask started. Time: ${new Date()}`,
     );
 
     const timezones = (Intl as any).supportedValuesOf("timeZone") as string[];
@@ -218,7 +219,7 @@ export const monthlyCoinExpirationNotificationTask = cron.schedule(
 
     console.log(
       `${timezonesAtSpecificTime.length} timezones at 6:00:`,
-      timezonesAtSpecificTime.join(", ")
+      timezonesAtSpecificTime.join(", "),
     );
 
     let userIds = await getUserIdsInTimezones(timezonesAtSpecificTime);
@@ -235,7 +236,7 @@ export const monthlyCoinExpirationNotificationTask = cron.schedule(
     ).filter((stat) => stat.coinsEarned > stat.coinsSpent);
 
     const { localMonth, localYear } = getCurrentLocalDateTime(
-      timezonesAtSpecificTime[0]
+      timezonesAtSpecificTime[0],
     );
     const lastMonth = localMonth === 1 ? 12 : localMonth - 1;
     const nextMonth = localMonth === 12 ? 1 : localMonth + 1;
@@ -244,7 +245,7 @@ export const monthlyCoinExpirationNotificationTask = cron.schedule(
     for (let i = 0; i < userMonthlyCoinStats.length; i += RESET_BATCH_SIZE) {
       const batchCoinStats = userMonthlyCoinStats.slice(
         i,
-        i + RESET_BATCH_SIZE
+        i + RESET_BATCH_SIZE,
       );
 
       await Promise.allSettled(
@@ -258,8 +259,8 @@ export const monthlyCoinExpirationNotificationTask = cron.schedule(
             }未使用，即將在 ${nextYear}/${nextMonth
               .toString()
               .padStart(2, "0")}/01 00:00 過期，快把握時間使用您的金幣吧!`,
-          })
-        )
+          }),
+        ),
       );
     }
 
@@ -285,17 +286,17 @@ export const monthlyCoinExpirationNotificationTask = cron.schedule(
       console.log(
         `✅ Daily notification complete for current ${
           timezonesAtSpecificTime.length
-        } timezones. Total tokens processed: ${i + batchFcmTokens.length}`
+        } timezones. Total tokens processed: ${i + batchFcmTokens.length}`,
       );
     }
-  }
+  },
 );
 
 export const deleteUnusedDeviceTokensTask = cron.schedule(
   "0 * * * *", // every hour
   async () => {
     console.log(
-      `Hourly cron job for deleteUnusedDeviceTokensTask started. Time: ${new Date()}`
+      `Hourly cron job for deleteUnusedDeviceTokensTask started. Time: ${new Date()}`,
     );
 
     try {
@@ -304,14 +305,14 @@ export const deleteUnusedDeviceTokensTask = cron.schedule(
     } catch (error) {
       console.error(`Error during deleteUnusedDeviceTokensTask:`, error);
     }
-  }
+  },
 );
 
 export const expireOrdersTask = cron.schedule(
   "*/30 * * * *", // every 30 minutes
   async () => {
     console.log(
-      `30 minute cron job for expireOrdersTask started. Time: ${new Date()}`
+      `30 minute cron job for expireOrdersTask started. Time: ${new Date()}`,
     );
     try {
       const result = await expireOrders(30 * 60 * 1000); // 30 minutes ago
@@ -319,5 +320,19 @@ export const expireOrdersTask = cron.schedule(
     } catch (error) {
       console.error(`Error during expireOrdersTask:`, error);
     }
-  }
+  },
+);
+
+export const pollLogisticsTradeInfoTask = cron.schedule(
+  "*/30 * * * *", // every 30 minutes
+  async () => {
+    console.log(
+      `30 minute cron job for pollLogisticsTradeInfoTask started. Time: ${new Date()}`,
+    );
+    try {
+      await pollEcPayLogisticsTradeInfo();
+    } catch (error) {
+      console.error(`Error during pollLogisticsTradeInfoTask:`, error);
+    }
+  },
 );

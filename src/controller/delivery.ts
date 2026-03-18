@@ -13,13 +13,17 @@ import { ECPAY_SHIPPING_FEE } from "../constants/ecpay";
 
 class DeliveryController {
   async listAdminDeliveries(req: RequestWithId, res: Response): Promise<any> {
-    const { page, limit, status, startDate, endDate } = req.query;
+    const { page, limit, logisticsType, status, startDate, endDate } =
+      req.query;
     const result = await deliveryService.listAdminDeliveries({
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
       accountId: req.userId ?? "",
       status: status
         ? (String(status) as ListAdminDeliveriesParams["status"])
+        : undefined,
+      logisticsType: logisticsType
+        ? (String(logisticsType) as ListAdminDeliveriesParams["logisticsType"])
         : undefined,
       startDate: startDate
         ? new Date(

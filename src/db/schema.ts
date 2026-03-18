@@ -14,6 +14,8 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { logisticsStatus } from "../lib/logisticsStatus";
+import delivery from "../services/delivery";
 
 // Optional: keep providers explicit (add/remove as you need)
 export const oauthProviderEnum = pgEnum("oauth_provider", [
@@ -65,9 +67,12 @@ export const orderStatusEnum = pgEnum("order_status", [
 export const deliveryStatusEnum = pgEnum("delivery_status", [
   "pending",
   "shipped",
+  "ready_for_pickup",
   "delivered",
   "returned",
   "cancelled",
+  "exception",
+  "unknown",
 ]);
 
 export const deliveryLogisticsTypeEnum = pgEnum("delivery_logistics_type", [
@@ -581,12 +586,26 @@ export const deliveryTable = pgTable("deliveries", {
   homeDeliveryData: jsonb("home_delivery_data"),
   fee: doublePrecision("fee").default(0),
   feeDeduction: doublePrecision("fee_deduction").default(0),
+  lastPolledAt: timestamp("last_polled_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .defaultNow()
     .$onUpdate(() => new Date())
+    .notNull(),
+});
+
+export const deliveryLogTable = pgTable("delivery_logs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  deliveryId: uuid("delivery_id")
+    .notNull()
+    .references(() => deliveryTable.id, { onDelete: "cascade" }),
+  status: deliveryStatusEnum("status").default("pending").notNull(),
+  RtnCode: text("rtn_code"),
+  RtnMsg: text("rtn_msg"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
     .notNull(),
 });
 
@@ -963,6 +982,14 @@ export const deliveryRelations = relations(deliveryTable, ({ one, many }) => ({
     references: [orderTable.id],
   }),
   items: many(orderItemTable), // A delivery can have many items
+  logs: many(deliveryLogTable),
+}));
+
+export const deliveryLogRelations = relations(deliveryLogTable, ({ one }) => ({
+  delivery: one(deliveryTable, {
+    fields: [deliveryLogTable.deliveryId],
+    references: [deliveryTable.id],
+  }),
 }));
 
 export const deviceTokenRelations = relations(deviceTokenTable, ({ one }) => ({
@@ -1067,6 +1094,9 @@ export type NewOrderItem = typeof orderItemTable.$inferInsert;
 
 export type Delivery = typeof deliveryTable.$inferSelect;
 export type NewDelivery = typeof deliveryTable.$inferInsert;
+
+export type DeliveryLog = typeof deliveryLogTable.$inferSelect;
+export type NewDeliveryLog = typeof deliveryLogTable.$inferInsert;
 
 export type MerchantTrade = typeof merchantTradeTable.$inferSelect;
 export type NewMerchantTrade = typeof merchantTradeTable.$inferInsert;

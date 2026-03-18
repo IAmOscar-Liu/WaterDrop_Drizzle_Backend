@@ -1,9 +1,17 @@
 import crypto from "crypto";
+import querystring from "querystring";
 import {
   ECPAY_CHECKOUT_URL,
   ECPAY_LOGISTIC_BASE_URL,
+  ECPAY_QUERY_LOGISTICS_TRADE_INFO_URL,
 } from "../constants/ecpay";
 import { generateRandomString } from "../lib/general";
+import axios from "axios";
+import {
+  getLogisticsStatus,
+  getLogisticsStatusText,
+  LogisticsType,
+} from "../lib/logisticsStatus";
 
 class EcPayService {
   getTestMerchantID(realAccount: boolean): string {
@@ -349,6 +357,93 @@ class EcPayService {
       AllPayLogisticsID,
       PrintMode: "1",
     };
+  }
+
+  async queryLogisticsTradeInfo(
+    AllPayLogisticsID: string,
+    MerchantTradeNo: string,
+  ) {
+    const parameters: Record<string, any> = {
+      MerchantID: process.env.LOGISTICS_MERCHANTID,
+      TimeStamp: Math.floor(Date.now() / 1000),
+    };
+
+    if (AllPayLogisticsID) {
+      parameters["AllPayLogisticsID"] = String(AllPayLogisticsID);
+    }
+    if (MerchantTradeNo) {
+      parameters["MerchantTradeNo"] = String(MerchantTradeNo);
+    }
+
+    const checkMacValue = this.generateCheckValue(
+      parameters,
+      process.env.LOGISTICS_HASH_KEY!,
+      process.env.LOGISTICS_HASH_IV!,
+      "md5",
+    );
+
+    parameters["CheckMacValue"] = checkMacValue;
+
+    try {
+      // 使用 axios 發送 POST 到綠界 (注意：不是 res.send(formHtml))
+      const response = await axios.post(
+        ECPAY_QUERY_LOGISTICS_TRADE_INFO_URL,
+        querystring.stringify(parameters), // 轉成 key=value&key2=value2 格式
+        { headers: { "Content-Type": "application/x-www-form-urlencoded" } },
+      );
+
+      // 解析綠界回傳的字串內容
+      // 綠界會回傳像你提供的那串：ActualWeight=null&AllPayLogisticsID=...
+      const resultData = querystring.parse(response.data);
+
+      // const resultData: any = {
+      //   ActualWeight: "null",
+      //   AllPayLogisticsID: "47010410",
+      //   BookingNote: "",
+      //   CollectionAllocateAmount: "0",
+      //   CollectionAllocateDate: "",
+      //   CollectionAmount: "0",
+      //   CollectionChargeFee: "0",
+      //   CVSPaymentNo: "16333835341",
+      //   CVSValidationNo: "",
+      //   GoodsAmount: "300",
+      //   GoodsName: "測試商品",
+      //   GoodsWeight: "null",
+      //   HandlingCharge: "69",
+      //   LogisticsStatus: "3029",
+      //   LogisticsType: "CVS_FAMIC2C",
+      //   MerchantID: "3041403",
+      //   MerchantTradeNo: "fe30b2d81c48ee9ca6e0",
+      //   SenderCellPhone: "0926675158",
+      //   SenderName: "吳竣瑋",
+      //   SenderPhone: "null",
+      //   ShipChargeDate: "",
+      //   ShipmentNo: "47010410",
+      //   TradeDate: "2026/03/11 14:21:48",
+      //   CheckMacValue: "9CAE2E9B1E2AD5809D3D64CB0052B4E3",
+      // };
+
+      if (
+        typeof resultData.LogisticsType === "string" &&
+        resultData.LogisticsStatus
+      ) {
+        const type = resultData.LogisticsType.replace(
+          "CVS_",
+          "",
+        ) as LogisticsType;
+        const status = String(resultData.LogisticsStatus);
+        (resultData as any).LogisticsStatusText = getLogisticsStatusText(
+          type,
+          status,
+        );
+        (resultData as any).DeliveryStatus = getLogisticsStatus(type, status);
+      }
+
+      // 回傳 JSON 給 Client
+      return resultData;
+    } catch (error) {
+      return null;
+    }
   }
 }
 
