@@ -132,11 +132,11 @@ export const logisticsStatus: Record<LogisticsType, LogisticsStatusMap> = {
     "3019": { text: "包裹已退至原寄件門市", status: "returned" },
 
     "3020": { text: "買家未取包裹，將退回物流中心", status: "returned" },
-    "3021": { text: "賣家未取包裹，待申請退回", status: "returned" },
+    "3021": { text: "買家未取包裹，待申請退回", status: "returned" },
 
-    "3022": { text: "賣家已到店取件", status: "delivered" },
+    "3022": { text: "買家已到店取件", status: "delivered" },
 
-    "3023": { text: "賣家已取退回包裹", status: "returned" },
+    "3023": { text: "買家已取退回包裹", status: "returned" },
 
     "3024": { text: "物流中心驗收成功", status: "shipped" },
 

@@ -39,8 +39,10 @@ class EcPayController {
       ReturnURL: `${process.env.HOST}/api/ecpay/return`,
       ClientBackURL: `${process.env.HOST}/api/ecpay/clientReturn`,
       ChoosePayment: "Credit",
-      // IgnorePayment: "CVS#BARCODE#WebATM#AndroidPay#ApplePay",
-      IgnorePayment: "CVS#BARCODE#WebATM#AndroidPay#ApplePay#TWQR#WeiXin",
+      // Explicitly block every non-credit tab/wallet so only Credit shows
+      // Reference: ECPay AIO V5 supports excluding by '#'-joined tokens
+      IgnorePayment:
+        "ATM#WebATM#CVS#BARCODE#ApplePay#GooglePay#AndroidPay#BNPL#TWQR#WeiXin#LINEPay#JKOPay#ESUNWallet#PiWallet#ECPayWallet#iPASS",
       EncryptType: 1,
       CustomField1: TEST_ORDER_ID,
     };
@@ -71,7 +73,9 @@ class EcPayController {
       MerchantTradeNo: ecpayService.generateTradeNo(),
       MerchantTradeDate: ecpayService.generateMerchantTradeDate(),
       PaymentType: "aio",
-      IgnorePayment: "CVS#BARCODE#WebATM#ATM#AndroidPay#ApplePay",
+      // Keep only Credit by excluding all other methods/wallets
+      IgnorePayment:
+        "ATM#WebATM#CVS#BARCODE#ApplePay#GooglePay#AndroidPay#BNPL#TWQR#WeiXin#LINEPay#JKOPay#ESUNWallet#PiWallet#ECPayWallet#iPASS",
       TotalAmount: Math.floor(Number(totalAmount)),
       TradeDesc: String(tradeDesc),
       ItemName: String(itemName),
