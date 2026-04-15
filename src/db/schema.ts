@@ -14,8 +14,6 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { logisticsStatus } from "../lib/logisticsStatus";
-import delivery from "../services/delivery";
 
 // Optional: keep providers explicit (add/remove as you need)
 export const oauthProviderEnum = pgEnum("oauth_provider", [

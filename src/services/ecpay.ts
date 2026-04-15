@@ -292,7 +292,7 @@ class EcPayService {
 
         // 再檢核是否有超過長度限制
         if (this.getEcpayLength(goodsNameStr) > 50) {
-          return `商品名稱總長度超過 50 字元 (目前長度: ${this.getEcpayLength(
+          return `商品名稱「${goodsNameStr}」總長度超過 50 字元 (目前長度: ${this.getEcpayLength(
             goodsNameStr,
           )})`;
         }

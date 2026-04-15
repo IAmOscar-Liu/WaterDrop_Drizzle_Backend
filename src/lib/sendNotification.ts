@@ -56,17 +56,17 @@ export async function sendMulticastPushNotification(message: MulticastMessage) {
 
     const response = await admin.messaging().sendEachForMulticast(message);
     console.log(
-      `Successfully sent multicast message to ${response.successCount} devices.`
+      `Successfully sent multicast message to ${response.successCount} devices.`,
     );
 
-    // if (response.failureCount > 0) {
-    //   console.error("Failed to send to some devices:");
-    //   response.responses.forEach((resp, idx) => {
-    //     if (!resp.success) {
-    //       console.error(`  - Token ${message.tokens[idx]}: ${resp.error}`);
-    //     }
-    //   });
-    // }
+    if (response.failureCount > 0) {
+      console.error("Failed to send to some devices:");
+      response.responses.forEach((resp, idx) => {
+        if (!resp.success) {
+          console.error(`  - Token ${message.tokens[idx]}: ${resp.error}`);
+        }
+      });
+    }
   } catch (e) {
     console.error("Error sending multicast push notification:", e);
   }
