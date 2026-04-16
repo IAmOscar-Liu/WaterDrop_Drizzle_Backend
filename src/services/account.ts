@@ -186,6 +186,9 @@ class AdminService {
     if (nameLength < 4 || nameLength > 10) {
       return `姓名長度須介於 4 到 10 個字元之間 (目前長度: ${nameLength})`;
     }
+    if (ecpayService.hasEmoji(realName)) {
+      return `姓名不可包含表情符號`;
+    }
     return null;
   }
 

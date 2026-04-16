@@ -18,6 +18,7 @@ import { CustomError } from "../lib/error";
 import db from "../lib/initDB";
 import { isAccountAdmin } from "./account";
 import ecpayService from "../services/ecpay";
+import product from "../services/product";
 
 // --- Category Functions ---
 
@@ -97,7 +98,13 @@ export async function createProduct(
   productData: schema.NewProduct,
   categoryIds?: string[],
 ) {
-  // 0. Check product name length before creating the product
+  // 0. Check product name before creating the product
+  if (ecpayService.hasSpecialChars(productData.name)) {
+    throw new CustomError(
+      `商品名稱「${productData.name}」不得包含 ^ ‘ \` ! @ # % & * + \\ ” < > | _ [ ] 等特殊符號`,
+      400,
+    );
+  }
   if (ecpayService.getEcpayLength(productData.name) > 50) {
     throw new CustomError(
       `商品名稱「${productData.name}」總長度超過 50 字元 (目前長度: ${ecpayService.getEcpayLength(productData.name)})`,
@@ -152,12 +159,20 @@ export async function updateProduct(
   productData: Partial<Omit<schema.NewProduct, "id">>,
   categoryIds?: string[],
 ) {
-  // 0. Check product name length before creating the product
-  if (productData.name && ecpayService.getEcpayLength(productData.name) > 50) {
-    throw new CustomError(
-      `商品名稱「${productData.name}」總長度超過 50 字元 (目前長度: ${ecpayService.getEcpayLength(productData.name)})`,
-      400,
-    );
+  // 0. Check product name before updating the product
+  if (productData.name) {
+    if (ecpayService.hasSpecialChars(productData.name)) {
+      throw new CustomError(
+        `商品名稱「${productData.name}」不得包含 ^ ‘ \` ! @ # % & * + \\ ” < > | _ [ ] 等特殊符號`,
+        400,
+      );
+    }
+    if (ecpayService.getEcpayLength(productData.name) > 50) {
+      throw new CustomError(
+        `商品名稱「${productData.name}」總長度超過 50 字元 (目前長度: ${ecpayService.getEcpayLength(productData.name)})`,
+        400,
+      );
+    }
   }
 
   return db.transaction(async (tx) => {

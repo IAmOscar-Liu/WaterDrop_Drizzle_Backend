@@ -193,6 +193,17 @@ class EcPayService {
     return length;
   }
 
+  hasSpecialChars(str: string) {
+    const specialCharRegex = /[\^'`!@#%&*+\\"<>|_\[\]‘”]/;
+    return specialCharRegex.test(str);
+  }
+
+  hasEmoji(str: string) {
+    // 檢查是否包含表情符號 (emoji)
+    const emojiRegex = /\p{Emoji}/u;
+    return emojiRegex.test(str);
+  }
+
   /**
    * 驗證物流訂單參數是否符合綠界 API 規範。
    * @param {Record<string, any>} params - 準備傳送的參數物件。
@@ -221,8 +232,7 @@ class EcPayService {
       }
 
       // 檢查是否包含表情符號 (emoji)
-      const emojiRegex = /\p{Emoji}/u;
-      if (emojiRegex.test(receiverNameStr)) {
+      if (this.hasEmoji(receiverNameStr)) {
         return `收件人姓名不可包含表情符號`;
       }
     }
@@ -241,8 +251,7 @@ class EcPayService {
         }
 
         // 檢查是否包含表情符號 (emoji)
-        const emojiRegex = /\p{Emoji}/u;
-        if (emojiRegex.test(senderNameStr)) {
+        if (this.hasEmoji(senderNameStr)) {
           return `寄件人姓名不可包含表情符號`;
         }
       }
@@ -285,8 +294,7 @@ class EcPayService {
 
       for (let goodsNameStr of goodsNameStrArr) {
         // 優先檢核是否有特殊字元
-        const specialCharRegex = /[\^'`!@#%&*+\\"<>|_\[\]‘”]/;
-        if (specialCharRegex.test(goodsNameStr)) {
+        if (this.hasSpecialChars(goodsNameStr)) {
           return `商品名稱不得包含 ^ ‘ \` ! @ # % & * + \\ ” < > | _ [ ] 等特殊符號`;
         }
 
