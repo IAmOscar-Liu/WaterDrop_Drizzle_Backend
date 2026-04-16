@@ -17,6 +17,7 @@ import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
 import db from "../lib/initDB";
 import { isAccountAdmin } from "./account";
+import ecpayService from "../services/ecpay";
 
 // --- Category Functions ---
 
@@ -96,6 +97,14 @@ export async function createProduct(
   productData: schema.NewProduct,
   categoryIds?: string[],
 ) {
+  // 0. Check product name length before creating the product
+  if (ecpayService.getEcpayLength(productData.name) > 50) {
+    throw new CustomError(
+      `商品名稱「${productData.name}」總長度超過 50 字元 (目前長度: ${ecpayService.getEcpayLength(productData.name)})`,
+      400,
+    );
+  }
+
   return db.transaction(async (tx) => {
     // 1. Create the product
     const [newProduct] = await tx
@@ -143,6 +152,14 @@ export async function updateProduct(
   productData: Partial<Omit<schema.NewProduct, "id">>,
   categoryIds?: string[],
 ) {
+  // 0. Check product name length before creating the product
+  if (productData.name && ecpayService.getEcpayLength(productData.name) > 50) {
+    throw new CustomError(
+      `商品名稱「${productData.name}」總長度超過 50 字元 (目前長度: ${ecpayService.getEcpayLength(productData.name)})`,
+      400,
+    );
+  }
+
   return db.transaction(async (tx) => {
     // 1. Update the product itself
     const [updatedProduct] = await tx
