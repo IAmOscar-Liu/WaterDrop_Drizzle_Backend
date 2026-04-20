@@ -1,0 +1,1 @@
+ALTER TABLE "user_daily_stats" ADD COLUMN "viewed_ads" text[] DEFAULT '{}' NOT NULL;
