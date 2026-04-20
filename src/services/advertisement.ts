@@ -24,6 +24,7 @@ class AdvertisementService {
       const advertisements = await listAdvertisements(params); // Replace with real data fetching logic
       return { success: true, data: advertisements };
     } catch (error) {
+      // console.error(error);
       return handleServiceError(error);
     }
   }

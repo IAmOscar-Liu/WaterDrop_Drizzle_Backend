@@ -1,4 +1,4 @@
-import { and, count, eq, gt, gte, lte, sql } from "drizzle-orm";
+import { and, count, eq, gt, gte, lte, not, sql } from "drizzle-orm";
 
 import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
@@ -13,7 +13,7 @@ import { isAccountAdmin } from "./account";
  * @returns The newly created advertisement.
  */
 export async function createAdvertisement(
-  advertisementData: schema.NewAdvertisement
+  advertisementData: schema.NewAdvertisement,
 ) {
   return await db.transaction(async (tx) => {
     const [newAd] = await tx
@@ -53,6 +53,7 @@ export async function getAdvertisement(advertisementId: string) {
 export interface ListAdvertisementsParams {
   page?: number;
   limit?: number;
+  userId?: string;
 }
 
 /**
@@ -63,6 +64,7 @@ export interface ListAdvertisementsParams {
 export async function listAdvertisements({
   page = 1,
   limit = 10,
+  userId,
 }: ListAdvertisementsParams) {
   const offset = (page - 1) * limit;
 
@@ -70,7 +72,12 @@ export async function listAdvertisements({
     eq(schema.productTable.status, "active"),
     gt(schema.productTable.stock, schema.productTable.reserve),
     eq(schema.advertisementStatsTable.status, "active"),
-    gte(schema.advertisementStatsTable.balance, 100)
+    gte(schema.advertisementStatsTable.balance, 100),
+    userId
+      ? not(
+          sql`${schema.advertisementTable.id}::text = ANY (select unnest(viewed_ads) from user_daily_stats where user_id = ${userId})`,
+        )
+      : undefined,
   );
 
   // Query for total count
@@ -79,14 +86,14 @@ export async function listAdvertisements({
     .from(schema.advertisementTable)
     .leftJoin(
       schema.productTable,
-      eq(schema.advertisementTable.productId, schema.productTable.id)
+      eq(schema.advertisementTable.productId, schema.productTable.id),
     )
     .leftJoin(
       schema.advertisementStatsTable,
       eq(
         schema.advertisementTable.id,
-        schema.advertisementStatsTable.advertisementId
-      )
+        schema.advertisementStatsTable.advertisementId,
+      ),
     )
     .where(whereClause);
 
@@ -99,14 +106,14 @@ export async function listAdvertisements({
     .from(schema.advertisementTable)
     .leftJoin(
       schema.productTable,
-      eq(schema.advertisementTable.productId, schema.productTable.id)
+      eq(schema.advertisementTable.productId, schema.productTable.id),
     )
     .leftJoin(
       schema.advertisementStatsTable,
       eq(
         schema.advertisementTable.id,
-        schema.advertisementStatsTable.advertisementId
-      )
+        schema.advertisementStatsTable.advertisementId,
+      ),
     )
     .where(whereClause)
     .limit(limit)
@@ -156,14 +163,14 @@ export async function listAdminAdvertisements({
     .from(schema.advertisementTable)
     .leftJoin(
       schema.productTable,
-      eq(schema.advertisementTable.productId, schema.productTable.id)
+      eq(schema.advertisementTable.productId, schema.productTable.id),
     )
     .leftJoin(
       schema.advertisementStatsTable,
       eq(
         schema.advertisementTable.id,
-        schema.advertisementStatsTable.advertisementId
-      )
+        schema.advertisementStatsTable.advertisementId,
+      ),
     )
     .where(whereClause);
 
@@ -176,14 +183,14 @@ export async function listAdminAdvertisements({
     .from(schema.advertisementTable)
     .leftJoin(
       schema.productTable,
-      eq(schema.advertisementTable.productId, schema.productTable.id)
+      eq(schema.advertisementTable.productId, schema.productTable.id),
     )
     .leftJoin(
       schema.advertisementStatsTable,
       eq(
         schema.advertisementTable.id,
-        schema.advertisementStatsTable.advertisementId
-      )
+        schema.advertisementStatsTable.advertisementId,
+      ),
     )
     .where(whereClause)
     .limit(limit)
@@ -207,7 +214,7 @@ export async function listAdminAdvertisements({
 
 export async function updateAdvertisementById(
   advertisementId: string,
-  updates: Partial<schema.Advertisement>
+  updates: Partial<schema.Advertisement>,
 ) {
   const [updatedAd] = await db
     .update(schema.advertisementTable)
@@ -310,7 +317,7 @@ export async function listAdViewCount({
     .from(schema.advertisementTable)
     .leftJoin(
       schema.productTable,
-      eq(schema.advertisementTable.productId, schema.productTable.id)
+      eq(schema.advertisementTable.productId, schema.productTable.id),
     )
     .where(whereClause);
 
@@ -321,17 +328,17 @@ export async function listAdViewCount({
     .select({
       advertisement: schema.advertisementTable,
       count: sql<number>`coalesce(${viewCountsSubquery.count}, 0)`.mapWith(
-        Number
+        Number,
       ),
     })
     .from(schema.advertisementTable)
     .leftJoin(
       viewCountsSubquery,
-      eq(schema.advertisementTable.id, viewCountsSubquery.advertisementId)
+      eq(schema.advertisementTable.id, viewCountsSubquery.advertisementId),
     )
     .leftJoin(
       schema.productTable,
-      eq(schema.advertisementTable.productId, schema.productTable.id)
+      eq(schema.advertisementTable.productId, schema.productTable.id),
     )
     .where(whereClause)
     .limit(limit)
@@ -380,7 +387,7 @@ export async function depositAdBalance({
         status: sql`case when ${schema.advertisementStatsTable.status} = 'depleted' and ${schema.advertisementStatsTable.balance} + ${amount} >= 100 then 'active' else ${schema.advertisementStatsTable.status} end`,
       })
       .where(
-        eq(schema.advertisementStatsTable.advertisementId, advertisementId)
+        eq(schema.advertisementStatsTable.advertisementId, advertisementId),
       )
       .returning();
 
@@ -397,7 +404,7 @@ export async function depositAdBalance({
     });
 
     console.log(
-      `Increased balance for ad ${advertisementId} by ${amount}. New balance: ${updatedStats.balance}`
+      `Increased balance for ad ${advertisementId} by ${amount}. New balance: ${updatedStats.balance}`,
     );
     return updatedStats;
   });
@@ -416,7 +423,7 @@ export async function spendAdBalance({
       .select({ status: schema.advertisementStatsTable.status })
       .from(schema.advertisementStatsTable)
       .where(
-        eq(schema.advertisementStatsTable.advertisementId, advertisementId)
+        eq(schema.advertisementStatsTable.advertisementId, advertisementId),
       );
 
     if (!currentStats) {
@@ -429,7 +436,7 @@ export async function spendAdBalance({
     ) {
       throw new CustomError(
         `Cannot spend balance for ad with status: ${currentStats.status}`,
-        400
+        400,
       );
     }
 
@@ -442,7 +449,7 @@ export async function spendAdBalance({
         status: sql`case when ${schema.advertisementStatsTable.balance} - ${amount} < 100 then 'depleted' else ${schema.advertisementStatsTable.status} end`,
       })
       .where(
-        eq(schema.advertisementStatsTable.advertisementId, advertisementId)
+        eq(schema.advertisementStatsTable.advertisementId, advertisementId),
       )
       .returning();
 
@@ -459,7 +466,7 @@ export async function spendAdBalance({
  */
 export async function setAdStatus(
   advertisementId: string,
-  status: schema.AdvertisementStats["status"]
+  status: schema.AdvertisementStats["status"],
 ) {
   if (status === "active") {
     // Check balance before attempting to set to active
@@ -467,14 +474,14 @@ export async function setAdStatus(
       .select({ balance: schema.advertisementStatsTable.balance })
       .from(schema.advertisementStatsTable)
       .where(
-        eq(schema.advertisementStatsTable.advertisementId, advertisementId)
+        eq(schema.advertisementStatsTable.advertisementId, advertisementId),
       );
 
     if (!stats) throw new CustomError("Advertisement not found.", 404);
     if (stats.balance < 100) {
       throw new CustomError(
         "Cannot activate ad with balance less than 100.",
-        400
+        400,
       );
     }
   }

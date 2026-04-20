@@ -41,6 +41,7 @@ class TreasureBoxService {
         };
       }
     } catch (error) {
+      // console.error(error);
       return handleServiceError(error);
     }
   }

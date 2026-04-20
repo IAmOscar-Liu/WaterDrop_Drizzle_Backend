@@ -285,6 +285,7 @@ export const userDailyStatTable = pgTable("user_daily_stats", {
     .references(() => userTable.id)
     .unique(),
   totalViews: integer("total_views").default(0).notNull(),
+  viewedAds: text("viewed_ads").array().default([]).notNull(),
   treasureBoxesEarned: integer("treasure_boxes_earned").default(0).notNull(),
   canWatchMore: boolean("can_watch_more").default(true).notNull(),
   remainingViews: integer("remaining_views").default(20).notNull(),

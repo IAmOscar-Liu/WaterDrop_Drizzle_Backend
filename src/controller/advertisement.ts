@@ -4,18 +4,19 @@ import { sendJsonResponse } from "../lib/general";
 import { RequestWithId } from "../type/request";
 
 class AdvertisementController {
-  async listAdvertisements(req: Request, res: Response): Promise<any> {
+  async listAdvertisements(req: RequestWithId, res: Response): Promise<any> {
     const { page, limit } = req.query;
     const result = await advertisementService.listAdvertisements({
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
+      userId: req.userId,
     });
     sendJsonResponse(res, result);
   }
 
   async listAdminAdvertisements(
     req: RequestWithId,
-    res: Response
+    res: Response,
   ): Promise<any> {
     const { page, limit } = req.query;
     const result = await advertisementService.listAdminAdvertisements({
@@ -34,9 +35,8 @@ class AdvertisementController {
 
   async createAdvertisement(req: Request, res: Response): Promise<any> {
     const advertisementData = req.body;
-    const result = await advertisementService.createAdvertisement(
-      advertisementData
-    );
+    const result =
+      await advertisementService.createAdvertisement(advertisementData);
     sendJsonResponse(res, result);
   }
 
@@ -45,7 +45,7 @@ class AdvertisementController {
     const advertisementData = req.body;
     const result = await advertisementService.updateAdvertisement(
       id,
-      advertisementData
+      advertisementData,
     );
     sendJsonResponse(res, result);
   }

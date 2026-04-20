@@ -12,7 +12,7 @@ import { spendAdBalance } from "./advertisement";
  */
 export async function processVideoCompletion(
   userId: string,
-  advertisementId?: string
+  advertisementId?: string,
 ) {
   return db.transaction(async (tx) => {
     // Step 1: Get or create the user's daily stats for today.
@@ -32,7 +32,7 @@ export async function processVideoCompletion(
     if (!dailyStat.canWatchMore) {
       throw new CustomError(
         `User ${userId} cannot watch more videos today.`,
-        403
+        403,
       );
     }
 
@@ -44,6 +44,9 @@ export async function processVideoCompletion(
         totalViews: sql`${schema.userDailyStatTable.totalViews} + 1`,
         remainingViews: sql`${schema.userDailyStatTable.remainingViews} - 1`,
         nextTreasureBoxIn: sql`${schema.userDailyStatTable.nextTreasureBoxIn} - 1`,
+        viewedAds: advertisementId
+          ? sql`array_append(coalesce(${schema.userDailyStatTable.viewedAds}, '{}'::text[]), ${advertisementId}::text)`
+          : dailyStat.viewedAds,
       })
       .where(eq(schema.userDailyStatTable.userId, userId))
       .returning();
@@ -72,7 +75,7 @@ export async function processVideoCompletion(
     ]);
 
     console.log(
-      `User ${userId} watched a video. Remaining views: ${updatedStat.remainingViews}, Next box in: ${updatedStat.nextTreasureBoxIn}`
+      `User ${userId} watched a video. Remaining views: ${updatedStat.remainingViews}, Next box in: ${updatedStat.nextTreasureBoxIn}`,
     );
     // Step 4: Check if a treasure box should be awarded
     let isAwarded = false;
@@ -86,7 +89,7 @@ export async function processVideoCompletion(
       // const coinsAwarded = getRandomInteger(5, 10);
       const coinsAwarded = Math.min(
         165,
-        (updatedStat.groupAdViewsCountYesterday ?? 0) * 0.75
+        (updatedStat.groupAdViewsCountYesterday ?? 0) * 0.75,
       );
 
       // Insert new treasure box
@@ -137,14 +140,14 @@ export async function openTreasureBox(userId: string, treasureBoxId: string) {
         and(
           eq(schema.treasureBoxTable.id, treasureBoxId),
           eq(schema.treasureBoxTable.userId, userId),
-          eq(schema.treasureBoxTable.isActive, true)
-        )
+          eq(schema.treasureBoxTable.isActive, true),
+        ),
       );
 
     if (!treasureBox) {
       throw new CustomError(
         "Treasure box not found or you don't have permission to open it.",
-        404
+        404,
       );
     }
 
@@ -172,7 +175,7 @@ export async function openTreasureBox(userId: string, treasureBoxId: string) {
     }
 
     console.log(
-      `User "${updatedUser.name}" claimed ${treasureBox.coinsAwarded} coins! New balance: ${updatedUser.coins}.`
+      `User "${updatedUser.name}" claimed ${treasureBox.coinsAwarded} coins! New balance: ${updatedUser.coins}.`,
     );
 
     // Step 3: Mark the treasure box as opened.
@@ -218,13 +221,13 @@ export async function getTreasureBoxesByUserId(userId: string) {
   const treasureBoxes = await db.query.treasureBoxTable.findMany({
     where: and(
       eq(schema.treasureBoxTable.userId, userId),
-      eq(schema.treasureBoxTable.isActive, true)
+      eq(schema.treasureBoxTable.isActive, true),
     ),
     orderBy: (treasureBoxes, { desc }) => [desc(treasureBoxes.earnedAt)],
   });
 
   console.log(
-    `Treasure boxes for user ${userId}: ${treasureBoxes.length} boxes`
+    `Treasure boxes for user ${userId}: ${treasureBoxes.length} boxes`,
   );
   return treasureBoxes;
 }
@@ -236,6 +239,7 @@ export async function resetDailyStats(userId: string) {
       .set({
         totalViews: 0,
         remainingViews: 20,
+        viewedAds: [],
         nextTreasureBoxIn: 2,
         treasureBoxesEarned: 0,
         canWatchMore: true,
@@ -249,14 +253,14 @@ export async function resetDailyStats(userId: string) {
       .where(
         and(
           eq(schema.treasureBoxTable.userId, userId),
-          not(eq(schema.treasureBoxTable.isActive, false))
-        )
+          not(eq(schema.treasureBoxTable.isActive, false)),
+        ),
       );
 
     if (!updatedStat) {
       throw new CustomError(
         `User stats for user id "${userId}" not found.`,
-        404
+        404,
       );
     }
     console.log(`Daily stats reset for user ${userId}`);
