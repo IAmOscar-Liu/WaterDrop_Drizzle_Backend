@@ -7,10 +7,15 @@
           "22ZP3J42G7.com.waterdropapp.adecommerce.stg"
         ],
         "paths": [
+          "NOT /",
           "NOT /deeplink",
           "*"
         ],
         "components": [
+          {
+            "/": "/",
+            "exclude": true
+          },
           {
             "/": "/deeplink",
             "exclude": true

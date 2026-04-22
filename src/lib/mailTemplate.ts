@@ -27,7 +27,7 @@ export function generateOrderCompletedEmailHtml({
       : process.env.HOST;
 
   const deepLink = `${getAppScheme()}:///order/${orderId}`;
-  const orderLink = `${HOST}/deeplink?link=${encodeURIComponent(deepLink)}`;
+  const orderLink = `${HOST}/?link=${encodeURIComponent(deepLink)}`;
 
   return `
     <div style="margin:0;padding:32px 16px;background-color:#f4f7fb;font-family:Arial,'Noto Sans TC',sans-serif;color:#1f2937;">
@@ -49,8 +49,8 @@ export function generateOrderCompletedEmailHtml({
             <div style="font-size:24px;font-weight:700;color:#111827;letter-spacing:0.5px;">${merchantTradeNo}</div>
           </div>
           <div style="margin-bottom:28px;">
-            <p>${orderLink}</p>
-            <a
+          <p>${orderLink}</p>  
+          <a
               href="${orderLink}"
               style="display:inline-block;padding:14px 24px;border-radius:999px;background-color:#2563eb;color:#ffffff;font-size:15px;font-weight:700;text-decoration:none;"
             >
