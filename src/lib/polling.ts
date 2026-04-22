@@ -1,10 +1,12 @@
+import { and, eq, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
+import * as schema from "../db/schema";
 import { Delivery } from "../db/schema";
 import { getDeliveryById, updateDelivery } from "../repository/delivery";
 import { createNotification } from "../repository/notification";
 import { getFcmTokensInUserIds } from "../repository/user";
-import { sendMulticastPushNotification } from "./sendNotification";
 import ecpayService from "../services/ecpay";
 import db from "./initDB";
+import { sendMulticastPushNotification } from "./sendNotification";
 
 export function isCVSReadyForPickup(
   logisticsType: Delivery["LogisticsType"],
@@ -212,23 +214,32 @@ export async function pollEcPayLogisticsTradeInfo() {
   const thirtyMinutesAgo = new Date(now.getTime() - 30 * 60 * 1000);
 
   const deliveries = await db.query.deliveryTable.findMany({
-    where: (t, { and, or, eq, isNotNull, isNull, lt, inArray }) =>
-      and(
-        // eq(t.id, "d5f1228b-e5f8-4dd6-9a68-cc5a906e5b68"),
-        isNotNull(t.merchantTradeNo),
-        isNotNull(t.AllPayLogisticsID),
-        eq(t.LogisticsType, "CVS"),
-        or(
-          and(
-            inArray(t.status, ["pending", "returned", "exception"]),
-            or(isNull(t.lastPolledAt), lt(t.lastPolledAt, twoHoursAgo)),
+    where: and(
+      // eq(t.id, "d5f1228b-e5f8-4dd6-9a68-cc5a906e5b68"),
+      isNotNull(schema.deliveryTable.merchantTradeNo),
+      isNotNull(schema.deliveryTable.AllPayLogisticsID),
+      eq(schema.deliveryTable.LogisticsType, "CVS"),
+      or(
+        and(
+          inArray(schema.deliveryTable.status, [
+            "pending",
+            "returned",
+            "exception",
+          ]),
+          or(
+            isNull(schema.deliveryTable.lastPolledAt),
+            lt(schema.deliveryTable.lastPolledAt, twoHoursAgo),
           ),
-          and(
-            inArray(t.status, ["shipped", "ready_for_pickup"]),
-            or(isNull(t.lastPolledAt), lt(t.lastPolledAt, thirtyMinutesAgo)),
+        ),
+        and(
+          inArray(schema.deliveryTable.status, ["shipped", "ready_for_pickup"]),
+          or(
+            isNull(schema.deliveryTable.lastPolledAt),
+            lt(schema.deliveryTable.lastPolledAt, thirtyMinutesAgo),
           ),
         ),
       ),
+    ),
   });
   console.log(`Num of deliveries to poll: ${deliveries.length}`);
 

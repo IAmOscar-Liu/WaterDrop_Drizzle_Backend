@@ -1,0 +1,13 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.waterdropapp.adecommerce.development",
+      "sha256_cert_fingerprints": [
+        "44:67:45:9f:63:9e:1f:c6:21:24:01:8f:b6:ec:81:01:65:cc:9f:e0:a7:6a:b9:18:3f:31:76:49:eb:b5:dd:91",
+        "0b:4e:0c:aa:21:16:6c:17:fd:bd:8e:d5:9e:ae:e0:50:1a:de:1d:63:b1:b2:23:92:ac:b6:96:c8:52:c3:7b:1b"
+      ]
+    }
+  }
+]

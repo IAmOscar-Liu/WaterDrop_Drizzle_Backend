@@ -1,0 +1,25 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appIDs": [
+          "22ZP3J42G7.com.waterdropapp.adecommerce.stg"
+        ],
+        "paths": [
+          "*"
+        ],
+        "components": [
+          {
+            "/": "/*"
+          }
+        ]
+      }
+    ]
+  },
+  "webcredentials": {
+    "apps": [
+      "22ZP3J42G7.com.waterdropapp.adecommerce.stg"
+    ]
+  }
+}

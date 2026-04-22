@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "shipping_fees_account_id_uk" ON "shipping_fees" USING btree ("account_id");

@@ -1,5 +1,6 @@
 import * as schema from "../db/schema";
 import { CustomError, handleServiceError } from "../lib/error";
+import { sendEmail } from "../lib/sendGrid";
 import { sendMulticastPushNotification } from "../lib/sendNotification";
 import { createNotification } from "../repository/notification";
 import {
@@ -12,7 +13,11 @@ import {
   ListAdminOrdersParams,
   updateOrderStatus,
 } from "../repository/order";
-import { getFcmTokensInUserIds } from "../repository/user";
+import {
+  getFcmTokensInUserIds,
+  getSimpleUserById,
+  getUserById,
+} from "../repository/user";
 import { ServiceResponse } from "../type/general";
 
 class OrderService {
@@ -147,9 +152,10 @@ class OrderService {
     orderId: string;
   }): Promise<ServiceResponse<Awaited<ReturnType<typeof createNotification>>>> {
     try {
-      const [order, fcmTokens] = await Promise.all([
+      const [order, fcmTokens, simpleUser] = await Promise.all([
         getOrderById(orderId),
         getFcmTokensInUserIds([userId]),
+        getSimpleUserById(userId),
       ]);
       if (!order) throw new CustomError("Order not found", 404);
 
@@ -164,6 +170,17 @@ class OrderService {
           orderId,
         },
       });
+
+      if (simpleUser) {
+        sendEmail({
+          to: simpleUser.email,
+          subject: `[水滴]訂單建立通知`,
+          html: `
+          <p>您好，${simpleUser.name}：</p>
+          <p>您的訂單已成功建立(訂單編號: ${order.merchantTradeNo})，如有任何問題，請聯繫客服人員。</p>
+        `,
+        });
+      }
 
       const notification = await createNotification({
         userId,

@@ -620,23 +620,29 @@ export const merchantTradeTable = pgTable("merchant_trades", {
   shippingCostDeduction: doublePrecision("shipping_cost_deduction").default(0),
 });
 
-export const shippingFeeTable = pgTable("shipping_fees", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  accountId: uuid("account_id")
-    .notNull()
-    .references(() => accountTable.id, { onDelete: "cascade" }),
-  homeDelivery: doublePrecision("home_delivery").default(60),
-  homeDeliveryRefrig: doublePrecision("home_delivery_refrigeration").default(
-    160,
-  ),
-  OKMART_LOW_TMP_C2C: doublePrecision("okmart_low_temperature_c2c").default(
-    160,
-  ),
-  FAMIC2C: doublePrecision("fami_c2c").default(69),
-  UNIMARTC2C: doublePrecision("unimart_c2c").default(69),
-  HILIFEC2C: doublePrecision("hilife_c2c").default(58),
-  OKMARTC2C: doublePrecision("okmart_c2c").default(58),
-});
+export const shippingFeeTable = pgTable(
+  "shipping_fees",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => accountTable.id, { onDelete: "cascade" }),
+    homeDelivery: doublePrecision("home_delivery").default(60),
+    homeDeliveryRefrig: doublePrecision("home_delivery_refrigeration").default(
+      160,
+    ),
+    OKMART_LOW_TMP_C2C: doublePrecision("okmart_low_temperature_c2c").default(
+      160,
+    ),
+    FAMIC2C: doublePrecision("fami_c2c").default(69),
+    UNIMARTC2C: doublePrecision("unimart_c2c").default(69),
+    HILIFEC2C: doublePrecision("hilife_c2c").default(58),
+    OKMARTC2C: doublePrecision("okmart_c2c").default(58),
+  },
+  (t) => ({
+    accountIdUnique: uniqueIndex("shipping_fees_account_id_uk").on(t.accountId),
+  }),
+);
 
 export const deviceTokenTable = pgTable("device_tokens", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -725,7 +731,7 @@ export const accountRelations = relations(accountTable, ({ one, many }) => ({
     fields: [accountTable.id],
     references: [accountWalletTable.accountId],
   }),
-  shippingFees: many(shippingFeeTable),
+  shippingFee: one(shippingFeeTable),
 }));
 
 export const usersRelations = relations(userTable, ({ one, many }) => ({

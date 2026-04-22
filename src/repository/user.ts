@@ -20,7 +20,7 @@ import { getMemberInfo } from "../lib/getMemberInfo";
 import db from "../lib/initDB";
 
 export async function createUser(
-  user: Omit<typeof schema.userTable.$inferInsert, "referralCode">
+  user: Omit<typeof schema.userTable.$inferInsert, "referralCode">,
 ) {
   let referralCode: string;
   let isCodeUnique = false;
@@ -74,7 +74,7 @@ export async function getUsers() {
     // .leftJoin(groupCounts, eq(schema.userTable.groupId, groupCounts.groupId));
     .leftJoin(
       schema.groupTable,
-      eq(schema.userTable.id, schema.groupTable.ownerId)
+      eq(schema.userTable.id, schema.groupTable.ownerId),
     )
     .leftJoin(groupCounts, eq(schema.groupTable.id, groupCounts.groupId));
 
@@ -114,7 +114,7 @@ export async function getFcmTokensInUserIds(userIds: string[]) {
 
 export async function getUserMonthlyCoinStatsInUserIds(
   userIds: string[],
-  month: string
+  month: string,
 ) {
   if (userIds.length === 0) {
     return [];
@@ -126,8 +126,8 @@ export async function getUserMonthlyCoinStatsInUserIds(
     .where(
       and(
         inArray(schema.userMonthlyCoinStatTable.userId, userIds),
-        eq(schema.userMonthlyCoinStatTable.month, month)
-      )
+        eq(schema.userMonthlyCoinStatTable.month, month),
+      ),
     );
 }
 
@@ -188,8 +188,8 @@ export async function setMonthlyCoinExpire(userIds: string[], month: string) {
       and(
         inArray(schema.userMonthlyCoinStatTable.userId, userIds),
         lt(schema.userMonthlyCoinStatTable.month, month),
-        eq(schema.userMonthlyCoinStatTable.expired, false)
-      )
+        eq(schema.userMonthlyCoinStatTable.expired, false),
+      ),
     )
     .returning();
 
@@ -214,15 +214,15 @@ export async function setMonthlyCoinExpire(userIds: string[], month: string) {
           .set({
             coins: sql`${schema.userTable.coins} - ${userUnusedCoins[userId]}`,
           })
-          .where(eq(schema.userTable.id, userId))
-      )
+          .where(eq(schema.userTable.id, userId)),
+      ),
     );
   }
 }
 
 export async function updateUser(
   userId: string,
-  data: Partial<Pick<schema.User, "name" | "phone" | "address" | "email">>
+  data: Partial<Pick<schema.User, "name" | "phone" | "address" | "email">>,
 ) {
   const [updatedUser] = await db
     .update(schema.userTable)
@@ -257,7 +257,7 @@ export async function validateReferralCode(referralCode: string) {
 
 export async function joinGroupByReferralCode(
   referralCode: string,
-  userId: string
+  userId: string,
 ) {
   const [referrer] = await db
     .select()
@@ -282,7 +282,7 @@ export async function joinGroupByReferralCode(
   // 3. If the group doesn't exist, create it
   if (!group) {
     console.log(
-      `Referrer ${referrer.name} does not have a group. Creating one...`
+      `Referrer ${referrer.name} does not have a group. Creating one...`,
     );
     [group] = await db
       .insert(schema.groupTable)
@@ -303,10 +303,25 @@ export async function joinGroupByReferralCode(
   }
 
   console.log(
-    `User "${updatedUser.name}" has joined group ${group.id}, owned by "${referrer.name}".`
+    `User "${updatedUser.name}" has joined group ${group.id}, owned by "${referrer.name}".`,
   );
 
   return updatedUser;
+}
+
+export async function getSimpleUserById(id: string) {
+  const [user] = await db
+    .select({
+      id: schema.userTable.id,
+      name: schema.userTable.name,
+      email: schema.userTable.email,
+    })
+    .from(schema.userTable)
+    .where(eq(schema.userTable.id, id));
+
+  if (!user) return null;
+  console.log("Simple user by id:", user.id);
+  return user;
 }
 
 export async function getUserById(id: string) {
@@ -329,7 +344,7 @@ export async function getUserById(id: string) {
     .from(schema.userTable)
     .leftJoin(
       schema.groupTable,
-      eq(schema.userTable.id, schema.groupTable.ownerId)
+      eq(schema.userTable.id, schema.groupTable.ownerId),
     )
     .leftJoin(groupCounts, eq(schema.groupTable.id, groupCounts.groupId))
     .where(eq(schema.userTable.id, id));
@@ -345,7 +360,7 @@ export async function getUserById(id: string) {
 
 export async function getUserByOauthProviderAndOauthId(
   oauthProvider: schema.User["oauthProvider"],
-  oauthId: string
+  oauthId: string,
 ) {
   const groupCounts = db
     .select({
@@ -366,14 +381,14 @@ export async function getUserByOauthProviderAndOauthId(
     .from(schema.userTable)
     .leftJoin(
       schema.groupTable,
-      eq(schema.userTable.id, schema.groupTable.ownerId)
+      eq(schema.userTable.id, schema.groupTable.ownerId),
     )
     .leftJoin(groupCounts, eq(schema.groupTable.id, groupCounts.groupId))
     .where(
       and(
         eq(schema.userTable.oauthProvider, oauthProvider),
-        eq(schema.userTable.oauthId, oauthId)
-      )
+        eq(schema.userTable.oauthId, oauthId),
+      ),
     );
 
   if (!user) return null;
@@ -386,7 +401,7 @@ export async function getUserByOauthProviderAndOauthId(
 }
 
 export async function getDailyStatByUserId(
-  userId: string
+  userId: string,
 ): Promise<schema.UserDailyStat> {
   // Find the user and their daily stat in one query
   const userWithStat = await db.query.userTable.findFirst({
@@ -447,7 +462,7 @@ export async function updateGroupAdViewsCountYesterday(userId: string) {
 
     const groupAdViewsCountYesterday = results.reduce(
       (total, result) => total + result.totalViews,
-      0
+      0,
     );
 
     const [updatedStat] = await tx
@@ -474,8 +489,8 @@ async function getCoinsExpireSoon(userId: string, timezone?: string | null) {
       and(
         eq(schema.userMonthlyCoinStatTable.userId, userId),
         eq(schema.userMonthlyCoinStatTable.month, yearMonthString),
-        eq(schema.userMonthlyCoinStatTable.expired, false)
-      )
+        eq(schema.userMonthlyCoinStatTable.expired, false),
+      ),
     );
 
   return userMonthlyCoinStat

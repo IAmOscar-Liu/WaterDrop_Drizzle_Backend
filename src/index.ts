@@ -5,6 +5,7 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import express from "express";
 import morgan from "morgan";
+import path from "path";
 import swaggerUi from "swagger-ui-express";
 import {
   dailyNotificationTask,
@@ -67,6 +68,39 @@ app.get("/api/test", (_, res) => {
     success: true,
     data: "OK",
   });
+});
+
+// Handle deep link files for iOS
+app.get("/.well-known/apple-app-site-association", (_, res) => {
+  res
+    .type("application/json")
+    .sendFile(
+      path.resolve(
+        process.cwd(),
+        `src/assets/deepLinks/${process.env.NODE_ENV === "local" ? "development" : process.env.NODE_ENV}/apple-app-site-association`,
+      ),
+    );
+});
+// Handle deep link files for Android
+app.get("/.well-known/assetlinks.json", (_, res) => {
+  res.sendFile(
+    path.resolve(
+      process.cwd(),
+      `src/assets/deepLinks/${process.env.NODE_ENV === "local" ? "development" : process.env.NODE_ENV}/assetlinks.json`,
+    ),
+  );
+});
+
+/**
+ * Use it like this
+ *  https://api.waterdrop.com/deeplink?ios=waterdropping://order/123&android=waterdrop://order/123
+ * Or, if both platforms share the same app link:
+ *  https://api.waterdrop.com/deeplink?link=waterdrop://order/123
+ * Optional fallback:
+ *  https://api.waterdrop.com/deeplink?ios=waterdrop://order/123&android=waterdrop://order/123&fallback=https://waterdrop.com/download
+ */
+app.get("/deeplink", (_, res) => {
+  res.sendFile(path.resolve(process.cwd(), "src/assets/deepLinks/index.html"));
 });
 
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
