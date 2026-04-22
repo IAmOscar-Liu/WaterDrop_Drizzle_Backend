@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -27,12 +27,13 @@
         align-items: center;
         justify-content: center;
         padding: 24px;
-        font-family:
-          "Avenir Next",
-          "Segoe UI",
-          sans-serif;
+        font-family: "Avenir Next", "Segoe UI", sans-serif;
         background:
-          radial-gradient(circle at top, #ffffff 0%, rgba(255, 255, 255, 0) 45%),
+          radial-gradient(
+            circle at top,
+            #ffffff 0%,
+            rgba(255, 255, 255, 0) 45%
+          ),
           linear-gradient(180deg, #edf7fd 0%, var(--bg) 100%);
         color: var(--text);
       }
@@ -178,9 +179,9 @@
         openLink.href = targetLink;
         copyHint.href = fallbackLink || targetLink;
 
-        setTimeout(function () {
-          window.location.href = targetLink;
-        }, 120);
+        // setTimeout(function () {
+        //   window.location.href = targetLink;
+        // }, 120);
 
         setTimeout(function () {
           title.textContent = "If nothing happened, open the app manually";

@@ -28,6 +28,7 @@ export function generateOrderCompletedEmailHtml({
 
   const deepLink = `${getAppScheme()}:///order/${orderId}`;
   const orderLink = `${HOST}/?link=${encodeURIComponent(deepLink)}`;
+  console.log(`[deeplink]: ${orderLink}`);
 
   return `
     <div style="margin:0;padding:32px 16px;background-color:#f4f7fb;font-family:Arial,'Noto Sans TC',sans-serif;color:#1f2937;">
