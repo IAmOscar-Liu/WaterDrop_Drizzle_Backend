@@ -179,9 +179,9 @@
         openLink.href = targetLink;
         copyHint.href = fallbackLink || targetLink;
 
-        // setTimeout(function () {
-        //   window.location.href = targetLink;
-        // }, 120);
+        setTimeout(function () {
+          window.location.href = targetLink;
+        }, 120);
 
         setTimeout(function () {
           title.textContent = "If nothing happened, open the app manually";
