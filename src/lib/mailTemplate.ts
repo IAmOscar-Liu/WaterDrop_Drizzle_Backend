@@ -50,7 +50,6 @@ export function generateOrderCompletedEmailHtml({
             <div style="font-size:24px;font-weight:700;color:#111827;letter-spacing:0.5px;">${merchantTradeNo}</div>
           </div>
           <div style="margin-bottom:28px;">
-          <p>${orderLink}</p>  
           <a
               href="${orderLink}"
               style="display:inline-block;padding:14px 24px;border-radius:999px;background-color:#2563eb;color:#ffffff;font-size:15px;font-weight:700;text-decoration:none;"

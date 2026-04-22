@@ -126,10 +126,17 @@ app.use("/api/file", FileRouter);
 
 app.use(errorHandler);
 
-// __dirname refers to 'my-express-app/src'
-// We use '..' to move up to the root, then into 'public'
+/**
+ * Use deep links like this
+ *  https://api.waterdropping.com/?ios=waterdrop-dev:///order/123&android=waterdrop-dev:///order/123
+ * Or, if both platforms share the same app link:
+ *  https://api.waterdropping.com/?link=waterdrop-dev:///order/123
+ * Optional fallback:
+ *  https://api.waterdropping.com/?ios=waterdrop-dev:///order/123&android=waterdrop-dev:///order/123&fallback=https://waterdrop.com/download
+ */
+const deepLinkPath = `public/${process.env.NODE_ENV === "local" ? "development" : process.env.NODE_ENV}`;
 app.use(
-  express.static(path.join(__dirname, "..", "public/development"), {
+  express.static(path.join(__dirname, "..", deepLinkPath), {
     dotfiles: "allow",
   }),
 );
@@ -139,7 +146,7 @@ app.get("/.well-known/apple-app-site-association", (req, res) => {
   res.sendFile(
     path.join(
       __dirname,
-      "public/development/.well-known/apple-app-site-association",
+      deepLinkPath + "/.well-known/apple-app-site-association",
     ),
   );
 });
