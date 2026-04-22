@@ -70,38 +70,38 @@ app.get("/api/test", (_, res) => {
   });
 });
 
-// Handle deep link files for iOS
-app.get("/.well-known/apple-app-site-association", (_, res) => {
-  res
-    .type("application/json")
-    .sendFile(
-      path.resolve(
-        process.cwd(),
-        `src/assets/deepLinks/${process.env.NODE_ENV === "local" ? "development" : process.env.NODE_ENV}/apple-app-site-association`,
-      ),
-    );
-});
-// Handle deep link files for Android
-app.get("/.well-known/assetlinks.json", (_, res) => {
-  res.sendFile(
-    path.resolve(
-      process.cwd(),
-      `src/assets/deepLinks/${process.env.NODE_ENV === "local" ? "development" : process.env.NODE_ENV}/assetlinks.json`,
-    ),
-  );
-});
+// // Handle deep link files for iOS
+// app.get("/.well-known/apple-app-site-association", (_, res) => {
+//   res
+//     .type("application/json")
+//     .sendFile(
+//       path.resolve(
+//         process.cwd(),
+//         `src/assets/deepLinks/${process.env.NODE_ENV === "local" ? "development" : process.env.NODE_ENV}/apple-app-site-association`,
+//       ),
+//     );
+// });
+// // Handle deep link files for Android
+// app.get("/.well-known/assetlinks.json", (_, res) => {
+//   res.sendFile(
+//     path.resolve(
+//       process.cwd(),
+//       `src/assets/deepLinks/${process.env.NODE_ENV === "local" ? "development" : process.env.NODE_ENV}/assetlinks.json`,
+//     ),
+//   );
+// });
 
-/**
- * Use it like this
- *  https://api.waterdropping.com/?ios=waterdrop-dev:///order/123&android=waterdrop-dev:///order/123
- * Or, if both platforms share the same app link:
- *  https://api.waterdropping.com/?link=waterdrop-dev:///order/123
- * Optional fallback:
- *  https://api.waterdropping.com/?ios=waterdrop-dev:///order/123&android=waterdrop-dev:///order/123&fallback=https://waterdrop.com/download
- */
-app.get("/", (_, res) => {
-  res.sendFile(path.resolve(process.cwd(), "src/assets/deepLinks/index.html"));
-});
+// /**
+//  * Use it like this
+//  *  https://api.waterdropping.com/?ios=waterdrop-dev:///order/123&android=waterdrop-dev:///order/123
+//  * Or, if both platforms share the same app link:
+//  *  https://api.waterdropping.com/?link=waterdrop-dev:///order/123
+//  * Optional fallback:
+//  *  https://api.waterdropping.com/?ios=waterdrop-dev:///order/123&android=waterdrop-dev:///order/123&fallback=https://waterdrop.com/download
+//  */
+// app.get("/", (_, res) => {
+//   res.sendFile(path.resolve(process.cwd(), "src/assets/deepLinks/index.html"));
+// });
 
 app.get("/deeplink", (_, res) => {
   res.sendFile(path.resolve(process.cwd(), "src/assets/deepLinks/index.html"));
@@ -125,6 +125,24 @@ app.use("/api/notification", NotificationRouter);
 app.use("/api/file", FileRouter);
 
 app.use(errorHandler);
+
+// __dirname refers to 'my-express-app/src'
+// We use '..' to move up to the root, then into 'public'
+app.use(
+  express.static(path.join(__dirname, "..", "public/development"), {
+    dotfiles: "allow",
+  }),
+);
+
+app.get("/.well-known/apple-app-site-association", (req, res) => {
+  res.set("Content-Type", "application/json");
+  res.sendFile(
+    path.join(
+      __dirname,
+      "public/development/.well-known/apple-app-site-association",
+    ),
+  );
+});
 
 // Start server
 app.listen(PORT, () => {
