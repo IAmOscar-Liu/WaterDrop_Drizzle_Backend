@@ -1,5 +1,6 @@
 import * as schema from "../db/schema";
 import { CustomError, handleServiceError } from "../lib/error";
+import { generateOrderCompletedEmailHtml } from "../lib/mailTemplate";
 import { sendEmail } from "../lib/sendGrid";
 import { sendMulticastPushNotification } from "../lib/sendNotification";
 import { createNotification } from "../repository/notification";
@@ -7,19 +8,14 @@ import {
   createOrder,
   getOrderById,
   getOrdersByMerchantTradeNo,
-  listOrders,
   listAdminOrders,
-  ListOrdersParams,
   ListAdminOrdersParams,
+  listOrders,
+  ListOrdersParams,
   updateOrderStatus,
 } from "../repository/order";
-import {
-  getFcmTokensInUserIds,
-  getSimpleUserById,
-  getUserById,
-} from "../repository/user";
+import { getFcmTokensInUserIds, getSimpleUserById } from "../repository/user";
 import { ServiceResponse } from "../type/general";
-
 class OrderService {
   async listOrders(
     params: ListOrdersParams,
@@ -175,10 +171,11 @@ class OrderService {
         sendEmail({
           to: simpleUser.email,
           subject: `[水滴]訂單建立通知`,
-          html: `
-          <p>您好，${simpleUser.name}：</p>
-          <p>您的訂單已成功建立(訂單編號: ${order.merchantTradeNo})，如有任何問題，請聯繫客服人員。</p>
-        `,
+          html: generateOrderCompletedEmailHtml({
+            userName: simpleUser.name || "",
+            merchantTradeNo: order.merchantTradeNo || "",
+            orderId: order.id,
+          }),
         });
       }
 

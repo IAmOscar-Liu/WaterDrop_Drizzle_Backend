@@ -93,11 +93,11 @@ app.get("/.well-known/assetlinks.json", (_, res) => {
 
 /**
  * Use it like this
- *  https://api.waterdrop.com/deeplink?ios=waterdropping://order/123&android=waterdrop://order/123
+ *  https://api.waterdropping.com/deeplink?ios=waterdrop-dev:///order/123&android=waterdrop-dev:///order/123
  * Or, if both platforms share the same app link:
- *  https://api.waterdrop.com/deeplink?link=waterdrop://order/123
+ *  https://api.waterdropping.com/deeplink?link=waterdrop-dev:///order/123
  * Optional fallback:
- *  https://api.waterdrop.com/deeplink?ios=waterdrop://order/123&android=waterdrop://order/123&fallback=https://waterdrop.com/download
+ *  https://api.waterdropping.com/deeplink?ios=waterdrop-dev:///order/123&android=waterdrop-dev:///order/123&fallback=https://waterdrop.com/download
  */
 app.get("/deeplink", (_, res) => {
   res.sendFile(path.resolve(process.cwd(), "src/assets/deepLinks/index.html"));

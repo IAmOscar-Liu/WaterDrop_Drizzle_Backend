@@ -7,9 +7,14 @@
           "22ZP3J42G7.com.waterdropapp.adecommerce.development"
         ],
         "paths": [
+          "NOT /deeplink",
           "*"
         ],
         "components": [
+          {
+            "/": "/deeplink",
+            "exclude": true
+          },
           {
             "/": "/*"
           }
