@@ -6,8 +6,21 @@ import { RequestWithId } from "../type/request";
 
 class AuthController {
   async deviceToken(req: RequestWithId, res: Response): Promise<any> {
-    const { fcmToken } = req.body;
-    const result = await authService.deviceToken(req.userId ?? "", fcmToken);
+    const { fcmToken, deviceId } = req.body;
+    const result = await authService.deviceToken({
+      userId: req.userId ?? "",
+      fcmToken,
+      deviceId: deviceId ? String(deviceId) : undefined,
+    });
+    sendJsonResponse(res, result);
+  }
+
+  async clearDeviceToken(req: RequestWithId, res: Response): Promise<any> {
+    const { deviceId } = req.body;
+    const result = await authService.clearDeviceToken({
+      userId: req.userId ?? "",
+      deviceId: deviceId ? String(deviceId) : undefined,
+    });
     sendJsonResponse(res, result);
   }
 

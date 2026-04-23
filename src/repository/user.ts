@@ -151,22 +151,62 @@ export async function updateUserTimezone(userId: string, timezone: string) {
 
 /**
  * Creates or updates a device token record.
- * If the fcmToken already exists, it updates the userId and lastUsedAt timestamp.
- * If it doesn't exist, it creates a new record.
+ * Follows (userId, deviceId) uniqueness: if a row exists for the pair,
+ * updates its fcmToken and lastUsedAt; otherwise inserts a new row.
  * @param userId The ID of the user.
  * @param fcmToken The FCM device token.
+ * @param deviceId Optional device identifier used with userId for upsert.
  */
-export async function upsertDeviceToken(userId: string, fcmToken: string) {
+export async function upsertDeviceToken({
+  userId,
+  fcmToken,
+  deviceId,
+}: {
+  userId: string;
+  fcmToken: string;
+  deviceId?: string;
+}) {
   const [deviceToken] = await db
     .insert(schema.deviceTokenTable)
-    .values({ userId, fcmToken })
+    .values({ userId, fcmToken, deviceId })
     .onConflictDoUpdate({
-      target: schema.deviceTokenTable.fcmToken,
-      set: { userId, lastUsedAt: new Date() },
+      target: [
+        schema.deviceTokenTable.userId,
+        schema.deviceTokenTable.deviceId,
+      ],
+      set: { fcmToken, lastUsedAt: new Date() },
     })
     .returning();
 
   return deviceToken;
+}
+
+export async function clearDeviceToken({
+  userId,
+  deviceId,
+}: {
+  userId: string;
+  deviceId?: string | null;
+}) {
+  if (deviceId == null) {
+    const deletedByUser = await db
+      .delete(schema.deviceTokenTable)
+      .where(eq(schema.deviceTokenTable.userId, userId))
+      .returning();
+    return deletedByUser;
+  }
+
+  const deletedByUserAndDevice = await db
+    .delete(schema.deviceTokenTable)
+    .where(
+      and(
+        eq(schema.deviceTokenTable.userId, userId),
+        eq(schema.deviceTokenTable.deviceId, deviceId),
+      ),
+    )
+    .returning();
+
+  return deletedByUserAndDevice;
 }
 
 export async function deleteUnusedDeviceTokens(unusedInMs: number) {

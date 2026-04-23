@@ -1,5 +1,8 @@
 import admin from "./firebase_admin";
 import { Message, MulticastMessage } from "firebase-admin/messaging";
+import db from "../lib/initDB";
+import * as schema from "../db/schema";
+import { inArray } from "drizzle-orm";
 
 /**
  * Sends a push notification to a single device.
@@ -61,11 +64,25 @@ export async function sendMulticastPushNotification(message: MulticastMessage) {
 
     if (response.failureCount > 0) {
       console.error("Failed to send to some devices:");
+      const invalidTokens: string[] = [];
       response.responses.forEach((resp, idx) => {
         if (!resp.success) {
           console.error(`  - Token ${message.tokens[idx]}: ${resp.error}`);
+
+          if (
+            resp.error?.code === "messaging/invalid-registration-token" ||
+            resp.error?.code === "messaging/registration-token-not-registered"
+          ) {
+            invalidTokens.push(message.tokens[idx]);
+          }
         }
       });
+
+      if (invalidTokens.length > 0) {
+        await db
+          .delete(schema.deviceTokenTable)
+          .where(inArray(schema.deviceTokenTable.fcmToken, invalidTokens));
+      }
     }
   } catch (e) {
     console.error("Error sending multicast push notification:", e);

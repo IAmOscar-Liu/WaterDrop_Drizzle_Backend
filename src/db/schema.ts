@@ -644,19 +644,29 @@ export const shippingFeeTable = pgTable(
   }),
 );
 
-export const deviceTokenTable = pgTable("device_tokens", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  fcmToken: text("fcm_token").notNull().unique(),
-  userId: uuid("user_id")
-    .notNull()
-    .references(() => userTable.id, { onDelete: "cascade" }),
-  lastUsedAt: timestamp("last_used_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
+export const deviceTokenTable = pgTable(
+  "device_tokens",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    fcmToken: text("fcm_token").notNull().unique(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userTable.id, { onDelete: "cascade" }),
+    deviceId: text("device_id"),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => ({
+    userDeviceUnique: uniqueIndex("device_tokens_user_device_uk").on(
+      t.userId,
+      t.deviceId,
+    ),
+  }),
+);
 
 export const userMonthlyCoinStatTable = pgTable(
   "user_monthly_coin_stats",

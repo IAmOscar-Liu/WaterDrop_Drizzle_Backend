@@ -12,6 +12,7 @@ import {
   upsertDeviceToken,
   validateReferralCode,
   updateUserTermsAcceptedAt,
+  clearDeviceToken,
 } from "../repository/user";
 import { ServiceResponse } from "../type/general";
 
@@ -21,12 +22,25 @@ type AuthLoginResponse = {
 };
 
 class AuthService {
-  async deviceToken(
-    userId: string,
-    fcmToken: string,
-  ): Promise<ServiceResponse<Awaited<ReturnType<typeof upsertDeviceToken>>>> {
+  async deviceToken(input: {
+    userId: string;
+    fcmToken: string;
+    deviceId?: string;
+  }): Promise<ServiceResponse<Awaited<ReturnType<typeof upsertDeviceToken>>>> {
     try {
-      const result = await upsertDeviceToken(userId, fcmToken);
+      const result = await upsertDeviceToken(input);
+      return { success: true, data: result };
+    } catch (error) {
+      return handleServiceError(error);
+    }
+  }
+
+  async clearDeviceToken(input: {
+    userId: string;
+    deviceId?: string | null;
+  }): Promise<ServiceResponse<Awaited<ReturnType<typeof clearDeviceToken>>>> {
+    try {
+      const result = await clearDeviceToken(input);
       return { success: true, data: result };
     } catch (error) {
       return handleServiceError(error);
