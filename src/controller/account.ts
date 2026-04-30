@@ -57,7 +57,7 @@ class AccountController {
         ...result,
         data: {
           user: result.data,
-          token: generateToken(result.data, "30m"),
+          token: generateToken(result.data, "30d"),
         },
       });
     } else {
@@ -84,7 +84,7 @@ class AccountController {
         ...result,
         data: {
           user: result.data,
-          token: generateToken(result.data, "30m"),
+          token: generateToken(result.data, "30d"),
         },
       });
     } else {
@@ -137,7 +137,7 @@ class AccountController {
     }
 
     // The account is valid, issue a new refresh token and a new access token.
-    const newAccessToken = generateToken(accountCheck.data, "30m");
+    const newAccessToken = generateToken(accountCheck.data, "30d");
     sendRefreshToken(res, accountCheck.data);
     sendJsonResponse(res, {
       success: true,
