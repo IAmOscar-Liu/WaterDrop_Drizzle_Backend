@@ -20,14 +20,27 @@ export function generateOrderCompletedEmailHtml({
         return "waterdrop-dev";
     }
   };
+  const getHost = () => {
+    switch (process.env.NODE_ENV!) {
+      case "local":
+      case "development":
+        return "https://deeplink-dev.waterdropping.com";
+      case "stg":
+        return "https://deeplink-stg.waterdropping.com";
+      case "production":
+        return "https://deeplink.waterdropping.com";
+      default:
+        return "https://deeplink-dev.waterdropping.com";
+    }
+  };
 
-  const HOST =
-    process.env.NODE_ENV === "local"
-      ? "https://api.waterdropping.com"
-      : process.env.HOST;
+  // const HOST =
+  //   process.env.NODE_ENV === "local"
+  //     ? "https://api.waterdropping.com"
+  //     : process.env.HOST;
 
   const deepLink = `${getAppScheme()}:///order/${orderId}`;
-  const orderLink = `${HOST}/?link=${encodeURIComponent(deepLink)}`;
+  const orderLink = `${getHost()}/?link=${encodeURIComponent(deepLink)}`;
   console.log(`[deeplink]: ${orderLink}`);
 
   return `
