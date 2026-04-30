@@ -9,6 +9,7 @@
         "paths": [
           "NOT /",
           "NOT /deeplink",
+          "NOT /api/file/*",
           "*"
         ],
         "components": [
@@ -18,6 +19,10 @@
           },
           {
             "/": "/deeplink",
+            "exclude": true
+          },
+          {
+            "/": "/api/file/*",
             "exclude": true
           },
           {
