@@ -18,7 +18,7 @@ const DEFAULT_EXPIRATION = "30d"; // Default token validity: 1 hour
  */
 export function generateToken(
   payload: any,
-  expiresIn: SignOptions["expiresIn"] = DEFAULT_EXPIRATION
+  expiresIn: SignOptions["expiresIn"] = DEFAULT_EXPIRATION,
 ) {
   // Basic validation to ensure the payload is a suitable object
   if (
@@ -36,7 +36,7 @@ export function generateToken(
         data: payload,
       },
       JWT_SECRET,
-      { expiresIn }
+      { expiresIn },
     );
     return token;
   } catch (error) {
@@ -76,7 +76,7 @@ export function sendRefreshToken(res: Response, payload: any) {
   // Determine domain based on environment
   // If production, share cookie across subdomains. If dev, leave undefined (defaults to current host)
   const domain =
-    process.env.NODE_ENV === "production" ? ".waterdropping.com" : undefined;
+    process.env.NODE_ENV === "production" ? "waterdropping.com" : undefined;
 
   res.cookie(process.env.REFRESH_TOKEN_NAME!, refreshToken, {
     httpOnly: true,

@@ -5,7 +5,6 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import express from "express";
 import morgan from "morgan";
-import path from "path";
 import swaggerUi from "swagger-ui-express";
 import {
   dailyNotificationTask,
@@ -58,7 +57,11 @@ app.use(express.urlencoded({ limit: "50mb", extended: true })); // Middleware fo
 
 app.use(
   cors({
-    origin: "https://waterdropping.com",
+    origin: [
+      "https://waterdropping.com",
+      "https://dev.waterdropping.com",
+      "https://stg.waterdropping.com",
+    ],
     credentials: true,
   }),
 );
@@ -88,31 +91,6 @@ app.use("/api/notification", NotificationRouter);
 app.use("/api/file", FileRouter);
 
 app.use(errorHandler);
-
-/**
- * Use deep links like this
- *  https://api.waterdropping.com/?ios=waterdrop-dev:///order/123&android=waterdrop-dev:///order/123
- * Or, if both platforms share the same app link:
- *  https://api.waterdropping.com/?link=waterdrop-dev:///order/123
- * Optional fallback:
- *  https://api.waterdropping.com/?ios=waterdrop-dev:///order/123&android=waterdrop-dev:///order/123&fallback=https://waterdrop.com/download
- */
-const deepLinkPath = `public/${process.env.NODE_ENV === "local" ? "development" : process.env.NODE_ENV}`;
-app.use(
-  express.static(path.join(__dirname, "..", deepLinkPath), {
-    dotfiles: "allow",
-  }),
-);
-
-app.get("/.well-known/apple-app-site-association", (req, res) => {
-  res.set("Content-Type", "application/json");
-  res.sendFile(
-    path.join(
-      __dirname,
-      deepLinkPath + "/.well-known/apple-app-site-association",
-    ),
-  );
-});
 
 // Start server
 app.listen(PORT, () => {
