@@ -179,8 +179,7 @@ export async function sendDeliveryNotification({
 export async function pollEcPayLogisticsTradeInfo() {
   if (
     process.env.NODE_ENV === "local" ||
-    process.env.NODE_ENV === "development" ||
-    process.env.NODE_ENV === "stg"
+    process.env.NODE_ENV === "development"
   )
     return;
 
