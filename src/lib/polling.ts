@@ -212,8 +212,12 @@ export async function pollEcPayLogisticsTradeInfo() {
 
   // "pending" | "shipped" | "delivered" | "returned" | "exception"
   const now = new Date();
-  const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
-  const thirtyMinutesAgo = new Date(now.getTime() - 30 * 60 * 1000);
+  const twoHoursAgo = new Date(
+    now.getTime() - 2 * 60 * 60 * 1000 + 5 * 60 * 1000,
+  ); // 加 5 分鐘 buffer，避免剛好在 2 小時的邊界被漏掉
+  const thirtyMinutesAgo = new Date(
+    now.getTime() - 30 * 60 * 1000 + 5 * 60 * 1000,
+  ); // 加 5 分鐘 buffer，同上
 
   const deliveries = await db.query.deliveryTable.findMany({
     where: and(
@@ -223,18 +227,18 @@ export async function pollEcPayLogisticsTradeInfo() {
       eq(schema.deliveryTable.LogisticsType, "CVS"),
       or(
         and(
-          inArray(schema.deliveryTable.status, [
-            "pending",
-            "returned",
-            "exception",
-          ]),
+          inArray(schema.deliveryTable.status, ["returned", "exception"]),
           or(
             isNull(schema.deliveryTable.lastPolledAt),
             lt(schema.deliveryTable.lastPolledAt, twoHoursAgo),
           ),
         ),
         and(
-          inArray(schema.deliveryTable.status, ["shipped", "ready_for_pickup"]),
+          inArray(schema.deliveryTable.status, [
+            "pending",
+            "shipped",
+            "ready_for_pickup",
+          ]),
           or(
             isNull(schema.deliveryTable.lastPolledAt),
             lt(schema.deliveryTable.lastPolledAt, thirtyMinutesAgo),
