@@ -572,10 +572,12 @@ class EcPayController {
       TimeStamp: Math.floor(Date.now() / 1000),
     };
 
-    if (AllPayLogisticsID) {
+    if (AllPayLogisticsID && MerchantTradeNo) {
+      // 如果同時提供 AllPayLogisticsID 和 MerchantTradeNo，則以 AllPayLogisticsID 為主(因爲綠界的 API 規定，如果提供 AllPayLogisticsID 就不需要提供 MerchantTradeNo)
       parameters["AllPayLogisticsID"] = String(AllPayLogisticsID);
-    }
-    if (MerchantTradeNo) {
+    } else if (AllPayLogisticsID) {
+      parameters["AllPayLogisticsID"] = String(AllPayLogisticsID);
+    } else if (MerchantTradeNo) {
       parameters["MerchantTradeNo"] = String(MerchantTradeNo);
     }
 

@@ -190,6 +190,9 @@ export async function pollEcPayLogisticsTradeInfo() {
         delivery.AllPayLogisticsID,
         delivery.merchantTradeNo,
       );
+
+      // console.log("debug polling logisticsTradeInfo:", logisticsTradeInfo);
+
       if (
         !logisticsTradeInfo ||
         !logisticsTradeInfo.LogisticsStatus ||
