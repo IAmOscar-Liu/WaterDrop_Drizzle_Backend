@@ -6,7 +6,11 @@ import {
   ECPAY_QUERY_LOGISTICS_TRADE_INFO_URL,
 } from "../constants/ecpay";
 import { sendJsonResponse } from "../lib/general";
-import { getLogisticsStatus, LogisticsType } from "../lib/logisticsStatus";
+import {
+  getLogisticsStatus,
+  getLogisticsStatusText,
+  LogisticsType,
+} from "../lib/logisticsStatus";
 import { validateToken } from "../lib/token";
 import {
   createDelivery,
@@ -451,7 +455,8 @@ class EcPayController {
       if (existingDelivery) {
         const type = data.LogisticsSubType.replace("CVS_", "") as LogisticsType;
         const RtnCode = String(data.RtnCode);
-        const RtnMsg = String(data.RtnMsg);
+        // const RtnMsg = String(data.RtnMsg);
+        const RtnMsg = getLogisticsStatusText(type, RtnCode);
         const status = getLogisticsStatus(type, RtnCode);
 
         await updateDelivery(existingDelivery.id, {

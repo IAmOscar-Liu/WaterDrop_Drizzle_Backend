@@ -168,9 +168,22 @@ class OrderService {
       });
 
       if (simpleUser) {
+        const getAppScheme = () => {
+          switch (process.env.NODE_ENV!) {
+            case "local":
+            case "development":
+              return "水滴Dev";
+            case "stg":
+              return "水滴Stg";
+            case "production":
+              return "水滴";
+            default:
+              return "水滴Dev";
+          }
+        };
         sendEmail({
           to: simpleUser.email,
-          subject: `[水滴]訂單建立通知`,
+          subject: `[${getAppScheme()}]訂單建立通知`,
           html: generateOrderCompletedEmailHtml({
             userName: simpleUser.name || "",
             merchantTradeNo: order.merchantTradeNo || "",
