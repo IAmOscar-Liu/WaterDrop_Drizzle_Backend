@@ -186,10 +186,10 @@ export async function pollEcPayLogisticsTradeInfo() {
   const fn = async (delivery: Delivery) => {
     try {
       if (!delivery.merchantTradeNo || !delivery.AllPayLogisticsID) return;
-      const logisticsTradeInfo = await ecpayService.queryLogisticsTradeInfo(
-        delivery.AllPayLogisticsID,
-        delivery.merchantTradeNo,
-      );
+      const logisticsTradeInfo = await ecpayService.queryLogisticsTradeInfo({
+        AllPayLogisticsID: delivery.AllPayLogisticsID,
+        MerchantTradeNo: delivery.merchantTradeNo,
+      });
 
       // console.log("debug polling logisticsTradeInfo:", logisticsTradeInfo);
 

@@ -135,6 +135,12 @@ export async function getDeliveryById(deliveryId: string) {
   });
 }
 
+export async function getDeliveryByMerchantTradeNo(merchantTradeNo: string) {
+  return db.query.deliveryTable.findFirst({
+    where: eq(schema.deliveryTable.merchantTradeNo, merchantTradeNo),
+  });
+}
+
 export async function getDeliveriesByMerchantTradeNo(
   merchantTradeNo: string,
   options?: { matchPrefix: boolean },

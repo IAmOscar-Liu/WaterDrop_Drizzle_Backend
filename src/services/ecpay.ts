@@ -368,8 +368,14 @@ class EcPayService {
   }
 
   async queryLogisticsTradeInfo(
-    AllPayLogisticsID: string,
-    MerchantTradeNo?: string,
+    {
+      AllPayLogisticsID,
+      MerchantTradeNo,
+    }: {
+      AllPayLogisticsID?: string;
+      MerchantTradeNo?: string;
+    },
+    options?: { throwError?: boolean },
   ) {
     const parameters: Record<string, any> = {
       MerchantID: process.env.LOGISTICS_MERCHANTID,
@@ -452,6 +458,8 @@ class EcPayService {
       // 回傳 JSON 給 Client
       return resultData;
     } catch (error) {
+      console.error("Query ECPay Error:", error);
+      if (options?.throwError) throw error;
       return null;
     }
   }
