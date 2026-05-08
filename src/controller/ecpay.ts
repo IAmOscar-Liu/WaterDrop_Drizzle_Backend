@@ -607,67 +607,6 @@ class EcPayController {
     } catch (error) {
       return res.status(500).json({ success: false, message: "查詢失敗" });
     }
-
-    // const parameters: Record<string, any> = {
-    //   MerchantID: process.env.LOGISTICS_MERCHANTID,
-    //   TimeStamp: Math.floor(Date.now() / 1000),
-    // };
-
-    // if (AllPayLogisticsID && MerchantTradeNo) {
-    //   // 如果同時提供 AllPayLogisticsID 和 MerchantTradeNo，則以 AllPayLogisticsID 為主(因爲綠界的 API 規定，如果提供 AllPayLogisticsID 就不需要提供 MerchantTradeNo)
-    //   parameters["AllPayLogisticsID"] = String(AllPayLogisticsID);
-    // } else if (AllPayLogisticsID) {
-    //   parameters["AllPayLogisticsID"] = String(AllPayLogisticsID);
-    // } else if (MerchantTradeNo) {
-    //   parameters["MerchantTradeNo"] = String(MerchantTradeNo);
-    // }
-
-    // const checkMacValue = ecpayService.generateCheckValue(
-    //   parameters,
-    //   process.env.LOGISTICS_HASH_KEY!,
-    //   process.env.LOGISTICS_HASH_IV!,
-    //   "md5",
-    // );
-
-    // parameters["CheckMacValue"] = checkMacValue;
-
-    // try {
-    //   // 使用 axios 發送 POST 到綠界 (注意：不是 res.send(formHtml))
-    //   const response = await axios.post(
-    //     ECPAY_QUERY_LOGISTICS_TRADE_INFO_URL,
-    //     querystring.stringify(parameters), // 轉成 key=value&key2=value2 格式
-    //     { headers: { "Content-Type": "application/x-www-form-urlencoded" } },
-    //   );
-
-    //   // 解析綠界回傳的字串內容
-    //   // 綠界會回傳像你提供的那串：ActualWeight=null&AllPayLogisticsID=...
-    //   const resultData = querystring.parse(response.data);
-
-    //   if (
-    //     typeof resultData.LogisticsType === "string" &&
-    //     resultData.LogisticsStatus
-    //   ) {
-    //     const type = resultData.LogisticsType.replace(
-    //       "CVS_",
-    //       "",
-    //     ) as LogisticsType;
-    //     const status = String(resultData.LogisticsStatus);
-    //     (resultData as any).LogisticsStatusText = getLogisticsStatusText(
-    //       type,
-    //       status,
-    //     );
-    //     (resultData as any).DeliveryStatus = getLogisticsStatus(type, status);
-    //   }
-
-    //   // 回傳 JSON 給 Client
-    //   return res.json({
-    //     success: true,
-    //     data: resultData,
-    //   });
-    // } catch (error) {
-    //   console.error("Query ECPay Error:", error);
-    //   return res.status(500).json({ success: false, message: "查詢失敗" });
-    // }
   }
 }
 
