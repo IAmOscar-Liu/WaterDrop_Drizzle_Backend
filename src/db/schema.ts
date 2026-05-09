@@ -522,6 +522,7 @@ export const orderTable = pgTable("orders", {
     .notNull(),
   completedAt: timestamp("completed_at", { withTimezone: true }),
   metadata: jsonb("metadata"), // Optional: Store additional info like payment method, shipping info, etc.
+  shippingInfo: jsonb("shipping_info"),
 });
 
 export const orderItemTable = pgTable(

@@ -12,6 +12,7 @@ import {
   getLogisticsStatusText,
   LogisticsType,
 } from "../lib/logisticsStatus";
+import { createMerchantTrade } from "../repository/order";
 
 class EcPayService {
   getTestMerchantID(realAccount: boolean): string {
@@ -321,6 +322,128 @@ class EcPayService {
     // 您可以在這裡加入更多欄位的驗證...
 
     return null; // 通過所有驗證
+  }
+
+  async createExpressServerReturn(
+    {
+      type = "B2C",
+      orderId,
+      productIds,
+      LogisticsSubType,
+      GoodsName,
+      GoodsAmount,
+      ReceiverName,
+      ReceiverCellPhone,
+      ReceiverEmail,
+      ReceiverStoreID,
+      ReceiverStoreName,
+      ReceiverStoreAddress,
+      ReceiverStoreTelephone,
+      SenderName,
+      SenderCellPhone,
+      shippingCost,
+      shippingCostDeduction,
+    }: Record<string, any>,
+    options?: { throwError?: boolean },
+  ) {
+    if (
+      !orderId ||
+      !LogisticsSubType ||
+      !GoodsName ||
+      !GoodsAmount ||
+      !ReceiverName ||
+      !ReceiverCellPhone ||
+      !ReceiverEmail ||
+      !ReceiverStoreID
+    ) {
+      if (options?.throwError) throw new Error("Missing required parameters");
+    }
+    if (type !== "B2C" && !SenderCellPhone) {
+      throw new Error("SenderCellPhone is required when type is C2C");
+    }
+
+    const merchantTradeNo = this.generateTradeNo();
+
+    let pIds: string[] = [];
+    if (Array.isArray(productIds)) {
+      pIds = productIds.filter((p) => typeof p === "string") as string[];
+    } else if (typeof productIds === "string") {
+      pIds = [productIds];
+    }
+
+    if (pIds.length > 0) {
+      const cvsStoreInfo: Record<string, string> = {};
+      cvsStoreInfo["storeID"] = String(ReceiverStoreID);
+      if (ReceiverStoreName)
+        cvsStoreInfo["storeName"] = String(ReceiverStoreName);
+      if (ReceiverStoreAddress)
+        cvsStoreInfo["storeAddress"] = String(ReceiverStoreAddress);
+      if (ReceiverStoreTelephone)
+        cvsStoreInfo["storeTelephone"] = String(ReceiverStoreTelephone);
+
+      await createMerchantTrade({
+        merchantTradeNo,
+        orderId: String(orderId),
+        productIds: pIds,
+        cvsStoreInfo,
+        shippingCost: shippingCost ? Number(shippingCost) : 0,
+        shippingCostDeduction: shippingCostDeduction
+          ? Number(shippingCostDeduction)
+          : 0,
+      });
+    }
+
+    const maxGoodsAmount = Math.min(20000, Math.floor(Number(GoodsAmount)));
+
+    const base_param: Record<string, any> = {
+      MerchantID: process.env.LOGISTICS_MERCHANTID,
+      MerchantTradeNo: merchantTradeNo,
+      MerchantTradeDate: this.generateMerchantTradeDate(),
+      LogisticsType: "CVS",
+      LogisticsSubType, // 範例：7-ELEVEN
+      GoodsName: String(GoodsName),
+      GoodsAmount: String(maxGoodsAmount),
+      CollectionAmount: String(maxGoodsAmount),
+      SenderName: SenderName || "水滴賣家",
+      IsCollection: "N", // 是否代收貨款
+      ServerReplyURL: `${process.env.HOST}/api/ecpay/express/server-reply`, // 接收門市資訊的後端網址
+      ClientReplyURL: `${process.env.HOST}/api/ecpay/express/client-reply`, // 接收門市資訊的後端網址
+      ReceiverName: String(ReceiverName),
+      ReceiverCellPhone: String(ReceiverCellPhone),
+      ReceiverEmail: String(ReceiverEmail),
+      ReceiverStoreID: String(ReceiverStoreID),
+      ...(type === "B2C" ? {} : { SenderCellPhone: String(SenderCellPhone) }),
+    };
+
+    base_param["CheckMacValue"] = this.generateCheckValue(
+      base_param,
+      process.env.LOGISTICS_HASH_KEY!,
+      process.env.LOGISTICS_HASH_IV!,
+      "md5",
+    );
+
+    console.log("base_param: ", base_param);
+
+    try {
+      // 使用 axios 發送 POST 到綠界 (注意：不是 res.send(formHtml))
+      const response = await axios.post(
+        `${ECPAY_LOGISTIC_BASE_URL}/Express/Create`,
+        querystring.stringify(base_param), // 轉成 key=value&key2=value2 格式
+        { headers: { "Content-Type": "application/x-www-form-urlencoded" } },
+      );
+
+      // 解析綠界回傳的字串內容
+      // 綠界會回傳像你提供的那串：ActualWeight=null&AllPayLogisticsID=...
+      const resultData = querystring.parse(response.data);
+      // console.log("Create ECPay Express Result:", resultData);
+
+      // 回傳 JSON 給 Client
+      return resultData;
+    } catch (error) {
+      console.error("Create ECPay Express Error:", error);
+      if (options?.throwError) throw error;
+      return null;
+    }
   }
 
   getPrintTradeDocumentActionUrl(LogisticsSubType?: any) {

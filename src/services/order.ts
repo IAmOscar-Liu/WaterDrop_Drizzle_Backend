@@ -84,6 +84,7 @@ class OrderService {
     shippingCostDeduction,
     transactionFee,
     transactionFeeRateAtSale,
+    shippingInfo,
   }: {
     userId: string;
     items: schema.NewOrderItem[];
@@ -96,6 +97,7 @@ class OrderService {
     shippingCostDeduction?: number;
     transactionFee?: number;
     transactionFeeRateAtSale?: number;
+    shippingInfo?: any;
   }): Promise<ServiceResponse<Awaited<ReturnType<typeof createOrder>>>> {
     try {
       const order = await createOrder(
@@ -110,6 +112,7 @@ class OrderService {
           shippingCostDeduction,
           transactionFee,
           transactionFeeRateAtSale,
+          shippingInfo,
         },
         items,
       );

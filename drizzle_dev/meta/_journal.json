@@ -302,6 +302,13 @@
       "when": 1776961349930,
       "tag": "0042_tiny_genesis",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1778318151287,
+      "tag": "0043_parallel_vulcan",
+      "breakpoints": true
     }
   ]
 }

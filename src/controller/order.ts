@@ -55,6 +55,7 @@ class OrderController {
       shippingCostDeduction,
       transactionFee,
       transactionFeeRateAtSale,
+      shippingInfo,
     } = req.body;
     const result = await orderService.createOrder({
       userId: req.userId ?? "",
@@ -74,6 +75,7 @@ class OrderController {
       transactionFeeRateAtSale: transactionFeeRateAtSale
         ? Number(transactionFeeRateAtSale)
         : undefined,
+      shippingInfo: shippingInfo ? shippingInfo : undefined,
     });
     sendJsonResponse(res, result);
   }

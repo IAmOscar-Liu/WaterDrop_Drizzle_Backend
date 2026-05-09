@@ -75,12 +75,12 @@ class EcPayController {
       MerchantTradeNo: ecpayService.generateTradeNo(),
       MerchantTradeDate: ecpayService.generateMerchantTradeDate(),
       PaymentType: "aio",
-      ChoosePayment: "ALL",
+      ChoosePayment: "Credit",
       // Explicitly block every non-credit tab/wallet so only Credit shows
       // Reference: ECPay AIO V5 supports excluding by '#'-joined tokens
-      // IgnorePayment:
-      //   "ATM#WebATM#CVS#BARCODE#ApplePay#GooglePay#AndroidPay#BNPL#TWQR#WeiXin#LINEPay#JKOPay#ESUNWallet#PiWallet#ECPayWallet#iPASS",
-      IgnorePayment: "CVS#BARCODE#TWQR#BNPL#WeiXin",
+      IgnorePayment:
+        "ATM#WebATM#CVS#BARCODE#ApplePay#GooglePay#AndroidPay#BNPL#TWQR#WeiXin#LINEPay#JKOPay#ESUNWallet#PiWallet#ECPayWallet#iPASS",
+      // IgnorePayment: "CVS#BARCODE#TWQR#BNPL#WeiXin",
       TotalAmount: Math.floor(Number(totalAmount)),
       TradeDesc: String(tradeDesc),
       ItemName: String(itemName),
@@ -120,17 +120,50 @@ class EcPayController {
 
     const orderId = data.CustomField1;
 
-    if (orderId !== TEST_ORDER_ID)
-      await updateOrderStatus(
-        orderId,
-        data.RtnCode == 1 ? "paid" : "failed",
-        data,
-      )
+    if (orderId !== TEST_ORDER_ID) {
+      const status = data.RtnCode == 1 ? "paid" : "failed";
+
+      await updateOrderStatus(orderId, status, data)
         .then((result) => {
           if (!result) throw new Error("Order not found");
           console.log(`Successfully updated order:`, result.id);
+
+          const cvsPickupGroup = (result?.shippingInfo as any)?.cvsPickupGroup;
+          const nonCvsPickupGroup = (result?.shippingInfo as any)
+            ?.nonCvsPickupGroup;
+
+          if (Array.isArray(cvsPickupGroup)) {
+            Promise.allSettled(
+              cvsPickupGroup.map((info: any) =>
+                ecpayService.createExpressServerReturn({
+                  ...info,
+                  orderId: result.id,
+                }),
+              ),
+            );
+          }
+
+          if (Array.isArray(nonCvsPickupGroup)) {
+            Promise.allSettled(
+              nonCvsPickupGroup.map((info: any) => {
+                const { merchantTradeNo, productIds, ...rest } = info;
+                createDelivery(
+                  {
+                    ...rest,
+                    orderId: result.id,
+                    merchantTradeNo:
+                      typeof merchantTradeNo === "string"
+                        ? merchantTradeNo
+                        : ecpayService.generateTradeNo(),
+                  },
+                  productIds,
+                );
+              }),
+            );
+          }
         })
         .catch((error) => console.error("Error updating order:", error));
+    }
 
     // 交易成功後，需要回傳 1|OK 給綠界
     res.send("1|OK");
