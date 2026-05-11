@@ -9,12 +9,15 @@ import {
   getUserIdsInTimezones,
   getUserMonthlyCoinStatsInUserIds,
   setMonthlyCoinExpire,
+  updateGroupAdViewsCountYesterday,
 } from "./repository/user";
 import { getCurrentLocalDateTime, getLastMonthYYYYMM } from "./lib/general";
 import { sendMulticastPushNotification } from "./lib/sendNotification";
 import bcrypt from "bcrypt";
 import db from "./lib/initDB";
 import * as schema from "./db/schema";
+import { resetDailyStats } from "./repository/treasureBox";
+import { CustomError } from "./lib/error";
 
 const FCM_MAX_BATCH_SIZE = 100; // Process 100 users at a time. Adjust as needed.
 const RESET_BATCH_SIZE = 100;
@@ -133,4 +136,4 @@ async function calculateOrderSubTotal() {
 // testScript();
 // testScript3();
 
-calculateOrderSubTotal();
+// calculateOrderSubTotal();

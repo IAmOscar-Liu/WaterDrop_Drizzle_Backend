@@ -356,10 +356,15 @@ class EcPayService {
       !ReceiverEmail ||
       !ReceiverStoreID
     ) {
+      console.error("Missing required parameters");
       if (options?.throwError) throw new Error("Missing required parameters");
+      return null;
     }
     if (type !== "B2C" && !SenderCellPhone) {
-      throw new Error("SenderCellPhone is required when type is C2C");
+      console.error("SenderCellPhone is required when type is C2C");
+      if (options?.throwError)
+        throw new Error("SenderCellPhone is required when type is C2C");
+      return null;
     }
 
     const merchantTradeNo = this.generateTradeNo();

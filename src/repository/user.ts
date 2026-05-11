@@ -494,6 +494,7 @@ export async function updateGroupAdViewsCountYesterday(userId: string) {
 
     // Also include the owner
     const allUserIds = [...userIdsInGroup, userId];
+    // console.log("allUserIds", allUserIds);
 
     const results = await tx
       .select({ totalViews: schema.userDailyStatTable.totalViews })
@@ -504,6 +505,7 @@ export async function updateGroupAdViewsCountYesterday(userId: string) {
       (total, result) => total + result.totalViews,
       0,
     );
+    // console.log("groupAdViewsCountYesterday", groupAdViewsCountYesterday);
 
     const [updatedStat] = await tx
       .update(schema.userDailyStatTable)
