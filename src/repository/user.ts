@@ -505,7 +505,9 @@ export async function updateGroupAdViewsCountYesterday(userId: string) {
       (total, result) => total + result.totalViews,
       0,
     );
-    // console.log("groupAdViewsCountYesterday", groupAdViewsCountYesterday);
+    console.log(
+      `Daily stats reset for user ${userId}, groupAdViewsCountYesterday: ${groupAdViewsCountYesterday}`,
+    );
 
     const [updatedStat] = await tx
       .update(schema.userDailyStatTable)
