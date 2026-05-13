@@ -514,6 +514,13 @@ export async function updateGroupAdViewsCountYesterday(userId: string) {
       .set({ groupAdViewsCountYesterday })
       .where(eq(schema.userDailyStatTable.userId, userId))
       .returning();
+
+    await tx.insert(schema.userDailyStatLogTable).values({
+      userDailyStatId: updatedStat.id,
+      update: { groupAdViewsCountYesterday },
+      result: updatedStat,
+    });
+
     return updatedStat;
   });
 }

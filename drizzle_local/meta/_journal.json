@@ -589,6 +589,27 @@
       "when": 1778312725059,
       "tag": "0083_redundant_lifeguard",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1778643180035,
+      "tag": "0084_big_hobgoblin",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1778643494192,
+      "tag": "0085_colorful_mister_fear",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1778644115568,
+      "tag": "0086_small_madripoor",
+      "breakpoints": true
     }
   ]
 }

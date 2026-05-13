@@ -25,7 +25,7 @@
     "cloudflare:upload": "ts-node src/cloudflare_upload_files.ts",
     "generate-dbml": "ts-node src/generate-dmbl.ts",
     "daily-reset": "NODE_ENV=stg ts-node src/daily-reset.ts",
-    "test-script": "NODE_ENV=dev ts-node src/test_script.ts"
+    "test-script": "NODE_ENV=stg ts-node src/test_script.ts"
   },
   "keywords": [],
   "author": "",

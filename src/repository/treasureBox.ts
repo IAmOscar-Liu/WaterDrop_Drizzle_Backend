@@ -234,28 +234,45 @@ export async function getTreasureBoxesByUserId(userId: string) {
 
 export async function resetDailyStats(userId: string) {
   return db.transaction(async (tx) => {
-    const [updatedStat] = await tx
-      .update(schema.userDailyStatTable)
-      .set({
-        totalViews: 0,
-        remainingViews: 20,
-        viewedAds: [],
-        nextTreasureBoxIn: 2,
-        treasureBoxesEarned: 0,
-        canWatchMore: true,
-      })
-      .where(eq(schema.userDailyStatTable.userId, userId))
-      .returning();
-    await tx
-      // .delete(schema.treasureBoxTable)
-      .update(schema.treasureBoxTable)
-      .set({ isActive: false })
-      .where(
-        and(
-          eq(schema.treasureBoxTable.userId, userId),
-          not(eq(schema.treasureBoxTable.isActive, false)),
+    const resetData = {
+      totalViews: 0,
+      remainingViews: 20,
+      viewedAds: [],
+      nextTreasureBoxIn: 2,
+      treasureBoxesEarned: 0,
+      canWatchMore: true,
+    };
+
+    // const [updatedStat] = await tx
+    //   .update(schema.userDailyStatTable)
+    //   .set(resetData)
+    //   .where(eq(schema.userDailyStatTable.userId, userId))
+    //   .returning();
+
+    // if (!updatedStat) {
+    //   throw new CustomError(
+    //     `User stats for user id "${userId}" not found.`,
+    //     404,
+    //   );
+    // }
+
+    const [[updatedStat]] = await Promise.all([
+      tx
+        .update(schema.userDailyStatTable)
+        .set(resetData)
+        .where(eq(schema.userDailyStatTable.userId, userId))
+        .returning(),
+      tx
+        // .delete(schema.treasureBoxTable)
+        .update(schema.treasureBoxTable)
+        .set({ isActive: false })
+        .where(
+          and(
+            eq(schema.treasureBoxTable.userId, userId),
+            not(eq(schema.treasureBoxTable.isActive, false)),
+          ),
         ),
-      );
+    ]);
 
     if (!updatedStat) {
       throw new CustomError(
@@ -263,6 +280,13 @@ export async function resetDailyStats(userId: string) {
         404,
       );
     }
+
+    await tx.insert(schema.userDailyStatLogTable).values({
+      userDailyStatId: updatedStat.id,
+      update: resetData,
+      result: updatedStat,
+    });
+
     console.log(`Daily stats reset for user ${userId}`);
 
     return updatedStat;
