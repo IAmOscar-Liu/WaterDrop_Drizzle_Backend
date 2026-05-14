@@ -7,3 +7,4 @@ node_modules
 schema.dbml
 flutter-ad-ecommerce-dev-5d9da-firebase-adminsdk-fbsvc-d73658c022.json
 flutter-ad-ecommerce-stg-323109-firebase-adminsdk-fbsvc-af368232be.json
+src/assets/json/ecpay-storeList.json

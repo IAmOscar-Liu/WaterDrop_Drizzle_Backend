@@ -16,6 +16,11 @@ router.post(
 
 router.post("/express/validate", EcPayController.validateLogisticsParams);
 
+router.post(
+  "/express/validate-saved-stores",
+  EcPayController.validateSavedStores,
+);
+
 router.get("/express/test/create", EcPayController.createTestExpress);
 router.post(
   "/express/test/server-reply",
@@ -40,5 +45,7 @@ router.get(
   // isAuth,
   EcPayController.queryLogisticsTradeInfoJSON,
 );
+
+router.get("/helper/getStoreList", EcPayController.getStoreList);
 
 export default router;

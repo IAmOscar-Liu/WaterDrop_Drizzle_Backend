@@ -1,7 +1,10 @@
 import crypto from "crypto";
+import fs from "fs";
+import path from "path";
 import querystring from "querystring";
 import {
   ECPAY_CHECKOUT_URL,
+  ECPAY_GET_STORE_LIST_URL,
   ECPAY_LOGISTIC_BASE_URL,
   ECPAY_QUERY_LOGISTICS_TRADE_INFO_URL,
 } from "../constants/ecpay";
@@ -324,6 +327,73 @@ class EcPayService {
     return null; // 通過所有驗證
   }
 
+  validateSavedStores(stores: Record<string, any>) {
+    try {
+      const filePath = path.resolve(
+        process.cwd(),
+        "src/assets/json/ecpay-storeList.json",
+      );
+      if (!fs.existsSync(filePath)) return {};
+
+      const storeList = JSON.parse(
+        fs.readFileSync(filePath, "utf-8"),
+      ) as Record<
+        string,
+        Array<{
+          StoreId?: string;
+          storeId?: string;
+          StoreName?: string;
+          StoreAddr?: string;
+          StorePhone?: string;
+        }>
+      >;
+      const cvsTypeMap: Record<string, string> = {
+        FAMIC2C: "FAMI",
+        UNIMARTC2C: "UNIMART",
+        HILIFEC2C: "HILIFE",
+        OKMARTC2C: "OKMART",
+        OKMART_LOW_TMP_C2C: "OKMART",
+      };
+      const validatedStores: Record<string, any> = {};
+
+      for (const [logisticsSubType, store] of Object.entries(stores)) {
+        const cvsType = cvsTypeMap[logisticsSubType];
+        const cvsStoreId = store?.CVSStoreID;
+        if (!cvsType || !cvsStoreId) continue;
+
+        const matchedStore = storeList[cvsType]?.find(
+          (item) => String(item.StoreId ?? item.storeId) === String(cvsStoreId),
+        );
+        if (!matchedStore) continue;
+
+        const incomingName =
+          typeof store?.CVSStoreName === "string" ? store.CVSStoreName : "";
+        const matchedName = String(matchedStore.StoreName ?? "");
+        const a = incomingName.trim().toLowerCase();
+        const b = matchedName.trim().toLowerCase();
+        const sharePrefix =
+          a.length > 0 && (a.startsWith(b) || b.startsWith(a));
+        const chosenName = sharePrefix
+          ? incomingName.length >= matchedName.length
+            ? incomingName
+            : matchedName
+          : matchedName;
+
+        validatedStores[logisticsSubType] = {
+          ...store,
+          CVSStoreID: matchedStore.StoreId ?? matchedStore.storeId,
+          CVSStoreName: chosenName,
+          CVSAddress: matchedStore.StoreAddr,
+          CVSTelephone: matchedStore.StorePhone,
+        };
+      }
+
+      return validatedStores;
+    } catch (error) {
+      return {};
+    }
+  }
+
   async createExpressServerReturn(
     {
       type = "B2C",
@@ -585,6 +655,54 @@ class EcPayService {
 
       // 回傳 JSON 給 Client
       return resultData;
+    } catch (error) {
+      console.error("Query ECPay Error:", error);
+      if (options?.throwError) throw error;
+      return null;
+    }
+  }
+
+  async getStoreList(
+    {
+      CvsType,
+    }: {
+      CvsType:
+        | "All"
+        | "FAMI"
+        | "UNIMART"
+        | "HILIFE"
+        | "OKMART"
+        | "UNIMARTFREEZE";
+    },
+    options?: { throwError?: boolean },
+  ) {
+    const parameters: Record<string, any> = {
+      MerchantID: process.env.LOGISTICS_MERCHANTID,
+      CvsType,
+    };
+
+    const checkMacValue = this.generateCheckValue(
+      parameters,
+      process.env.LOGISTICS_HASH_KEY!,
+      process.env.LOGISTICS_HASH_IV!,
+      "md5",
+    );
+
+    parameters["CheckMacValue"] = checkMacValue;
+
+    try {
+      // 使用 axios 發送 POST 到綠界 (注意：不是 res.send(formHtml))
+      const response = await axios.post(
+        ECPAY_GET_STORE_LIST_URL,
+        querystring.stringify(parameters), // 轉成 key=value&key2=value2 格式
+        { headers: { "Content-Type": "application/x-www-form-urlencoded" } },
+      );
+
+      const data = response.data;
+      if (data.RtnCode !== 1 || !Array.isArray(data.StoreList))
+        throw new Error("Invalid response from ECPay Get Store List API");
+
+      return data.StoreList;
     } catch (error) {
       console.error("Query ECPay Error:", error);
       if (options?.throwError) throw error;

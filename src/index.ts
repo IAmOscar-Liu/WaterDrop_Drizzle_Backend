@@ -6,11 +6,13 @@ import cors from "cors";
 import express from "express";
 import morgan from "morgan";
 import swaggerUi from "swagger-ui-express";
+import { ensureEcpayStoreListOnStartup } from "./lib/initEcpayStoreList";
 import {
   dailyNotificationTask,
   dailyResetTask,
   deleteUnusedDeviceTokensTask,
   expireOrdersTask,
+  fetchEcPayStoreListTask,
   monthlyCoinExpirationNotificationTask,
   monthlyCoinStatExpirationTask,
   pollLogisticsTradeInfoTask,
@@ -46,8 +48,12 @@ monthlyCoinExpirationNotificationTask.start();
 deleteUnusedDeviceTokensTask.start();
 expireOrdersTask.start();
 pollLogisticsTradeInfoTask.start();
+fetchEcPayStoreListTask.start();
 
 console.log("Cron job has been started.");
+
+// Ensure ECPay store list JSON exists; if missing, fetch immediately in a worker.
+ensureEcpayStoreListOnStartup();
 
 // Increase payload size limit for JSON and URL-encoded bodies
 // Adjust '50mb' to a value that suits your needs, matching or exceeding Nginx's limit.
