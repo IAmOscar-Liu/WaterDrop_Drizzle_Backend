@@ -497,16 +497,19 @@ export async function updateGroupAdViewsCountYesterday(userId: string) {
     // console.log("allUserIds", allUserIds);
 
     const results = await tx
-      .select({ totalViews: schema.userDailyStatTable.totalViews })
+      .select({
+        userId: schema.userDailyStatTable.userId,
+        totalViews: schema.userDailyStatTable.totalViews,
+      })
       .from(schema.userDailyStatTable)
-      .where(and(inArray(schema.userDailyStatTable.userId, allUserIds)));
+      .where(inArray(schema.userDailyStatTable.userId, allUserIds));
 
     const groupAdViewsCountYesterday = results.reduce(
       (total, result) => total + result.totalViews,
       0,
     );
     console.log(
-      `Daily stats reset for user ${userId}, groupAdViewsCountYesterday: ${groupAdViewsCountYesterday}`,
+      `Daily stats reset for user ${userId}, groupResult: ${JSON.stringify(results)}, groupAdViewsCountYesterday: ${groupAdViewsCountYesterday}`,
     );
 
     const [updatedStat] = await tx
