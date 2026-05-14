@@ -5,9 +5,10 @@ import { Worker, isMainThread, parentPort, workerData } from "worker_threads";
 import ecPayService from "./services/ecpay";
 
 async function getStore(outDirFromWorker?: string) {
+  let tmpPath: string | undefined;
   try {
     const storeList = await ecPayService.getStoreList({ CvsType: "All" });
-    console.log("Store List:", storeList);
+    // console.log("Store List:", storeList);
 
     const data: Record<
       string,
@@ -31,12 +32,18 @@ async function getStore(outDirFromWorker?: string) {
 
     // Ensure directory exists (idempotent if already present)
     await fs.mkdir(outDir, { recursive: true });
-    await fs.writeFile(outPath, JSON.stringify(data, null, 2), "utf-8");
+    // Write atomically: write to temp, then rename over target
+    tmpPath = `${outPath}.tmp`;
+    await fs.writeFile(tmpPath, JSON.stringify(data, null, 2), "utf-8");
+    await fs.rename(tmpPath, outPath);
     console.log(`Saved store list to: ${outPath}`);
     parentPort?.postMessage({ ok: true, outPath });
   } catch (error) {
     console.error("Error fetching store list:", error);
     parentPort?.postMessage({ ok: false, error: String(error) });
+    try {
+      if (tmpPath) await fs.rm(tmpPath, { force: true });
+    } catch {}
     throw error;
   }
 }

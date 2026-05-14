@@ -340,12 +340,12 @@ export const pollLogisticsTradeInfoTask = cron.schedule(
   },
 );
 
-// Run ECPay store list refresh once daily at 23:00 Asia/Taipei
+// Run ECPay store list refresh once daily at 02:00 Asia/Taipei
 export const fetchEcPayStoreListTask = cron.schedule(
-  "0 23 * * *",
+  "0 2 * * *",
   async () => {
     console.log(
-      `Scheduled 23:00 (Asia/Taipei) job: fetchEcPayStoreListTask started. Time: ${new Date()}`,
+      `Scheduled 02:00 (Asia/Taipei) job: fetchEcPayStoreListTask started. Time: ${new Date()}`,
     );
 
     try {
