@@ -19,6 +19,9 @@ import { sendMulticastPushNotification } from "./sendNotification";
 import { createNotification } from "../repository/notification";
 import { expireOrders } from "../repository/order";
 import { pollEcPayLogisticsTradeInfo } from "./polling";
+import { Worker } from "worker_threads";
+import path from "path";
+import { existsSync } from "fs";
 
 const RESET_BATCH_SIZE = 100; // Process 100 users at a time. Adjust as needed.
 
@@ -335,4 +338,59 @@ export const pollLogisticsTradeInfoTask = cron.schedule(
       console.error(`Error during pollLogisticsTradeInfoTask:`, error);
     }
   },
+);
+
+// Run ECPay store list refresh once daily at 23:00 Asia/Taipei
+export const fetchEcPayStoreListTask = cron.schedule(
+  "0 23 * * *",
+  async () => {
+    console.log(
+      `Scheduled 23:00 (Asia/Taipei) job: fetchEcPayStoreListTask started. Time: ${new Date()}`,
+    );
+
+    try {
+      const tsFile = path.resolve(process.cwd(), "src/ecpay-storeList.ts");
+      const jsFile = path.resolve(process.cwd(), "dist/ecpay-storeList.js");
+
+      const workerFile = existsSync(jsFile) ? jsFile : tsFile;
+      const useTsRunner = workerFile === tsFile;
+
+      const worker = new Worker(workerFile, {
+        ...(useTsRunner
+          ? { execArgv: ["-r", "ts-node/register/transpile-only"] }
+          : {}),
+        workerData: {
+          outDir: "src/assets/json",
+        },
+      });
+
+      worker.on("message", (msg) => {
+        if (msg?.ok) {
+          console.log(
+            `fetchEcPayStoreListTask: Worker finished. Output: ${msg.outPath}`,
+          );
+        } else {
+          console.error(
+            "fetchEcPayStoreListTask: Worker reported error:",
+            msg?.error,
+          );
+        }
+      });
+      worker.on("error", (err) => {
+        console.error("fetchEcPayStoreListTask: Worker error:", err);
+      });
+      worker.on("exit", (code) => {
+        if (code !== 0) {
+          console.error(
+            `fetchEcPayStoreListTask: Worker stopped with exit code ${code}`,
+          );
+        } else {
+          console.log("fetchEcPayStoreListTask: Worker exited successfully.");
+        }
+      });
+    } catch (error) {
+      console.error("Error starting fetchEcPayStoreListTask worker:", error);
+    }
+  },
+  { timezone: "Asia/Taipei" },
 );

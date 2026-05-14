@@ -11,6 +11,7 @@ import {
   dailyResetTask,
   deleteUnusedDeviceTokensTask,
   expireOrdersTask,
+  fetchEcPayStoreListTask,
   monthlyCoinExpirationNotificationTask,
   monthlyCoinStatExpirationTask,
   pollLogisticsTradeInfoTask,
@@ -46,6 +47,7 @@ monthlyCoinExpirationNotificationTask.start();
 deleteUnusedDeviceTokensTask.start();
 expireOrdersTask.start();
 pollLogisticsTradeInfoTask.start();
+fetchEcPayStoreListTask.start();
 
 console.log("Cron job has been started.");
 

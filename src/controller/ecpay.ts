@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import path from "path";
 import {
   ECPAY_CHECKOUT_URL,
+  ECPAY_GET_STORE_LIST_URL,
   ECPAY_LOGISTIC_BASE_URL,
   ECPAY_QUERY_LOGISTICS_TRADE_INFO_URL,
 } from "../constants/ecpay";
@@ -227,6 +228,11 @@ class EcPayController {
     } else {
       sendJsonResponse(res, { success: false, message: result });
     }
+  }
+
+  async validateSavedStores(req: Request, res: Response) {
+    const result = ecpayService.validateSavedStores(req.body);
+    sendJsonResponse(res, { success: true, data: result });
   }
 
   async createTestExpress(req: Request, res: Response): Promise<any> {
@@ -632,6 +638,24 @@ class EcPayController {
             ? String(MerchantTradeNo)
             : undefined,
         },
+        { throwError: true },
+      );
+
+      return res.json({
+        success: true,
+        data: resultData,
+      });
+    } catch (error) {
+      return res.status(500).json({ success: false, message: "查詢失敗" });
+    }
+  }
+
+  async getStoreList(req: Request, res: Response): Promise<any> {
+    const { CvsType } = req.query;
+
+    try {
+      const resultData = await ecpayService.getStoreList(
+        { CvsType: CvsType ? (String(CvsType) as any) : "All" },
         { throwError: true },
       );
 
