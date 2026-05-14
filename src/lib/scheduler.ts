@@ -1,4 +1,5 @@
 import cron from "node-cron";
+import { sql } from "drizzle-orm";
 import { resetDailyStats } from "../repository/treasureBox";
 import {
   deleteUnusedDeviceTokens,
@@ -22,71 +23,102 @@ import { pollEcPayLogisticsTradeInfo } from "./polling";
 import { Worker } from "worker_threads";
 import path from "path";
 import { existsSync } from "fs";
+import db from "./initDB";
 
 const RESET_BATCH_SIZE = 100; // Process 100 users at a time. Adjust as needed.
+const DAILY_RESET_ADVISORY_LOCK_ID = 2026051501;
+
+async function withPostgresAdvisoryLock(
+  lockId: number,
+  label: string,
+  task: () => Promise<void>,
+) {
+  const lockResult = await db.execute<{ acquired: boolean }>(
+    sql`select pg_try_advisory_lock(${lockId}) as acquired`,
+  );
+
+  if (!lockResult[0]?.acquired) {
+    console.log(`${label} skipped because another process holds the lock.`);
+    return;
+  }
+
+  try {
+    await task();
+  } finally {
+    await db.execute(sql`select pg_advisory_unlock(${lockId})`);
+  }
+}
 
 // Schedule a task to run every hour to check for users in timezones at midnight.
 export const dailyResetTask = cron.schedule(
   "*/30 * * * *", // every 30 minutes
   async () => {
-    console.log(
-      `30 minute cron job for dailyResetTask started. Time: ${new Date()}`,
+    await withPostgresAdvisoryLock(
+      DAILY_RESET_ADVISORY_LOCK_ID,
+      "dailyResetTask",
+      async () => {
+        console.log(
+          `30 minute cron job for dailyResetTask started. Time: ${new Date()}`,
+        );
+
+        const timezones = (Intl as any).supportedValuesOf(
+          "timeZone",
+        ) as string[];
+        const timezonesAtMidnight = timezones.filter((tz) => {
+          const { localHour, localMinute } = getCurrentLocalDateTime(tz);
+          return localHour === 0 && localMinute < 30;
+        });
+
+        if (timezonesAtMidnight.length === 0) {
+          console.log("No timezones at midnight.");
+          return;
+        }
+
+        console.log(
+          `${timezonesAtMidnight.length} timezones at midnight:`,
+          timezonesAtMidnight.join(", "),
+        );
+
+        const userIds = await getUserIdsInTimezones(timezonesAtMidnight);
+
+        for (let i = 0; i < userIds.length; i += RESET_BATCH_SIZE) {
+          const batchUserIds = userIds.slice(i, i + RESET_BATCH_SIZE);
+
+          await Promise.all(
+            batchUserIds.map((userId) =>
+              updateGroupAdViewsCountYesterday(userId).catch((err) => {
+                console.error(`Error resetting stats for user ${userId}:`, err);
+              }),
+            ),
+          );
+
+          console.log(
+            `✅ Daily reset complete for current ${
+              timezonesAtMidnight.length
+            } timezones. Total users processed: ${i + batchUserIds.length}`,
+          );
+        }
+
+        for (let i = 0; i < userIds.length; i += RESET_BATCH_SIZE) {
+          const batchUserIds = userIds.slice(i, i + RESET_BATCH_SIZE);
+
+          await Promise.all(
+            batchUserIds.map((userId) =>
+              resetDailyStats(userId).catch((err) => {
+                if (err instanceof CustomError && err.statusCode === 404) return;
+                console.error(`Error resetting stats for user ${userId}:`, err);
+              }),
+            ),
+          );
+
+          console.log(
+            `✅ Daily reset complete for current ${
+              timezonesAtMidnight.length
+            } timezones. Total users processed: ${i + batchUserIds.length}`,
+          );
+        }
+      },
     );
-
-    const timezones = (Intl as any).supportedValuesOf("timeZone") as string[];
-    const timezonesAtMidnight = timezones.filter((tz) => {
-      const { localHour, localMinute } = getCurrentLocalDateTime(tz);
-      return localHour === 0 && localMinute < 30;
-    });
-
-    if (timezonesAtMidnight.length === 0) {
-      console.log("No timezones at midnight.");
-      return;
-    }
-
-    console.log(
-      `${timezonesAtMidnight.length} timezones at midnight:`,
-      timezonesAtMidnight.join(", "),
-    );
-
-    const userIds = await getUserIdsInTimezones(timezonesAtMidnight);
-
-    for (let i = 0; i < userIds.length; i += RESET_BATCH_SIZE) {
-      const batchUserIds = userIds.slice(i, i + RESET_BATCH_SIZE);
-
-      await Promise.all(
-        batchUserIds.map((userId) =>
-          updateGroupAdViewsCountYesterday(userId).catch((err) => {
-            console.error(`Error resetting stats for user ${userId}:`, err);
-          }),
-        ),
-      );
-
-      console.log(
-        `✅ Daily reset complete for current ${
-          timezonesAtMidnight.length
-        } timezones. Total users processed: ${i + batchUserIds.length}`,
-      );
-    }
-
-    for (let i = 0; i < userIds.length; i += RESET_BATCH_SIZE) {
-      const batchUserIds = userIds.slice(i, i + RESET_BATCH_SIZE);
-
-      await Promise.all(
-        batchUserIds.map((userId) =>
-          resetDailyStats(userId).catch((err) => {
-            if (err instanceof CustomError && err.statusCode === 404) return;
-            console.error(`Error resetting stats for user ${userId}:`, err);
-          }),
-        ),
-      );
-
-      console.log(
-        `✅ Daily reset complete for current ${
-          timezonesAtMidnight.length
-        } timezones. Total users processed: ${i + batchUserIds.length}`,
-      );
-    }
   },
 );
 

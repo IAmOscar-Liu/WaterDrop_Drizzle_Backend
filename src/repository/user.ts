@@ -19,6 +19,8 @@ import {
 import { getMemberInfo } from "../lib/getMemberInfo";
 import db from "../lib/initDB";
 
+const RECENT_DAILY_RESET_WINDOW_MS = 30 * 60 * 1000;
+
 export async function createUser(
   user: Omit<typeof schema.userTable.$inferInsert, "referralCode">,
 ) {
@@ -500,6 +502,7 @@ export async function updateGroupAdViewsCountYesterday(userId: string) {
       .select({
         userId: schema.userDailyStatTable.userId,
         totalViews: schema.userDailyStatTable.totalViews,
+        updatedAt: schema.userDailyStatTable.updatedAt,
       })
       .from(schema.userDailyStatTable)
       .where(inArray(schema.userDailyStatTable.userId, allUserIds));
@@ -508,6 +511,24 @@ export async function updateGroupAdViewsCountYesterday(userId: string) {
       (total, result) => total + result.totalViews,
       0,
     );
+    const userResult = results.find((result) => result.userId === userId);
+
+    if (
+      groupAdViewsCountYesterday === 0 &&
+      userResult?.totalViews === 0 &&
+      userResult.updatedAt.getTime() > Date.now() - RECENT_DAILY_RESET_WINDOW_MS
+    ) {
+      const [existingStat] = await tx
+        .select()
+        .from(schema.userDailyStatTable)
+        .where(eq(schema.userDailyStatTable.userId, userId));
+
+      console.log(
+        `Skipped duplicate daily reset snapshot for user ${userId}, groupResult: ${JSON.stringify(results)}`,
+      );
+      return existingStat;
+    }
+
     console.log(
       `Daily stats reset for user ${userId}, groupResult: ${JSON.stringify(results)}, groupAdViewsCountYesterday: ${groupAdViewsCountYesterday}`,
     );
