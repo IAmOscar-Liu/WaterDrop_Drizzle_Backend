@@ -5,7 +5,7 @@ import isAuth from "../../middleware/isAuth";
 
 const router = Router();
 
-const upload = mutler({ dest: "../uploads/" });
+const upload = mutler({ dest: "./uploads/" });
 
 /**
  * @swagger
