@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "dev": "NODE_ENV=local nodemon src/index.ts",
-    "dev:stg": "NODE_ENV=stg nodemon src/index.ts",
+    "dev": "NODE_ENV=local nodemon --ignore src/assets/ src/index.ts",
+    "dev:stg": "NODE_ENV=stg nodemon --ignore src/assets/ src/index.ts",
     "build": "tsc",
     "start:local": "NODE_ENV=local node dist/index.js",
     "start:dev": "NODE_ENV=development node dist/index.js",

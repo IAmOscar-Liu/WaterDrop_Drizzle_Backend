@@ -1,4 +1,11 @@
 import swaggerJsDoc from "swagger-jsdoc";
+import path from "path";
+
+const routerFileExtension = __filename.endsWith(".js") ? "js" : "ts";
+const adminRouterDocsPath = path.resolve(
+  __dirname,
+  `../routers/admin/*.${routerFileExtension}`,
+);
 
 const options: swaggerJsDoc.Options = {
   definition: {
@@ -10,16 +17,7 @@ const options: swaggerJsDoc.Options = {
         "This is the documentation for the Water drop API, which provides endpoints for managing products, orders, advertisements, and user accounts.",
     },
   },
-  apis: [
-    "./src/routers/admin/admin-account.ts",
-    "./src/routers/admin/admin-product.ts",
-    "./src/routers/admin/admin-advertisement.ts",
-    "./src/routers/admin/admin-order.ts",
-    "./src/routers/admin/admin-delivery.ts",
-    "./src/routers/admin/admin-chatroom.ts",
-    "./src/routers/admin/admin-file.ts",
-    "./src/routers/admin/admin-system.ts",
-  ],
+  apis: [adminRouterDocsPath],
 };
 
 export const swaggerSpec = swaggerJsDoc(options);
