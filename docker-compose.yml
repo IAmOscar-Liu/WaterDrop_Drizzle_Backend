@@ -1,0 +1,68 @@
+services:
+  waterdrop-local:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: waterdrop-server:local
+    container_name: waterdrop-server-local
+    profiles:
+      - local
+    env_file:
+      - .env.local
+    environment:
+      NODE_ENV: local
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./flutter-ad-ecommerce-dev-5d9da-firebase-adminsdk-fbsvc-d73658c022.json:/app/flutter-ad-ecommerce-dev-5d9da-firebase-adminsdk-fbsvc-d73658c022.json:ro
+      - waterdrop-local-uploads:/app/uploads
+      - waterdrop-local-ecpay:/app/src/assets/json
+    restart: unless-stopped
+
+  waterdrop-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: waterdrop-server:dev
+    container_name: waterdrop-server-dev
+    profiles:
+      - dev
+    env_file:
+      - .env.development
+    environment:
+      NODE_ENV: development
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./flutter-ad-ecommerce-dev-5d9da-firebase-adminsdk-fbsvc-d73658c022.json:/app/flutter-ad-ecommerce-dev-5d9da-firebase-adminsdk-fbsvc-d73658c022.json:ro
+      - waterdrop-dev-uploads:/app/uploads
+      - waterdrop-dev-ecpay:/app/src/assets/json
+    restart: unless-stopped
+
+  waterdrop-stg:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: waterdrop-server:stg
+    container_name: waterdrop-server-stg
+    profiles:
+      - stg
+    env_file:
+      - .env.stg
+    environment:
+      NODE_ENV: stg
+    ports:
+      - "4010:4010"
+    volumes:
+      - ./flutter-ad-ecommerce-stg-323109-firebase-adminsdk-fbsvc-af368232be.json:/app/flutter-ad-ecommerce-stg-323109-firebase-adminsdk-fbsvc-af368232be.json:ro
+      - waterdrop-stg-uploads:/app/uploads
+      - waterdrop-stg-ecpay:/app/src/assets/json
+    restart: unless-stopped
+
+volumes:
+  waterdrop-local-uploads:
+  waterdrop-local-ecpay:
+  waterdrop-dev-uploads:
+  waterdrop-dev-ecpay:
+  waterdrop-stg-uploads:
+  waterdrop-stg-ecpay:
