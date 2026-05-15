@@ -1,3 +1,3 @@
-docker compose --profile local up --build
-docker compose --profile dev up --build
-docker compose --profile stg up --build
+docker compose up --build waterdrop-local
+docker-compose up --build waterdrop-dev
+docker compose up --build waterdrop-stg

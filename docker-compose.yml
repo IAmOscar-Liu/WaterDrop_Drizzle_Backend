@@ -5,8 +5,6 @@ services:
       dockerfile: Dockerfile
     image: waterdrop-server:local
     container_name: waterdrop-server-local
-    profiles:
-      - local
     env_file:
       - .env.local
     environment:
@@ -25,8 +23,6 @@ services:
       dockerfile: Dockerfile
     image: waterdrop-server:dev
     container_name: waterdrop-server-dev
-    profiles:
-      - dev
     env_file:
       - .env.development
     environment:
@@ -45,8 +41,6 @@ services:
       dockerfile: Dockerfile
     image: waterdrop-server:stg
     container_name: waterdrop-server-stg
-    profiles:
-      - stg
     env_file:
       - .env.stg
     environment:
