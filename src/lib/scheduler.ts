@@ -29,6 +29,7 @@ const RESET_BATCH_SIZE = 100; // Process 100 users at a time. Adjust as needed.
 export const dailyResetTask = cron.schedule(
   "*/30 * * * *", // every 30 minutes
   async () => {
+    if (process.env.NO_CRON === "true") return;
     console.log(
       `30 minute cron job for dailyResetTask started. Time: ${new Date()}`,
     );
@@ -96,6 +97,7 @@ const FCM_MAX_BATCH_SIZE = 100; // Process 100 users at a time. Adjust as needed
 export const dailyNotificationTask = cron.schedule(
   "*/30 * * * *", // every 30 minutes
   async () => {
+    if (process.env.NO_CRON === "true") return;
     console.log(
       `30 minute cron job for dailyNotificationTask started. Time: ${new Date()}`,
     );
@@ -150,6 +152,7 @@ export const dailyNotificationTask = cron.schedule(
 export const monthlyCoinStatExpirationTask = cron.schedule(
   "*/30 * 1,28,29,30,31 * *", // Every 30 minutes, on day the last day and 1 of the month
   async () => {
+    if (process.env.NO_CRON === "true") return;
     console.log(
       `30 minute cron job for monthlyCoinStatExpirationTask started. Time: ${new Date()}`,
     );
@@ -200,6 +203,7 @@ export const monthlyCoinStatExpirationTask = cron.schedule(
 export const monthlyCoinExpirationNotificationTask = cron.schedule(
   "*/30 * 21-31 * *", // Every 30 minutes, 8 days before the end of the month
   async () => {
+    if (process.env.NO_CRON === "true") return;
     console.log(
       `30 minute cron job for monthlyCoinExpirationNotificationTask started. Time: ${new Date()}`,
     );
@@ -298,6 +302,7 @@ export const monthlyCoinExpirationNotificationTask = cron.schedule(
 export const deleteUnusedDeviceTokensTask = cron.schedule(
   "0 * * * *", // every hour
   async () => {
+    if (process.env.NO_CRON === "true") return;
     console.log(
       `Hourly cron job for deleteUnusedDeviceTokensTask started. Time: ${new Date()}`,
     );
@@ -314,6 +319,7 @@ export const deleteUnusedDeviceTokensTask = cron.schedule(
 export const expireOrdersTask = cron.schedule(
   "*/30 * * * *", // every 30 minutes
   async () => {
+    if (process.env.NO_CRON === "true") return;
     console.log(
       `30 minute cron job for expireOrdersTask started. Time: ${new Date()}`,
     );
@@ -329,6 +335,7 @@ export const expireOrdersTask = cron.schedule(
 export const pollLogisticsTradeInfoTask = cron.schedule(
   "*/30 * * * *", // every 30 minutes
   async () => {
+    if (process.env.NO_CRON === "true") return;
     console.log(
       `30 minute cron job for pollLogisticsTradeInfoTask started. Time: ${new Date()}`,
     );
@@ -344,6 +351,7 @@ export const pollLogisticsTradeInfoTask = cron.schedule(
 export const fetchEcPayStoreListTask = cron.schedule(
   "0 2 * * *",
   async () => {
+    if (process.env.NO_CRON === "true") return;
     console.log(
       `Scheduled 02:00 (Asia/Taipei) job: fetchEcPayStoreListTask started. Time: ${new Date()}`,
     );

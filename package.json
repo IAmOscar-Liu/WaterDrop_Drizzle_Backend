@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "NODE_ENV=local nodemon --ignore src/assets/ src/index.ts",
     "dev:stg": "NODE_ENV=stg nodemon --ignore src/assets/ src/index.ts",
+    "dev:stg-no-cron": "NODE_ENV=stg NO_CRON=true nodemon --ignore src/assets/ src/index.ts",
     "build": "tsc",
     "start:local": "NODE_ENV=local node dist/index.js",
     "start:dev": "NODE_ENV=development node dist/index.js",
