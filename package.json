@@ -4,6 +4,8 @@
   "main": "index.js",
   "scripts": {
     "dev": "NODE_ENV=local nodemon --ignore src/assets/ src/index.ts",
+    "dev:dev": "NODE_ENV=development nodemon --ignore src/assets/ src/index.ts",
+    "dev:dev-no-cron": "NODE_ENV=development NO_CRON=true nodemon --ignore src/assets/ src/index.ts",
     "dev:stg": "NODE_ENV=stg nodemon --ignore src/assets/ src/index.ts",
     "dev:stg-no-cron": "NODE_ENV=stg NO_CRON=true nodemon --ignore src/assets/ src/index.ts",
     "build": "tsc",

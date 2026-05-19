@@ -15,7 +15,6 @@ import { CustomError } from "../lib/error";
 import db from "../lib/initDB";
 import { isAccountAdmin } from "./account";
 import { upsertCartItem } from "./cart";
-import orderService from "../services/order";
 
 /**
  * Creates a new order, inserts order items, and updates product reserves.
@@ -286,13 +285,6 @@ export async function updateOrderStatus({
           : {}),
       })
       .where(eq(schema.orderTable.id, orderId));
-
-    if (status === "paid") {
-      orderService.sendOrderCompletedNotification({
-        userId: order.userId,
-        orderId: order.id,
-      });
-    }
 
     return tx.query.orderTable.findFirst({
       where: eq(schema.orderTable.id, orderId),

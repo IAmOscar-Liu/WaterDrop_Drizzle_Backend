@@ -23,6 +23,7 @@ import {
   updateOrderStatus,
 } from "../repository/order";
 import ecpayService from "../services/ecpay";
+import orderService from "../services/order";
 
 const TEST_ORDER_ID = "test_order_12345";
 
@@ -190,6 +191,13 @@ class EcPayController {
                 );
               }),
             );
+          }
+
+          if (status === "paid") {
+            orderService.sendOrderCompletedNotification({
+              userId: result.userId,
+              orderId: result.id,
+            });
           }
         })
         .catch((error) => console.error("Error updating order:", error));
