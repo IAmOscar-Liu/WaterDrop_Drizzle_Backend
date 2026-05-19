@@ -13,7 +13,7 @@ class OrderController {
       userId: req.userId ?? "",
       statusIn: Array.isArray(statusIn)
         ? (statusIn as Exclude<schema.NewOrder["orderStatus"], undefined>[])
-        : ["paid"],
+        : ["paid", "payment-processing"],
       order: order === "asc" ? "asc" : "desc",
     });
     sendJsonResponse(res, result);
@@ -56,6 +56,7 @@ class OrderController {
       transactionFee,
       transactionFeeRateAtSale,
       shippingInfo,
+      orderPayment,
     } = req.body;
     const result = await orderService.createOrder({
       userId: req.userId ?? "",
@@ -76,6 +77,9 @@ class OrderController {
         ? Number(transactionFeeRateAtSale)
         : undefined,
       shippingInfo: shippingInfo ? shippingInfo : undefined,
+      orderPayment: orderPayment
+        ? (String(orderPayment) as schema.Order["orderPayment"])
+        : undefined,
     });
     sendJsonResponse(res, result);
   }

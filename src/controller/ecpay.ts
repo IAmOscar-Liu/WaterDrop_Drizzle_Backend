@@ -2,7 +2,6 @@ import { Request, Response } from "express";
 import path from "path";
 import {
   ECPAY_CHECKOUT_URL,
-  ECPAY_GET_STORE_LIST_URL,
   ECPAY_LOGISTIC_BASE_URL,
   ECPAY_QUERY_LOGISTICS_TRADE_INFO_URL,
 } from "../constants/ecpay";
@@ -63,7 +62,14 @@ class EcPayController {
   }
 
   async createPayment(req: Request, res: Response): Promise<any> {
-    const { token, orderId, totalAmount, tradeDesc, itemName } = req.query;
+    const {
+      token,
+      orderId,
+      totalAmount,
+      tradeDesc,
+      itemName,
+      ChoosePayment = "Credit",
+    } = req.query;
 
     if (!token || !orderId || !totalAmount || !tradeDesc || !itemName)
       return res.send("Missing required parameters");
@@ -71,25 +77,48 @@ class EcPayController {
     if (!payload || typeof payload === "string" || !payload.data?.id)
       return res.send("Invalid token");
 
-    const base_param = {
-      MerchantID: process.env.MERCHANTID,
-      MerchantTradeNo: ecpayService.generateTradeNo(),
-      MerchantTradeDate: ecpayService.generateMerchantTradeDate(),
-      PaymentType: "aio",
-      ChoosePayment: "Credit",
-      // Explicitly block every non-credit tab/wallet so only Credit shows
-      // Reference: ECPay AIO V5 supports excluding by '#'-joined tokens
-      IgnorePayment:
-        "ATM#WebATM#CVS#BARCODE#ApplePay#GooglePay#AndroidPay#BNPL#TWQR#WeiXin#LINEPay#JKOPay#ESUNWallet#PiWallet#ECPayWallet#iPASS",
-      // IgnorePayment: "CVS#BARCODE#TWQR#BNPL#WeiXin",
-      TotalAmount: Math.floor(Number(totalAmount)),
-      TradeDesc: String(tradeDesc),
-      ItemName: String(itemName),
-      ReturnURL: `${process.env.HOST}/api/ecpay/return`,
-      ClientBackURL: `${process.env.HOST}/api/ecpay/clientReturn`,
-      EncryptType: 1,
-      CustomField1: String(orderId),
-    };
+    const base_param =
+      ChoosePayment === "Credit"
+        ? {
+            MerchantID: process.env.MERCHANTID,
+            MerchantTradeNo: ecpayService.generateTradeNo(),
+            MerchantTradeDate: ecpayService.generateMerchantTradeDate(),
+            PaymentType: "aio",
+            ChoosePayment: "Credit",
+            // Explicitly block every non-credit tab/wallet so only Credit shows
+            // Reference: ECPay AIO V5 supports excluding by '#'-joined tokens
+            IgnorePayment:
+              "ATM#WebATM#CVS#BARCODE#ApplePay#GooglePay#AndroidPay#BNPL#TWQR#WeiXin#LINEPay#JKOPay#ESUNWallet#PiWallet#ECPayWallet#iPASS",
+            // IgnorePayment: "CVS#BARCODE#TWQR#BNPL#WeiXin",
+            TotalAmount: Math.floor(Number(totalAmount)),
+            TradeDesc: String(tradeDesc),
+            ItemName: String(itemName),
+            ReturnURL: `${process.env.HOST}/api/ecpay/return`,
+            ClientBackURL: `${process.env.HOST}/api/ecpay/clientReturn`,
+            EncryptType: 1,
+            CustomField1: String(orderId),
+          }
+        : {
+            MerchantID: process.env.MERCHANTID,
+            MerchantTradeNo: ecpayService.generateTradeNo(),
+            MerchantTradeDate: ecpayService.generateMerchantTradeDate(),
+            PaymentType: "aio",
+            ChoosePayment: "ATM",
+            // Explicitly block every non-credit tab/wallet so only Credit shows
+            // Reference: ECPay AIO V5 supports excluding by '#'-joined tokens
+            // IgnorePayment:
+            //   "Credit#WebATM#CVS#BARCODE#ApplePay#GooglePay#AndroidPay#BNPL#TWQR#WeiXin#LINEPay#JKOPay#ESUNWallet#PiWallet#ECPayWallet#iPASS",
+            // IgnorePayment: "CVS#BARCODE#TWQR#BNPL#WeiXin",
+            TotalAmount: Math.floor(Number(totalAmount)),
+            TradeDesc: String(tradeDesc),
+            ItemName: String(itemName),
+            ReturnURL: `${process.env.HOST}/api/ecpay/return`,
+            ClientBackURL: `${process.env.HOST}/api/ecpay/clientReturn`,
+            EncryptType: 1,
+            CustomField1: String(orderId),
+            PaymentInfoURL: `${process.env.HOST}/api/ecpay/paymentInfo`,
+            ExpireDate: 1,
+          };
 
     console.log("base_param: ", base_param);
 
@@ -124,7 +153,7 @@ class EcPayController {
     if (orderId !== TEST_ORDER_ID) {
       const status = data.RtnCode == 1 ? "paid" : "failed";
 
-      await updateOrderStatus(orderId, status, data)
+      await updateOrderStatus({ orderId, status, metadata: data })
         .then((result) => {
           if (!result) throw new Error("Order not found");
           console.log(`Successfully updated order:`, result.id);
@@ -162,6 +191,33 @@ class EcPayController {
               }),
             );
           }
+        })
+        .catch((error) => console.error("Error updating order:", error));
+    }
+
+    // 交易成功後，需要回傳 1|OK 給綠界
+    res.send("1|OK");
+  }
+
+  async handlePaymentInfo(req: Request, res: Response): Promise<any> {
+    const data = req.body;
+
+    console.log("付款相關資訊:", data);
+    const orderId = data.CustomField1;
+
+    if (orderId !== TEST_ORDER_ID) {
+      const bankName = ecpayService.getBankNameByCode(data.BankCode);
+      await updateOrderStatus({
+        orderId,
+        status: "payment-processing",
+        paymentInfo: {
+          ...data,
+          ...(bankName ? { BankName: bankName } : {}),
+        },
+      })
+        .then((result) => {
+          if (!result) throw new Error("Order not found");
+          console.log(`Successfully updated order:`, result.id);
         })
         .catch((error) => console.error("Error updating order:", error));
     }

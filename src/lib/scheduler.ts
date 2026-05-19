@@ -17,7 +17,10 @@ import {
 } from "./general";
 import { sendMulticastPushNotification } from "./sendNotification";
 import { createNotification } from "../repository/notification";
-import { expireOrders } from "../repository/order";
+import {
+  expirePendingOrders,
+  expirePaymentProcessingOrders,
+} from "../repository/order";
 import { pollEcPayLogisticsTradeInfo } from "./polling";
 import { Worker } from "worker_threads";
 import path from "path";
@@ -324,8 +327,13 @@ export const expireOrdersTask = cron.schedule(
       `30 minute cron job for expireOrdersTask started. Time: ${new Date()}`,
     );
     try {
-      const result = await expireOrders(30 * 60 * 1000); // 30 minutes ago
-      console.log(`${result.length} orders expired.`);
+      const [pendingResult, paymentProcessingResult] = await Promise.all([
+        expirePendingOrders(30 * 60 * 1000), // 30 minutes ago
+        expirePaymentProcessingOrders(2 * 24 * 60 * 60 * 1000), // 2 days ago
+      ]);
+      console.log(
+        `${pendingResult.length + paymentProcessingResult.length} orders expired.`,
+      );
     } catch (error) {
       console.error(`Error during expireOrdersTask:`, error);
     }

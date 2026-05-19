@@ -662,6 +662,19 @@ class EcPayService {
     }
   }
 
+  getBankNameByCode(code: string) {
+    const bankList = JSON.parse(
+      fs.readFileSync(
+        path.resolve(process.cwd(), "src/assets/json/bankList.json"),
+        "utf8",
+      ),
+    ) as { banks: { code: string; name: string }[] };
+    const bankNameByCode = new Map(
+      bankList.banks.map((bank) => [bank.code, bank.name]),
+    );
+    return bankNameByCode.get(code) || null;
+  }
+
   async getStoreList(
     {
       CvsType,

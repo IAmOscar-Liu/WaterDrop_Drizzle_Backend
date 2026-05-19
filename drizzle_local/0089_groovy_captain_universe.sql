@@ -1,0 +1,1 @@
+ALTER TABLE "orders" ADD COLUMN "complete_email_sent" boolean DEFAULT false NOT NULL;

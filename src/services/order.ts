@@ -12,6 +12,7 @@ import {
   ListAdminOrdersParams,
   listOrders,
   ListOrdersParams,
+  updateCompleteEmailSent,
   updateOrderStatus,
 } from "../repository/order";
 import { getFcmTokensInUserIds, getSimpleUserById } from "../repository/user";
@@ -85,6 +86,7 @@ class OrderService {
     transactionFee,
     transactionFeeRateAtSale,
     shippingInfo,
+    orderPayment = "Credit",
   }: {
     userId: string;
     items: schema.NewOrderItem[];
@@ -98,6 +100,7 @@ class OrderService {
     transactionFee?: number;
     transactionFeeRateAtSale?: number;
     shippingInfo?: any;
+    orderPayment?: schema.Order["orderPayment"];
   }): Promise<ServiceResponse<Awaited<ReturnType<typeof createOrder>>>> {
     try {
       const order = await createOrder(
@@ -113,6 +116,7 @@ class OrderService {
           transactionFee,
           transactionFeeRateAtSale,
           shippingInfo,
+          orderPayment: orderPayment || "Credit",
         },
         items,
       );
@@ -128,7 +132,7 @@ class OrderService {
     metadata?: any,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof updateOrderStatus>>>> {
     try {
-      const order = await updateOrderStatus(orderId, status, metadata);
+      const order = await updateOrderStatus({ orderId, status, metadata });
       if (order) {
         return { success: true, data: order };
       } else {
@@ -157,6 +161,10 @@ class OrderService {
         getSimpleUserById(userId),
       ]);
       if (!order) throw new CustomError("Order not found", 404);
+
+      if (order.completeEmailSent)
+        throw new CustomError("Order completion email already sent", 400);
+      await updateCompleteEmailSent({ orderId, completeEmailSent: true });
 
       sendMulticastPushNotification({
         tokens: fcmTokens,

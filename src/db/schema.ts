@@ -54,8 +54,11 @@ export const chatMessageSenderEnum = pgEnum("chat_message_sender", [
   "seller",
 ]);
 
+export const orderPaymentEnum = pgEnum("order_payment", ["Credit", "ATM"]);
+
 export const orderStatusEnum = pgEnum("order_status", [
   "pending",
+  "payment-processing",
   "paid",
   "failed",
   "expired",
@@ -528,6 +531,8 @@ export const orderTable = pgTable("orders", {
   shippingCostDeduction: doublePrecision("shipping_cost_deduction").default(0),
   transactionFee: doublePrecision("transaction_fee").default(0), // New field for tax amount
   orderStatus: orderStatusEnum("order_status").default("pending").notNull(),
+  orderPayment: orderPaymentEnum("order_payment").default("Credit").notNull(),
+  completeEmailSent: boolean("complete_email_sent").default(false).notNull(),
 
   transactionFeeRateAtSale: doublePrecision("transaction_fee_rate_at_sale"),
   userLevelAtSale: text("user_level_at_sale"),
@@ -541,8 +546,9 @@ export const orderTable = pgTable("orders", {
     .$onUpdate(() => new Date())
     .notNull(),
   completedAt: timestamp("completed_at", { withTimezone: true }),
-  metadata: jsonb("metadata"), // Optional: Store additional info like payment method, shipping info, etc.
   shippingInfo: jsonb("shipping_info"),
+  paymentInfo: jsonb("payment_info"),
+  metadata: jsonb("metadata"), // Optional: Store additional info like payment method, shipping info, etc.
 });
 
 export const orderItemTable = pgTable(

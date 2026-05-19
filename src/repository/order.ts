@@ -15,6 +15,7 @@ import { CustomError } from "../lib/error";
 import db from "../lib/initDB";
 import { isAccountAdmin } from "./account";
 import { upsertCartItem } from "./cart";
+import orderService from "../services/order";
 
 /**
  * Creates a new order, inserts order items, and updates product reserves.
@@ -111,11 +112,33 @@ export async function createOrder(
   });
 }
 
-export async function updateOrderStatus(
-  orderId: string,
-  status: Exclude<schema.NewOrder["orderStatus"], undefined>,
-  metadata?: schema.NewOrder["metadata"],
-) {
+export async function updateCompleteEmailSent({
+  orderId,
+  completeEmailSent,
+}: {
+  orderId: string;
+  completeEmailSent: boolean;
+}) {
+  const [updatedOrder] = await db
+    .update(schema.orderTable)
+    .set({ completeEmailSent, updatedAt: new Date() })
+    .where(eq(schema.orderTable.id, orderId))
+    .returning();
+
+  return updatedOrder;
+}
+
+export async function updateOrderStatus({
+  orderId,
+  status,
+  metadata,
+  paymentInfo,
+}: {
+  orderId: string;
+  status: Exclude<schema.NewOrder["orderStatus"], undefined>;
+  metadata?: schema.NewOrder["metadata"];
+  paymentInfo?: schema.NewOrder["paymentInfo"];
+}) {
   return db.transaction(async (tx) => {
     // First, get the order to access its items and user ID
     const order = await tx.query.orderTable.findFirst({
@@ -136,7 +159,9 @@ export async function updateOrderStatus(
       const promises: Promise<any>[] = [];
       if (order.items.length > 0) {
         for (let item of order.items) {
-          promises.push(upsertCartItem(order.userId, item.productId, 0));
+          if (order.orderStatus === "pending") {
+            promises.push(upsertCartItem(order.userId, item.productId, 0));
+          }
           promises.push(
             tx
               .update(schema.productTable)
@@ -210,6 +235,14 @@ export async function updateOrderStatus(
         }
       }
       await Promise.all(promises);
+    } else if (status === "payment-processing") {
+      const promises: Promise<any>[] = [];
+      if (order.items.length > 0) {
+        for (let item of order.items) {
+          promises.push(upsertCartItem(order.userId, item.productId, 0));
+        }
+      }
+      await Promise.all(promises);
     } else if (status !== "pending") {
       const promises: Promise<any>[] = [];
       if (order.items.length > 0) {
@@ -244,6 +277,7 @@ export async function updateOrderStatus(
         orderStatus: status,
         updatedAt: new Date(),
         completedAt: status === "paid" ? new Date() : null,
+        ...(paymentInfo ? { paymentInfo } : {}),
         ...(metadata
           ? {
               metadata,
@@ -252,6 +286,13 @@ export async function updateOrderStatus(
           : {}),
       })
       .where(eq(schema.orderTable.id, orderId));
+
+    if (status === "paid") {
+      orderService.sendOrderCompletedNotification({
+        userId: order.userId,
+        orderId: order.id,
+      });
+    }
 
     return tx.query.orderTable.findFirst({
       where: eq(schema.orderTable.id, orderId),
@@ -267,7 +308,7 @@ export async function updateOrderStatus(
   });
 }
 
-export async function expireOrders(expireInMs: number) {
+export async function expirePendingOrders(expireInMs: number) {
   const cutoffTime = new Date(Date.now() - expireInMs);
 
   const expiredOrders = await db
@@ -281,7 +322,30 @@ export async function expireOrders(expireInMs: number) {
     );
 
   const results = await Promise.all(
-    expiredOrders.map((order) => updateOrderStatus(order.id, "expired")),
+    expiredOrders.map((order) =>
+      updateOrderStatus({ orderId: order.id, status: "expired" }),
+    ),
+  );
+  return results;
+}
+
+export async function expirePaymentProcessingOrders(expireInMs: number) {
+  const cutoffTime = new Date(Date.now() - expireInMs);
+
+  const expiredOrders = await db
+    .select({ id: schema.orderTable.id })
+    .from(schema.orderTable)
+    .where(
+      and(
+        eq(schema.orderTable.orderStatus, "payment-processing"),
+        lt(schema.orderTable.createdAt, cutoffTime),
+      ),
+    );
+
+  const results = await Promise.all(
+    expiredOrders.map((order) =>
+      updateOrderStatus({ orderId: order.id, status: "expired" }),
+    ),
   );
   return results;
 }

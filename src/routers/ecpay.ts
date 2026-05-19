@@ -7,6 +7,7 @@ router.get("/test", EcPayController.createTestPayment);
 router.get("/new", EcPayController.createPayment);
 router.post("/return", EcPayController.handleReturn);
 router.get("/clientReturn", EcPayController.handleClientReturn);
+router.post("/paymentInfo", EcPayController.handlePaymentInfo);
 
 router.get("/logistics/map", EcPayController.getLogisticsMap);
 router.post(
