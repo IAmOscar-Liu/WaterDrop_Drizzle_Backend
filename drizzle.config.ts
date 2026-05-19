@@ -5,7 +5,7 @@ import { defineConfig } from "drizzle-kit";
 type EnvType = "local" | "development" | "stg" | "production";
 
 // Remember to update it when you add a new environment, and also create a corresponding .env file and output directory for it.
-const env = "development" as EnvType;
+const env = "stg" as EnvType;
 const envPath = path.resolve(process.cwd(), `.env.${env}`);
 
 dotenv.config({

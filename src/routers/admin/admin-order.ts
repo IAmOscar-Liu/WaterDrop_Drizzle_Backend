@@ -129,6 +129,16 @@ const router = Router();
  *
  *     Order:
  *       type: object
+ *       required:
+ *         - id
+ *         - userId
+ *         - subTotal
+ *         - totalAmount
+ *         - orderStatus
+ *         - orderPayment
+ *         - completeEmailSent
+ *         - createdAt
+ *         - updatedAt
  *       properties:
  *         id:
  *           type: string
@@ -155,15 +165,19 @@ const router = Router();
  *         shippingCost:
  *           type: number
  *           format: double
+ *           nullable: true
  *         shippingCostDeduction:
  *           type: number
  *           format: double
+ *           nullable: true
  *         transactionFee:
  *           type: number
  *           format: double
+ *           nullable: true
  *         transactionFeeRateAtSale:
  *           type: number
  *           format: double
+ *           nullable: true
  *         userLevelAtSale:
  *           type: string
  *           nullable: true
@@ -173,13 +187,28 @@ const router = Router();
  *           nullable: true
  *         orderStatus:
  *           type: string
- *           enum: [pending, paid, failed]
+ *           enum: [pending, payment-processing, paid, failed, expired, canceled]
+ *         orderPayment:
+ *           type: string
+ *           enum: [Credit, ATM]
+ *         completeEmailSent:
+ *           type: boolean
  *         createdAt:
  *           type: string
  *           format: date-time
  *         updatedAt:
  *           type: string
  *           format: date-time
+ *         completedAt:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *         shippingInfo:
+ *           type: object
+ *           nullable: true
+ *         paymentInfo:
+ *           type: object
+ *           nullable: true
  *         metadata:
  *           type: object
  *           nullable: true
@@ -359,7 +388,7 @@ const router = Router();
  *         name: status
  *         schema:
  *           type: string
- *           enum: [pending, paid, failed]
+ *           enum: [pending, payment-processing, paid, failed, expired, canceled]
  *       - in: query
  *         name: order
  *         schema:
