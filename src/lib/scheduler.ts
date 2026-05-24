@@ -18,6 +18,7 @@ import {
 import { sendMulticastPushNotification } from "./sendNotification";
 import { createNotification } from "../repository/notification";
 import {
+  deleteIdempotencyKeys,
   expirePendingOrders,
   expirePaymentProcessingOrders,
 } from "../repository/order";
@@ -409,4 +410,21 @@ export const fetchEcPayStoreListTask = cron.schedule(
     }
   },
   { timezone: "Asia/Taipei" },
+);
+
+export const deleteIdempotencyKeysTask = cron.schedule(
+  "0 */2 * * *", // every 2 hours
+  async () => {
+    if (process.env.NO_CRON === "true") return;
+    console.log(
+      `2 hour cron job for deleteIdempotencyKeysTask started. Time: ${new Date()}`,
+    );
+
+    try {
+      await deleteIdempotencyKeys(3 * 24 * 60 * 60 * 1000); // 3 days ago
+      console.log("Expired idempotency keys deleted.");
+    } catch (error) {
+      console.error(`Error during deleteIdempotencyKeysTask:`, error);
+    }
+  },
 );

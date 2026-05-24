@@ -14,6 +14,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { request } from "http";
 
 // Optional: keep providers explicit (add/remove as you need)
 export const oauthProviderEnum = pgEnum("oauth_provider", [
@@ -102,6 +103,12 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "coins_earned",
   "chat_message", // Optional: To notify about a new chat
   "other",
+]);
+
+export const idempotencyKeyStatusEnum = pgEnum("idempotency_key_status", [
+  "started",
+  "completed",
+  "failed",
 ]);
 
 export const groupTable = pgTable("groups", {
@@ -756,6 +763,22 @@ export const userNotificationTable = pgTable(
   }),
 );
 
+export const idempotencyKeyTable = pgTable("idempotency_keys", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  key: text("key").notNull().unique(),
+  requestPath: text("request_path").notNull(),
+  requestData: jsonb("request_data").notNull(),
+  responseData: jsonb("response_data"),
+  status: idempotencyKeyStatusEnum("status").default("started").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+});
+
 // Relations
 export const accountRelations = relations(accountTable, ({ one, many }) => ({
   products: many(productTable),
@@ -768,7 +791,10 @@ export const accountRelations = relations(accountTable, ({ one, many }) => ({
     fields: [accountTable.id],
     references: [accountWalletTable.accountId],
   }),
-  shippingFee: one(shippingFeeTable),
+  shippingFee: one(shippingFeeTable, {
+    fields: [accountTable.id],
+    references: [shippingFeeTable.accountId],
+  }),
 }));
 
 export const usersRelations = relations(userTable, ({ one, many }) => ({
@@ -819,6 +845,13 @@ export const accountWalletRelations = relations(
     }),
   }),
 );
+
+export const shippingFeeRelations = relations(shippingFeeTable, ({ one }) => ({
+  account: one(accountTable, {
+    fields: [shippingFeeTable.accountId],
+    references: [accountTable.id],
+  }),
+}));
 
 export const userDailyStatRelations = relations(
   userDailyStatTable,

@@ -75,6 +75,7 @@ class OrderService {
 
   async createOrder({
     userId,
+    idempotencyKey,
     items,
     subTotal,
     totalAmount,
@@ -89,6 +90,7 @@ class OrderService {
     orderPayment = "Credit",
   }: {
     userId: string;
+    idempotencyKey: string;
     items: schema.NewOrderItem[];
     subTotal: number;
     totalAmount: number;
@@ -103,8 +105,8 @@ class OrderService {
     orderPayment?: schema.Order["orderPayment"];
   }): Promise<ServiceResponse<Awaited<ReturnType<typeof createOrder>>>> {
     try {
-      const order = await createOrder(
-        {
+      const order = await createOrder({
+        orderData: {
           userId,
           subTotal,
           totalAmount,
@@ -118,8 +120,9 @@ class OrderService {
           shippingInfo,
           orderPayment: orderPayment || "Credit",
         },
+        idempotencyKey,
         items,
-      );
+      });
       return { success: true, data: order };
     } catch (error) {
       return handleServiceError(error);

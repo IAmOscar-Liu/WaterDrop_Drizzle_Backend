@@ -45,6 +45,7 @@ class OrderController {
 
   async createOrder(req: RequestWithId, res: Response): Promise<any> {
     const {
+      idempotencyKey,
       items,
       subTotal,
       totalAmount,
@@ -60,6 +61,7 @@ class OrderController {
     } = req.body;
     const result = await orderService.createOrder({
       userId: req.userId ?? "",
+      idempotencyKey: String(idempotencyKey),
       items,
       subTotal: Number(subTotal),
       totalAmount: Number(totalAmount),

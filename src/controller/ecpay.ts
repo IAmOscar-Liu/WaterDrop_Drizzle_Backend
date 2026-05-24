@@ -20,6 +20,8 @@ import {
 import {
   createMerchantTrade,
   getMerchantTradeByMerchantTradeNo,
+  getOrderStatusById,
+  updateIdempotencyKey,
   updateOrderStatus,
 } from "../repository/order";
 import ecpayService from "../services/ecpay";
@@ -66,17 +68,28 @@ class EcPayController {
     const {
       token,
       orderId,
+      idempotencyKey,
       totalAmount,
       tradeDesc,
       itemName,
       ChoosePayment = "Credit",
     } = req.query;
 
-    if (!token || !orderId || !totalAmount || !tradeDesc || !itemName)
+    if (
+      !token ||
+      !orderId ||
+      !idempotencyKey ||
+      !totalAmount ||
+      !tradeDesc ||
+      !itemName
+    )
       return res.send("Missing required parameters");
     const payload = validateToken(String(token));
     if (!payload || typeof payload === "string" || !payload.data?.id)
       return res.send("Invalid token");
+    const status = await getOrderStatusById(String(orderId));
+    if (!status || status !== "pending")
+      return res.send("Order not found or not in pending status");
 
     const base_param =
       ChoosePayment === "Credit"
@@ -98,6 +111,7 @@ class EcPayController {
             ClientBackURL: `${process.env.HOST}/api/ecpay/clientReturn`,
             EncryptType: 1,
             CustomField1: String(orderId),
+            CustomField2: String(idempotencyKey),
           }
         : {
             MerchantID: process.env.MERCHANTID,
@@ -117,6 +131,7 @@ class EcPayController {
             ClientBackURL: `${process.env.HOST}/api/ecpay/clientReturn`,
             EncryptType: 1,
             CustomField1: String(orderId),
+            CustomField2: String(idempotencyKey),
             PaymentInfoURL: `${process.env.HOST}/api/ecpay/paymentInfo`,
             ExpireDate: 1,
           };
@@ -150,6 +165,7 @@ class EcPayController {
     console.log("交易結果:", data);
 
     const orderId = data.CustomField1;
+    const idempotencyKey = data.CustomField2;
 
     if (orderId !== TEST_ORDER_ID) {
       const status = data.RtnCode == 1 ? "paid" : "failed";
@@ -197,6 +213,17 @@ class EcPayController {
             orderService.sendOrderCompletedNotification({
               userId: result.userId,
               orderId: result.id,
+            });
+            updateIdempotencyKey({
+              idempotencyKey,
+              status: "completed",
+              responseData: result,
+            });
+          } else {
+            updateIdempotencyKey({
+              idempotencyKey,
+              status: "failed",
+              responseData: result,
             });
           }
         })

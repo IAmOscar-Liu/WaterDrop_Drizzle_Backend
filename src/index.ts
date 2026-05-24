@@ -16,6 +16,7 @@ import {
   monthlyCoinExpirationNotificationTask,
   monthlyCoinStatExpirationTask,
   pollLogisticsTradeInfoTask,
+  deleteIdempotencyKeysTask,
 } from "./lib/scheduler";
 import { swaggerSpec } from "./lib/swagger";
 import { errorHandler } from "./middleware/errorHandler";
@@ -49,6 +50,7 @@ deleteUnusedDeviceTokensTask.start();
 expireOrdersTask.start();
 pollLogisticsTradeInfoTask.start();
 fetchEcPayStoreListTask.start();
+deleteIdempotencyKeysTask.start();
 
 console.log("Cron job has been started.");
 

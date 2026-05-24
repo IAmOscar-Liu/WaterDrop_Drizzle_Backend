@@ -22,10 +22,23 @@ import { upsertCartItem } from "./cart";
  * @param items The items to be included in the order.
  * @returns The newly created order with its items and product relations.
  */
-export async function createOrder(
-  orderData: schema.NewOrder,
-  items: Array<Omit<schema.NewOrderItem, "orderId" | "lineTotal">>,
-) {
+export async function createOrder({
+  orderData,
+  items,
+  idempotencyKey,
+}: {
+  orderData: schema.NewOrder;
+  items: Array<Omit<schema.NewOrderItem, "orderId" | "lineTotal">>;
+  idempotencyKey: string;
+}) {
+  const existingIdempotencyKey = await db.query.idempotencyKeyTable.findFirst({
+    where: eq(schema.idempotencyKeyTable.key, idempotencyKey),
+  });
+
+  if (existingIdempotencyKey) {
+    throw new CustomError("Duplicate order request", 409);
+  }
+
   return db.transaction(async (tx) => {
     // check if each item's quantity less or equal to (product.stock - product.reserve)
     if (items.length > 0) {
@@ -76,18 +89,18 @@ export async function createOrder(
 
     console.log("New Order Created:", newOrder.id);
 
-    await tx.insert(schema.orderItemTable).values(
-      items.map((item) => ({
-        ...item,
-        pendingQuantity: item.quantity,
-        orderId: newOrder.id,
-        lineTotal: item.unitPriceAtSale * item.quantity,
-      })),
-    );
+    await Promise.all([
+      tx.insert(schema.orderItemTable).values(
+        items.map((item) => ({
+          ...item,
+          pendingQuantity: item.quantity,
+          orderId: newOrder.id,
+          lineTotal: item.unitPriceAtSale * item.quantity,
+        })),
+      ),
 
-    // Update each product's reserve
-    await Promise.all(
-      items.map((item) =>
+      // Update each product's reserve
+      ...items.map((item) =>
         tx
           .update(schema.productTable)
           .set({
@@ -96,7 +109,17 @@ export async function createOrder(
           })
           .where(eq(schema.productTable.id, item.productId)),
       ),
-    );
+
+      // Insert the idempotency key after successfully creating the order and related items to prevent duplicate processing
+      tx.insert(schema.idempotencyKeyTable).values({
+        key: idempotencyKey,
+        requestPath: "/orders", // You can adjust this to be more specific if needed
+        requestData: {
+          orderData,
+          items,
+        },
+      }),
+    ]);
 
     return tx.query.orderTable.findFirst({
       where: eq(schema.orderTable.id, newOrder.id),
@@ -125,6 +148,27 @@ export async function updateCompleteEmailSent({
     .returning();
 
   return updatedOrder;
+}
+
+export async function updateIdempotencyKey({
+  idempotencyKey,
+  status,
+  responseData,
+}: {
+  idempotencyKey: string;
+  status: "started" | "completed" | "failed";
+  responseData?: unknown;
+}) {
+  const [updatedIdempotencyKey] = await db
+    .update(schema.idempotencyKeyTable)
+    .set({
+      status,
+      ...(responseData !== undefined ? { responseData } : {}),
+    })
+    .where(eq(schema.idempotencyKeyTable.key, idempotencyKey))
+    .returning();
+
+  return updatedIdempotencyKey;
 }
 
 export async function updateOrderStatus({
@@ -298,6 +342,14 @@ export async function updateOrderStatus({
       },
     });
   });
+}
+
+export async function deleteIdempotencyKeys(expireInMs: number) {
+  const cutoffTime = new Date(Date.now() - expireInMs);
+
+  return db
+    .delete(schema.idempotencyKeyTable)
+    .where(lt(schema.idempotencyKeyTable.updatedAt, cutoffTime));
 }
 
 export async function expirePendingOrders(expireInMs: number) {
@@ -494,6 +546,16 @@ export async function listAdminOrders({
   });
 
   return { orders, total, page, limit, totalPages };
+}
+
+export async function getOrderStatusById(orderId: string) {
+  const order = await db.query.orderTable.findFirst({
+    where: eq(schema.orderTable.id, orderId),
+    columns: {
+      orderStatus: true,
+    },
+  });
+  return order?.orderStatus;
 }
 
 export async function getOrderById(orderId: string) {
