@@ -142,9 +142,7 @@ export const chatRoomTable = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => userTable.id),
-    accountId: uuid("account_id")
-      .notNull()
-      .references(() => accountTable.id),
+    accountId: uuid("account_id").references(() => accountTable.id),
     productId: uuid("product_id").references(() => productTable.id),
     orderId: uuid("order_id").references(() => orderTable.id),
     createdAt: timestamp("created_at", { withTimezone: true })

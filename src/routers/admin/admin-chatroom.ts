@@ -116,12 +116,14 @@ const router = Router();
  *         productId:
  *           type: string
  *           format: uuid
+ *           nullable: true
  *         userId:
  *           type: string
  *           format: uuid
  *         accountId:
  *           type: string
  *           format: uuid
+ *           nullable: true
  *         status:
  *           type: string
  *           enum: [active, inactive]
@@ -150,6 +152,8 @@ const router = Router();
  *                   format: email
  *             product:
  *               type: object
+ *               nullable: true
+ *               description: Null when accountId is null. These rooms are for general customer support instead of a specific product, and only admin accounts receive them because they can support customers directly.
  *               properties:
  *                 id:
  *                   type: string
@@ -259,6 +263,13 @@ const router = Router();
  *         required: false
  *         description: Optional product ID to filter chat rooms by.
  *       - in: query
+ *         name: supportOnly
+ *         schema:
+ *           type: boolean
+ *           default: false
+ *         required: false
+ *         description: When true, only returns general customer support chat rooms where accountId and productId are both null.
+ *       - in: query
  *         name: status
  *         schema:
  *           type: string
@@ -281,7 +292,7 @@ const router = Router();
  *         description: Number of items per page.
  *     responses:
  *       200:
- *         description: A paginated list of chat rooms.
+ *         description: A paginated list of chat rooms. When accountId is null, product is also null; the room is for general customer support rather than a specific product, and only admin accounts receive those rooms because they can support customers directly.
  *         content:
  *           application/json:
  *             schema:

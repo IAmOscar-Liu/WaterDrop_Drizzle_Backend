@@ -9,7 +9,7 @@ class ChatroomController {
     const { accountId, productId, orderId } = req.body;
     const result = await chatroomService.findOrCreateChatRoom({
       userId: req.userId ?? "",
-      accountId: accountId ? String(accountId) : "",
+      accountId: accountId ? String(accountId) : undefined,
       productId: productId ? String(productId) : undefined,
       orderId: orderId ? String(orderId) : undefined,
     });
@@ -74,7 +74,7 @@ class ChatroomController {
   }
 
   async listAdminChatRooms(req: RequestWithId, res: Response): Promise<any> {
-    const { productId, status, page, limit } = req.query;
+    const { productId, status, page, limit, supportOnly } = req.query;
     const result = await chatroomService.listAdminChatRooms({
       accountId: req.userId ?? "",
       productId: productId ? String(productId) : undefined,
@@ -83,6 +83,7 @@ class ChatroomController {
         : undefined,
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
+      supportOnly: supportOnly === "true",
     });
     sendJsonResponse(res, result);
   }

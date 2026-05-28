@@ -31,15 +31,20 @@ export async function findOrCreateChatRoom({
   orderId,
 }: {
   userId: string;
-  accountId: string;
+  accountId?: string | null;
   productId?: string | null;
   orderId?: string | null;
 }) {
+  const accountIdCondition =
+    accountId == null
+      ? isNull(schema.chatRoomTable.accountId)
+      : eq(schema.chatRoomTable.accountId, accountId);
+
   // 1. Try to find an existing chat room
   let existingRoom = await db.query.chatRoomTable.findFirst({
     where: and(
       eq(schema.chatRoomTable.userId, userId),
-      eq(schema.chatRoomTable.accountId, accountId),
+      accountIdCondition,
       orderId
         ? eq(schema.chatRoomTable.orderId, orderId)
         : isNull(schema.chatRoomTable.orderId),
@@ -54,7 +59,7 @@ export async function findOrCreateChatRoom({
     existingRoom = await db.query.chatRoomTable.findFirst({
       where: and(
         eq(schema.chatRoomTable.userId, userId),
-        eq(schema.chatRoomTable.accountId, accountId),
+        accountIdCondition,
         isNull(schema.chatRoomTable.orderId),
         productId
           ? eq(schema.chatRoomTable.productId, productId)
@@ -449,6 +454,7 @@ export type ListAdminChatRoomsParams = {
   status?: schema.ChatRoom["status"];
   page?: number;
   limit?: number;
+  supportOnly?: boolean;
 };
 
 export async function listAdminChatRooms({
@@ -457,6 +463,7 @@ export async function listAdminChatRooms({
   status,
   page = 1,
   limit = 20,
+  supportOnly = false,
 }: ListAdminChatRoomsParams) {
   const offset = (page - 1) * limit;
   const conditions: (SQL | undefined)[] = [];
@@ -466,7 +473,11 @@ export async function listAdminChatRooms({
   if (!isAdmin) {
     conditions.push(eq(schema.chatRoomTable.accountId, accountId));
   }
-  if (productId) {
+  if (isAdmin && supportOnly) {
+    conditions.push(isNull(schema.chatRoomTable.accountId));
+    conditions.push(isNull(schema.chatRoomTable.productId));
+  }
+  if (productId && !supportOnly) {
     conditions.push(eq(schema.chatRoomTable.productId, productId));
   }
   if (status) {

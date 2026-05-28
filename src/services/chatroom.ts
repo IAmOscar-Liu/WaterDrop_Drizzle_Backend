@@ -20,7 +20,7 @@ import { ServiceResponse } from "../type/general";
 class ChatroomService {
   async findOrCreateChatRoom(input: {
     userId: string;
-    accountId: string;
+    accountId?: string;
     productId?: string | null;
     orderId?: string | null;
   }): Promise<
