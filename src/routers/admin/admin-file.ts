@@ -2,6 +2,8 @@ import { Router } from "express";
 import fileController from "../../controller/file";
 import mutler from "multer";
 import isAuth from "../../middleware/isAuth";
+import validateZod from "../../middleware/validateZod";
+import { adminValidation } from "../../middleware/admin";
 
 const router = Router();
 
@@ -56,6 +58,7 @@ router.post(
   "/image/upload",
   isAuth,
   upload.single("file"),
+  validateZod({ body: adminValidation.file.uploadBody }),
   fileController.uploadImage
 );
 /**
@@ -100,6 +103,7 @@ router.post(
   "/video/upload",
   isAuth,
   upload.single("file"),
+  validateZod({ body: adminValidation.file.uploadBody }),
   fileController.uploadVideo
 );
 

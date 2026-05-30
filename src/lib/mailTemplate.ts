@@ -47,7 +47,7 @@ export function generateOrderCompletedEmailHtml({
     <div style="margin:0;padding:32px 16px;background-color:#f4f7fb;font-family:Arial,'Noto Sans TC',sans-serif;color:#1f2937;">
       <div style="max-width:560px;margin:0 auto;background-color:#ffffff;border-radius:20px;overflow:hidden;box-shadow:0 12px 32px rgba(15,23,42,0.08);">
         <div style="padding:32px 32px 24px;background:linear-gradient(135deg,#0ea5e9 0%,#2563eb 100%);color:#ffffff;">
-          <div style="font-size:14px;letter-spacing:1px;opacity:0.9;">WaterDrop</div>
+          <div style="font-size:14px;letter-spacing:1px;opacity:0.9;">水滴</div>
           <h1 style="margin:12px 0 0;font-size:28px;line-height:1.3;">訂單建立成功</h1>
           <p style="margin:12px 0 0;font-size:15px;line-height:1.8;opacity:0.95;">
             您的訂單已成功建立，我們會持續更新後續處理進度。

@@ -1,6 +1,8 @@
 import { Router } from "express";
 import ChatroomController from "../../controller/chatroom";
 import isAuth from "../../middleware/isAuth";
+import validateZod from "../../middleware/validateZod";
+import { adminValidation } from "../../middleware/admin";
 
 const router = Router();
 /**
@@ -305,7 +307,12 @@ const router = Router();
  *       401:
  *         $ref: '#/components/responses/UnauthorizedError'
  */
-router.get("/list", isAuth, ChatroomController.listAdminChatRooms);
+router.get(
+  "/list",
+  isAuth,
+  validateZod({ query: adminValidation.chatroom.listQuery }),
+  ChatroomController.listAdminChatRooms,
+);
 
 /**
  * @swagger
@@ -363,7 +370,15 @@ router.get("/list", isAuth, ChatroomController.listAdminChatRooms);
  *       404:
  *         description: Chat room not found.
  */
-router.get("/history/:chatRoomId", isAuth, ChatroomController.getChatHistory);
+router.get(
+  "/history/:chatRoomId",
+  isAuth,
+  validateZod({
+    params: adminValidation.chatroom.historyParams,
+    query: adminValidation.chatroom.historyQuery,
+  }),
+  ChatroomController.getChatHistory,
+);
 
 /**
  * @swagger
@@ -432,7 +447,15 @@ router.get("/history/:chatRoomId", isAuth, ChatroomController.getChatHistory);
  *       404:
  *         description: Chat room not found or is not active.
  */
-router.post("/message/:chatRoomId", isAuth, ChatroomController.sendMessage);
+router.post(
+  "/message/:chatRoomId",
+  isAuth,
+  validateZod({
+    params: adminValidation.chatroom.messageParams,
+    body: adminValidation.chatroom.sendMessageBody,
+  }),
+  ChatroomController.sendMessage,
+);
 
 /**
  * @swagger
@@ -484,6 +507,10 @@ router.post("/message/:chatRoomId", isAuth, ChatroomController.sendMessage);
 router.put(
   "/message/:chatRoomId/read",
   isAuth,
+  validateZod({
+    params: adminValidation.chatroom.messageParams,
+    body: adminValidation.chatroom.readBody,
+  }),
   ChatroomController.markMessagesAsRead,
 );
 

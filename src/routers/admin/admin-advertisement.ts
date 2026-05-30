@@ -1,6 +1,8 @@
 import { Router } from "express";
 import AdvertisementController from "../../controller/advertisement";
 import isAuth from "../../middleware/isAuth";
+import validateZod from "../../middleware/validateZod";
+import { adminValidation } from "../../middleware/admin";
 
 const router = Router();
 
@@ -173,7 +175,12 @@ const router = Router();
  *                 data:
  *                   $ref: '#/components/schemas/ListAdvertisementsResponse'
  */
-router.get("/list", isAuth, AdvertisementController.listAdminAdvertisements);
+router.get(
+  "/list",
+  isAuth,
+  validateZod({ query: adminValidation.advertisement.listQuery }),
+  AdvertisementController.listAdminAdvertisements,
+);
 
 /**
  * @swagger
@@ -204,7 +211,12 @@ router.get("/list", isAuth, AdvertisementController.listAdminAdvertisements);
  *                 data:
  *                   $ref: '#/components/schemas/AdvertisementWithProductAndDetails'
  */
-router.get("/:id", isAuth, AdvertisementController.getAdvertisement);
+router.get(
+  "/:id",
+  isAuth,
+  validateZod({ params: adminValidation.advertisement.idParams }),
+  AdvertisementController.getAdvertisement,
+);
 
 /**
  * @swagger
@@ -245,7 +257,12 @@ router.get("/:id", isAuth, AdvertisementController.getAdvertisement);
  *                 data:
  *                   $ref: '#/components/schemas/Advertisement'
  */
-router.post("/create", isAuth, AdvertisementController.createAdvertisement);
+router.post(
+  "/create",
+  isAuth,
+  validateZod({ body: adminValidation.advertisement.createBody }),
+  AdvertisementController.createAdvertisement,
+);
 
 /**
  * @swagger
@@ -289,7 +306,15 @@ router.post("/create", isAuth, AdvertisementController.createAdvertisement);
  *                 data:
  *                   $ref: '#/components/schemas/Advertisement'
  */
-router.put("/:id", isAuth, AdvertisementController.updateAdvertisement);
+router.put(
+  "/:id",
+  isAuth,
+  validateZod({
+    params: adminValidation.advertisement.idParams,
+    body: adminValidation.advertisement.updateBody,
+  }),
+  AdvertisementController.updateAdvertisement,
+);
 
 /**
  * @swagger
@@ -360,7 +385,12 @@ router.put("/:id", isAuth, AdvertisementController.updateAdvertisement);
  *
  *
  */
-router.get("/list/view-count", isAuth, AdvertisementController.listAdViewCount);
+router.get(
+  "/list/view-count",
+  isAuth,
+  validateZod({ query: adminValidation.advertisement.viewCountListQuery }),
+  AdvertisementController.listAdViewCount,
+);
 
 /**
  * @swagger
@@ -423,7 +453,15 @@ router.get("/list/view-count", isAuth, AdvertisementController.listAdViewCount);
  *                           type: integer
  *                           description: The total number of views.
  */
-router.get("/:id/view-count", isAuth, AdvertisementController.getAdViewCount);
+router.get(
+  "/:id/view-count",
+  isAuth,
+  validateZod({
+    params: adminValidation.advertisement.idParams,
+    query: adminValidation.advertisement.viewCountQuery,
+  }),
+  AdvertisementController.getAdViewCount,
+);
 
 /**
  * @swagger
@@ -464,7 +502,15 @@ router.get("/:id/view-count", isAuth, AdvertisementController.getAdViewCount);
  *                 data:
  *                   $ref: '#/components/schemas/AdvertisementBudgetStatus'
  */
-router.put("/deposit/:id", isAuth, AdvertisementController.depositAdBalance);
+router.put(
+  "/deposit/:id",
+  isAuth,
+  validateZod({
+    params: adminValidation.advertisement.idParams,
+    body: adminValidation.advertisement.depositBody,
+  }),
+  AdvertisementController.depositAdBalance,
+);
 
 /**
  * @swagger
@@ -506,6 +552,14 @@ router.put("/deposit/:id", isAuth, AdvertisementController.depositAdBalance);
  *                 data:
  *                   $ref: '#/components/schemas/AdvertisementBudgetStatus'
  */
-router.put("/status/:id", isAuth, AdvertisementController.setAdStatus);
+router.put(
+  "/status/:id",
+  isAuth,
+  validateZod({
+    params: adminValidation.advertisement.idParams,
+    body: adminValidation.advertisement.statusBody,
+  }),
+  AdvertisementController.setAdStatus,
+);
 
 export default router;

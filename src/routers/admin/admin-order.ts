@@ -1,6 +1,8 @@
 import { Router } from "express";
 import OrderController from "../../controller/order";
 import isAuth from "../../middleware/isAuth";
+import validateZod from "../../middleware/validateZod";
+import { adminValidation } from "../../middleware/admin";
 
 const router = Router();
 /**
@@ -418,7 +420,12 @@ const router = Router();
  *                 data:
  *                   $ref: '#/components/schemas/ListOrdersResponse'
  */
-router.get("/list", isAuth, OrderController.listAdminOrders);
+router.get(
+  "/list",
+  isAuth,
+  validateZod({ query: adminValidation.order.listQuery }),
+  OrderController.listAdminOrders,
+);
 
 /**
  * @swagger
@@ -448,7 +455,12 @@ router.get("/list", isAuth, OrderController.listAdminOrders);
  *                 data:
  *                   $ref: '#/components/schemas/OrderWithRelations'
  */
-router.get("/:id", isAuth, OrderController.getOrder);
+router.get(
+  "/:id",
+  isAuth,
+  validateZod({ params: adminValidation.order.idParams }),
+  OrderController.getOrder,
+);
 
 /**
  * @swagger
@@ -483,6 +495,7 @@ router.get("/:id", isAuth, OrderController.getOrder);
 router.get(
   "/merchant-trade-no/:merchantTradeNo",
   isAuth,
+  validateZod({ params: adminValidation.order.merchantTradeNoParams }),
   OrderController.getOrdersByMerchantTradeNo,
 );
 

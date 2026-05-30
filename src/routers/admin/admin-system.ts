@@ -1,5 +1,7 @@
 import { Router } from "express";
 import { sendMulticastPushNotification } from "../../lib/sendNotification";
+import validateZod from "../../middleware/validateZod";
+import { adminValidation } from "../../middleware/admin";
 
 const router = Router();
 
@@ -48,9 +50,13 @@ const router = Router();
  *                   type: string
  *                   example: "OK"
  */
-router.post("/send-notification", async (req, res) => {
-  await sendMulticastPushNotification(req.body);
-  res.json({ success: true, data: "OK" });
-});
+router.post(
+  "/send-notification",
+  validateZod({ body: adminValidation.system.sendNotificationBody }),
+  async (req, res) => {
+    await sendMulticastPushNotification(req.body);
+    res.json({ success: true, data: "OK" });
+  },
+);
 
 export default router;

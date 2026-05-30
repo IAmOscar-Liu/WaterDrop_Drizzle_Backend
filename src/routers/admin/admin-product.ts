@@ -1,6 +1,8 @@
 import { Router } from "express";
 import ProductController from "../../controller/product";
 import isAuth from "../../middleware/isAuth";
+import validateZod from "../../middleware/validateZod";
+import { adminValidation } from "../../middleware/admin";
 
 const router = Router();
 /**
@@ -175,7 +177,12 @@ router.get("/categories/list", isAuth, ProductController.listCategory);
  *                 data:
  *                   $ref: '#/components/schemas/Category'
  */
-router.post("/categories/create", isAuth, ProductController.createCategory);
+router.post(
+  "/categories/create",
+  isAuth,
+  validateZod({ body: adminValidation.product.categoryCreateBody }),
+  ProductController.createCategory,
+);
 
 /**
  * @swagger
@@ -231,7 +238,12 @@ router.post("/categories/create", isAuth, ProductController.createCategory);
  *                 data:
  *                   $ref: '#/components/schemas/ListProductsResponse'
  */
-router.get("/list", isAuth, ProductController.listAdminProducts);
+router.get(
+  "/list",
+  isAuth,
+  validateZod({ query: adminValidation.product.listQuery }),
+  ProductController.listAdminProducts,
+);
 
 /**
  * @swagger
@@ -261,7 +273,12 @@ router.get("/list", isAuth, ProductController.listAdminProducts);
  *                 data:
  *                   $ref: '#/components/schemas/ProductWithRelations'
  */
-router.get("/:id", isAuth, ProductController.getProduct);
+router.get(
+  "/:id",
+  isAuth,
+  validateZod({ params: adminValidation.product.idParams }),
+  ProductController.getProduct,
+);
 
 /**
  * @swagger
@@ -348,7 +365,12 @@ router.get("/:id", isAuth, ProductController.getProduct);
  *                 data:
  *                   $ref: '#/components/schemas/ProductWithRelations'
  */
-router.post("/create", isAuth, ProductController.createProduct);
+router.post(
+  "/create",
+  isAuth,
+  validateZod({ body: adminValidation.product.createBody }),
+  ProductController.createProduct,
+);
 
 /**
  * @swagger
@@ -427,7 +449,15 @@ router.post("/create", isAuth, ProductController.createProduct);
  *                 data:
  *                   $ref: '#/components/schemas/ProductWithRelations'
  */
-router.put("/:id", isAuth, ProductController.updateProduct);
+router.put(
+  "/:id",
+  isAuth,
+  validateZod({
+    params: adminValidation.product.idParams,
+    body: adminValidation.product.updateBody,
+  }),
+  ProductController.updateProduct,
+);
 
 /**
  * @swagger
@@ -492,6 +522,10 @@ router.put("/:id", isAuth, ProductController.updateProduct);
 router.get(
   "/:id/sales-summary",
   isAuth,
+  validateZod({
+    params: adminValidation.product.idParams,
+    query: adminValidation.product.salesSummaryQuery,
+  }),
   ProductController.getProductSalesSummary,
 );
 

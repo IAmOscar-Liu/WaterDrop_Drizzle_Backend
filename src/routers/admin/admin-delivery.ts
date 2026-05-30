@@ -2,6 +2,8 @@ import { Router } from "express";
 import DeliveryController from "../../controller/delivery";
 import EcPayController from "../../controller/ecpay";
 import isAuth from "../../middleware/isAuth";
+import validateZod from "../../middleware/validateZod";
+import { adminValidation } from "../../middleware/admin";
 
 const router = Router();
 
@@ -165,7 +167,12 @@ const router = Router();
  *                 data:
  *                   $ref: '#/components/schemas/ListDeliveriesResponse'
  */
-router.get("/list", isAuth, DeliveryController.listAdminDeliveries);
+router.get(
+  "/list",
+  isAuth,
+  validateZod({ query: adminValidation.delivery.listQuery }),
+  DeliveryController.listAdminDeliveries,
+);
 
 /**
  * @swagger
@@ -195,7 +202,12 @@ router.get("/list", isAuth, DeliveryController.listAdminDeliveries);
  *                 data:
  *                   $ref: '#/components/schemas/DeliveryWithOrderAndItems'
  */
-router.get("/:deliveryId", isAuth, DeliveryController.getDelivery);
+router.get(
+  "/:deliveryId",
+  isAuth,
+  validateZod({ params: adminValidation.delivery.deliveryIdParams }),
+  DeliveryController.getDelivery,
+);
 
 /**
  * @swagger
@@ -230,6 +242,7 @@ router.get("/:deliveryId", isAuth, DeliveryController.getDelivery);
 router.get(
   "/merchant-trade-no/:merchantTradeNo",
   isAuth,
+  validateZod({ params: adminValidation.delivery.merchantTradeNoParams }),
   DeliveryController.getDeliveriesByMerchantTradeNo,
 );
 
@@ -309,7 +322,15 @@ router.get(
  *                 data:
  *                   $ref: '#/components/schemas/DeliveryWithOrderAndItems'
  */
-router.put("/:deliveryId", isAuth, DeliveryController.updateDelivery);
+router.put(
+  "/:deliveryId",
+  isAuth,
+  validateZod({
+    params: adminValidation.delivery.deliveryIdParams,
+    body: adminValidation.delivery.updateBody,
+  }),
+  DeliveryController.updateDelivery,
+);
 
 /**
  * @swagger
@@ -355,7 +376,11 @@ router.put("/:deliveryId", isAuth, DeliveryController.updateDelivery);
  *             schema:
  *               type: string
  */
-router.get("/helper/printTradeDocument", EcPayController.printTradeDocument);
+router.get(
+  "/helper/printTradeDocument",
+  validateZod({ query: adminValidation.delivery.printTradeDocumentQuery }),
+  EcPayController.printTradeDocument,
+);
 
 /**
  * @swagger
@@ -431,6 +456,11 @@ router.get("/helper/fee", isAuth, DeliveryController.getShippingFee);
  *                 data:
  *                   $ref: '#/components/schemas/ShippingFee'
  */
-router.post("/helper/fee", isAuth, DeliveryController.upsertShippingFee);
+router.post(
+  "/helper/fee",
+  isAuth,
+  validateZod({ body: adminValidation.delivery.shippingFeeBody }),
+  DeliveryController.upsertShippingFee,
+);
 
 export default router;

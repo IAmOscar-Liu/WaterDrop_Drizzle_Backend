@@ -1,6 +1,8 @@
 import { Router } from "express";
 import AccountController from "../../controller/account";
 import isAuth from "../../middleware/isAuth";
+import validateZod from "../../middleware/validateZod";
+import { adminValidation } from "../../middleware/admin";
 
 /**
  * @swagger
@@ -197,7 +199,11 @@ const router = Router();
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.post("/register", AccountController.register);
+router.post(
+  "/register",
+  validateZod({ body: adminValidation.account.registerBody }),
+  AccountController.register,
+);
 
 /**
  * @swagger
@@ -241,7 +247,11 @@ router.post("/register", AccountController.register);
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.post("/login", AccountController.login);
+router.post(
+  "/login",
+  validateZod({ body: adminValidation.account.loginBody }),
+  AccountController.login,
+);
 
 /**
  * @swagger
@@ -380,7 +390,12 @@ router.get("/me", isAuth, AccountController.getCurrentUser);
  *       '403':
  *         description: Forbidden (e.g., trying to update another user's account).
  */
-router.put("/update", isAuth, AccountController.updateAccount);
+router.put(
+  "/update",
+  isAuth,
+  validateZod({ body: adminValidation.account.updateBody }),
+  AccountController.updateAccount,
+);
 
 /**
  * @swagger
@@ -427,7 +442,12 @@ router.put("/update", isAuth, AccountController.updateAccount);
  *       '401':
  *         description: Unauthorized (e.g., incorrect old password).
  */
-router.put("/change-password", isAuth, AccountController.changeAccountPassword);
+router.put(
+  "/change-password",
+  isAuth,
+  validateZod({ body: adminValidation.account.changePasswordBody }),
+  AccountController.changeAccountPassword,
+);
 
 /**
  * @swagger
@@ -509,7 +529,12 @@ router.get("/list-employees", isAuth, AccountController.listAccountEmployees);
  *                   $ref: '#/components/schemas/ListAccountsResponse'
  *
  */
-router.get("/list", isAuth, AccountController.listAccounts);
+router.get(
+  "/list",
+  isAuth,
+  validateZod({ query: adminValidation.account.listQuery }),
+  AccountController.listAccounts,
+);
 
 /**
  * @swagger
@@ -548,7 +573,12 @@ router.get("/list", isAuth, AccountController.listAccounts);
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.get("/:id", isAuth, AccountController.getAccount);
+router.get(
+  "/:id",
+  isAuth,
+  validateZod({ params: adminValidation.account.idParams }),
+  AccountController.getAccount,
+);
 
 /**
  * @swagger
@@ -588,6 +618,11 @@ router.get("/:id", isAuth, AccountController.getAccount);
  *       '404':
  *         description: Account not found.
  */
-router.post("/assign-parent", isAuth, AccountController.assignAccountParent);
+router.post(
+  "/assign-parent",
+  isAuth,
+  validateZod({ body: adminValidation.account.assignParentBody }),
+  AccountController.assignAccountParent,
+);
 
 export default router;
