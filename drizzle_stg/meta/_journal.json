@@ -36,6 +36,13 @@
       "when": 1779627742150,
       "tag": "0004_mute_anthem",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1780139688791,
+      "tag": "0005_condemned_pandemic",
+      "breakpoints": true
     }
   ]
 }
