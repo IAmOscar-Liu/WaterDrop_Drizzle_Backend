@@ -66,6 +66,13 @@ export const orderStatusEnum = pgEnum("order_status", [
   "canceled",
 ]);
 
+export const refundStatusEnum = pgEnum("refund_status", [
+  "pending",
+  "processing",
+  "completed",
+  "cancelled",
+]);
+
 export const deliveryStatusEnum = pgEnum("delivery_status", [
   "pending",
   "shipped",
@@ -553,6 +560,7 @@ export const orderTable = pgTable("orders", {
   completedAt: timestamp("completed_at", { withTimezone: true }),
   shippingInfo: jsonb("shipping_info"),
   paymentInfo: jsonb("payment_info"),
+  coinInfo: jsonb("coin_info"), // To store details about coins used/earned in the order
   metadata: jsonb("metadata"), // Optional: Store additional info like payment method, shipping info, etc.
 });
 
@@ -594,6 +602,33 @@ export const orderItemTable = pgTable(
       t.orderId,
       t.productId,
     ),
+  }),
+);
+
+export const refundItemTable = pgTable(
+  "refund_items",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orderItemId: uuid("order_item_id")
+      .notNull()
+      .references(() => orderItemTable.id, { onDelete: "cascade" }),
+    quantity: integer("quantity").notNull(),
+    status: refundStatusEnum("status").default("pending").notNull(),
+    reason: text("reason").notNull(),
+    note: text("note"),
+    refundAmount: doublePrecision("refund_amount"),
+    metadata: jsonb("metadata"),
+    summary: jsonb("summary"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (t) => ({
+    orderItemIdIdx: index("refund_items_order_item_id_idx").on(t.orderItemId),
   }),
 );
 
@@ -1045,18 +1080,29 @@ export const merchantTradeRelations = relations(
   }),
 );
 
-export const orderItemRelations = relations(orderItemTable, ({ one }) => ({
-  order: one(orderTable, {
-    fields: [orderItemTable.orderId],
-    references: [orderTable.id],
+export const orderItemRelations = relations(
+  orderItemTable,
+  ({ one, many }) => ({
+    order: one(orderTable, {
+      fields: [orderItemTable.orderId],
+      references: [orderTable.id],
+    }),
+    delivery: one(deliveryTable, {
+      fields: [orderItemTable.deliveryId],
+      references: [deliveryTable.id],
+    }),
+    product: one(productTable, {
+      fields: [orderItemTable.productId],
+      references: [productTable.id],
+    }),
+    refundItems: many(refundItemTable),
   }),
-  delivery: one(deliveryTable, {
-    fields: [orderItemTable.deliveryId],
-    references: [deliveryTable.id],
-  }),
-  product: one(productTable, {
-    fields: [orderItemTable.productId],
-    references: [productTable.id],
+);
+
+export const refundItemRelations = relations(refundItemTable, ({ one }) => ({
+  orderItem: one(orderItemTable, {
+    fields: [refundItemTable.orderItemId],
+    references: [orderItemTable.id],
   }),
 }));
 
@@ -1178,6 +1224,9 @@ export type NewOrder = typeof orderTable.$inferInsert;
 
 export type OrderItem = typeof orderItemTable.$inferSelect;
 export type NewOrderItem = typeof orderItemTable.$inferInsert;
+
+export type RefundItem = typeof refundItemTable.$inferSelect;
+export type NewRefundItem = typeof refundItemTable.$inferInsert;
 
 export type Delivery = typeof deliveryTable.$inferSelect;
 export type NewDelivery = typeof deliveryTable.$inferInsert;

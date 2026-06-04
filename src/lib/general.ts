@@ -127,3 +127,7 @@ export function getCurrentLocalDateTime(timeZone: string) {
     localSecond,
   };
 }
+
+export function isPlainObject(value: any) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}

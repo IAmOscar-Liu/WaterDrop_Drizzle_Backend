@@ -31,10 +31,43 @@ const router = Router();
  *                     properties:
  *                       product:
  *                         $ref: '#/components/schemas/Product'
+ *                       refundItems:
+ *                         type: array
+ *                         items:
+ *                           $ref: '#/components/schemas/RefundItem'
  *             logs:
  *               type: array
  *               items:
  *                 $ref: '#/components/schemas/DeliveryLog'
+ *
+ *     RefundItem:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: string
+ *           format: uuid
+ *         orderItemId:
+ *           type: string
+ *           format: uuid
+ *         quantity:
+ *           type: integer
+ *         status:
+ *           type: string
+ *           enum: [pending, processing, completed, cancelled]
+ *         reason:
+ *           type: string
+ *         note:
+ *           type: string
+ *           nullable: true
+ *         refundAmount:
+ *           type: number
+ *           nullable: true
+ *         metadata:
+ *           type: object
+ *           nullable: true
+ *         summary:
+ *           type: object
+ *           nullable: true
  *
  *     DeliveryLog:
  *       type: object

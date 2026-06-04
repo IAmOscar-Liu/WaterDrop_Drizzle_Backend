@@ -14,6 +14,19 @@ function formatZodError(error: z.ZodError) {
   }));
 }
 
+function setRequestValue<T extends keyof Request>(
+  req: Request,
+  key: T,
+  value: Request[T],
+) {
+  Object.defineProperty(req, key, {
+    value,
+    writable: true,
+    configurable: true,
+    enumerable: true,
+  });
+}
+
 export default function validateZod(schemas: RequestSchemas) {
   return (req: Request, res: Response, next: NextFunction) => {
     const errors: ReturnType<typeof formatZodError> = [];
@@ -21,7 +34,7 @@ export default function validateZod(schemas: RequestSchemas) {
     if (schemas.params) {
       const result = schemas.params.safeParse(req.params);
       if (result.success) {
-        req.params = result.data as Request["params"];
+        setRequestValue(req, "params", result.data as Request["params"]);
       } else {
         errors.push(...formatZodError(result.error));
       }
@@ -30,7 +43,7 @@ export default function validateZod(schemas: RequestSchemas) {
     if (schemas.query) {
       const result = schemas.query.safeParse(req.query);
       if (result.success) {
-        req.query = result.data as Request["query"];
+        setRequestValue(req, "query", result.data as Request["query"]);
       } else {
         errors.push(...formatZodError(result.error));
       }
@@ -39,7 +52,7 @@ export default function validateZod(schemas: RequestSchemas) {
     if (schemas.body) {
       const result = schemas.body.safeParse(req.body);
       if (result.success) {
-        req.body = result.data;
+        setRequestValue(req, "body", result.data);
       } else {
         errors.push(...formatZodError(result.error));
       }

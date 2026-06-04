@@ -5,6 +5,7 @@ import { deliveryValidation } from "./delivery";
 import { fileValidation } from "./file";
 import { orderValidation } from "./order";
 import { productValidation } from "./product";
+import { refundValidation } from "./refund";
 import { systemValidation } from "./system";
 
 export const adminValidation = {
@@ -15,5 +16,6 @@ export const adminValidation = {
   file: fileValidation,
   order: orderValidation,
   product: productValidation,
+  refund: refundValidation,
   system: systemValidation,
 };

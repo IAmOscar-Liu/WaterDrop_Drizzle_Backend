@@ -126,6 +126,7 @@ export async function getDeliveryById(deliveryId: string) {
       items: {
         with: {
           product: true,
+          refundItems: true,
         },
       },
       logs: {

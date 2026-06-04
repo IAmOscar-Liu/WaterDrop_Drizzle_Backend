@@ -10,13 +10,13 @@ import { ensureEcpayStoreListOnStartup } from "./lib/initEcpayStoreList";
 import {
   dailyNotificationTask,
   dailyResetTask,
+  deleteIdempotencyKeysTask,
   deleteUnusedDeviceTokensTask,
   expireOrdersTask,
   fetchEcPayStoreListTask,
   monthlyCoinExpirationNotificationTask,
   monthlyCoinStatExpirationTask,
   pollLogisticsTradeInfoTask,
-  deleteIdempotencyKeysTask,
 } from "./lib/scheduler";
 import { swaggerSpec } from "./lib/swagger";
 import { errorHandler } from "./middleware/errorHandler";
