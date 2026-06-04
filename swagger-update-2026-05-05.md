@@ -66,6 +66,11 @@ Request body:
 
 Only `orderItemId` and `quantity` are required.
 
+The related order must have status `paid` in all environments.
+
+In staging and production, the related delivery must already have status
+`delivered`; otherwise refund creation will be rejected.
+
 **PATCH `/api/admin/refund/{refundItemId}/status`**
 
 Path params:

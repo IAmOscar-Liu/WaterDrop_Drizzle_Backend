@@ -220,7 +220,11 @@ export async function createRefund(item: schema.NewRefundItem) {
           orderItemId: item.orderItemId,
           reason: "Delivery not found",
         });
-      } else if (delivery.status !== "delivered") {
+      } else if (
+        (process.env.NODE_ENV === "stg" ||
+          process.env.NODE_ENV === "production") &&
+        delivery.status !== "delivered"
+      ) {
         errors.push({
           orderItemId: item.orderItemId,
           reason: "Delivery is not delivered",
