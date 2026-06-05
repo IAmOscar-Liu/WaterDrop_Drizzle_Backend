@@ -48,10 +48,14 @@ class RefundController {
 
   async updateRefundItemStatus(req: Request, res: Response): Promise<any> {
     const { refundItemId } = req.params;
-    const { status } = req.body;
+    const { status, reason, note } = req.body;
     const result = await refundService.updateRefundItemStatus(
       refundItemId,
-      status as schema.RefundItem["status"],
+      {
+        ...(status ? { status: status as schema.RefundItem["status"] } : {}),
+        ...(reason !== undefined ? { reason } : {}),
+        ...(note !== undefined ? { note } : {}),
+      },
     );
     sendJsonResponse(res, result);
   }

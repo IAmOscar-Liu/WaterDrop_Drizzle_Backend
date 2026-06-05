@@ -51,12 +51,12 @@ class RefundService {
 
   async updateRefundItemStatus(
     refundItemId: string,
-    status: Parameters<typeof updateRefundItemStatus>[1],
+    updates: Parameters<typeof updateRefundItemStatus>[1],
   ): Promise<
     ServiceResponse<Awaited<ReturnType<typeof updateRefundItemStatus>>>
   > {
     try {
-      const refund = await updateRefundItemStatus(refundItemId, status);
+      const refund = await updateRefundItemStatus(refundItemId, updates);
       return { success: true, data: refund };
     } catch (error) {
       return handleServiceError(error);

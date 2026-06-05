@@ -311,7 +311,11 @@ export async function createRefund(item: schema.NewRefundItem) {
 
 export async function updateRefundItemStatus(
   refundItemId: string,
-  status: schema.RefundItem["status"],
+  updates: {
+    status?: schema.RefundItem["status"];
+    reason?: string;
+    note?: string | null;
+  },
 ) {
   return db.transaction(async (tx) => {
     // 1. Lock the refund item so completion side effects can only run once.
@@ -325,8 +329,11 @@ export async function updateRefundItemStatus(
       throw new CustomError("Refund item not found", 404);
     }
 
-    // 2. Completed refund items are final and cannot change status again.
-    if (refundItem.status === "completed") {
+    const statusChanged =
+      updates.status !== undefined && refundItem.status !== updates.status;
+
+    // 2. Completed refund items cannot have their status changed again.
+    if (refundItem.status === "completed" && statusChanged) {
       throw new CustomError(
         "Cannot change status once refund is completed",
         400,
@@ -334,7 +341,11 @@ export async function updateRefundItemStatus(
     }
 
     // 3. If nothing changes, return the current refund item.
-    if (refundItem.status === status) {
+    if (
+      !statusChanged &&
+      updates.reason === undefined &&
+      updates.note === undefined
+    ) {
       return refundItem;
     }
 
@@ -345,7 +356,7 @@ export async function updateRefundItemStatus(
         coinByMonth: {},
       };
 
-    if (status === "completed") {
+    if (statusChanged && updates.status === "completed") {
       const [orderItem] = await tx
         .select()
         .from(schema.orderItemTable)
@@ -436,12 +447,14 @@ export async function updateRefundItemStatus(
       }
     }
 
-    // 5. Status is the only mutable field for refund items.
+    // 5. Status, reason, and note are the only mutable refund item fields.
     const [updatedRefundItem] = await tx
       .update(schema.refundItemTable)
       .set({
-        status,
-        ...(status === "completed" ? { summary } : {}),
+        ...(updates.status !== undefined ? { status: updates.status } : {}),
+        ...(updates.reason !== undefined ? { reason: updates.reason } : {}),
+        ...(updates.note !== undefined ? { note: updates.note } : {}),
+        ...(statusChanged && updates.status === "completed" ? { summary } : {}),
         updatedAt: new Date(),
       })
       .where(eq(schema.refundItemTable.id, refundItemId))

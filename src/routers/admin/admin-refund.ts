@@ -243,8 +243,8 @@ router.post(
  * /api/admin/refund/{refundItemId}/status:
  *   patch:
  *     tags: [Refund]
- *     summary: Update refund item status
- *     description: Status is the only mutable refund item field. Once completed, the status cannot be changed.
+ *     summary: Update refund item
+ *     description: Status, reason, and note are mutable. Once completed, the status cannot be changed.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -260,11 +260,16 @@ router.post(
  *         application/json:
  *           schema:
  *             type: object
- *             required: [status]
+ *             description: Provide at least one of status, reason, or note.
  *             properties:
  *               status:
  *                 type: string
  *                 enum: [pending, processing, completed, cancelled]
+ *               reason:
+ *                 type: string
+ *               note:
+ *                 type: string
+ *                 nullable: true
  *     responses:
  *       '200':
  *         description: The updated refund item.
