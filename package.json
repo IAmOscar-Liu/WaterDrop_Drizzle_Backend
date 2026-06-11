@@ -46,7 +46,6 @@
     "drizzle-dbml-generator": "^0.10.0",
     "drizzle-orm": "^0.45.2",
     "express": "^5.2.1",
-    "express-validator": "^7.3.2",
     "firebase-admin": "^13.10.0",
     "google-auth-library": "^10.7.0",
     "jsonwebtoken": "^9.0.3",

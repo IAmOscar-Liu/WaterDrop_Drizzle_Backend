@@ -1,5 +1,5 @@
 import { NextFunction, Request, Response } from "express";
-import { CustomError, RequestValidationError } from "../lib/error";
+import { CustomError } from "../lib/error";
 
 export const errorHandler = (
   err: Error,
@@ -13,9 +13,6 @@ export const errorHandler = (
   if (err instanceof CustomError) {
     statusCode = err.statusCode;
     message = err.message;
-  } else if (err instanceof RequestValidationError) {
-    statusCode = err.statusCode;
-    message = err.validationErrors;
   } else {
     message = err.message;
   }
