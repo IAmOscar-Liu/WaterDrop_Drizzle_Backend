@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from "express";
 import { z, ZodTypeAny } from "zod";
+import { ZodValidationError } from "../lib/error";
 
 type RequestSchemas = {
   body?: ZodTypeAny;
@@ -59,11 +60,7 @@ export default function validateZod(schemas: RequestSchemas) {
     }
 
     if (errors.length > 0) {
-      return res.status(400).json({
-        success: false,
-        statusCode: 400,
-        message: errors,
-      });
+      return next(new ZodValidationError(errors));
     }
 
     next();
