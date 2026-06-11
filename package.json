@@ -24,7 +24,6 @@
     "db:studio": "NODE_ENV=local NODE_TLS_REJECT_UNAUTHORIZED=0 npx drizzle-kit studio",
     "db:test": "ts-node src/db_test.ts",
     "db:seed-products": "ts-node src/seed/addProducts.ts",
-    "firebase:set-cache": "ts-node src/setFireStorageCache.ts",
     "cloudflare:upload": "ts-node src/cloudflare_upload_files.ts",
     "generate-dbml": "ts-node src/generate-dmbl.ts",
     "daily-reset": "NODE_ENV=stg ts-node src/daily-reset.ts",

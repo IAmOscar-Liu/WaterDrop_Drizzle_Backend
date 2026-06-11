@@ -1,4 +1,15 @@
-import { and, count, desc, eq, gte, lte, ne, SQL, sql } from "drizzle-orm";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  gte,
+  inArray,
+  lte,
+  ne,
+  SQL,
+  sql,
+} from "drizzle-orm";
 import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
 import { isPlainObject } from "../lib/general";
@@ -350,13 +361,30 @@ export async function updateRefundItemStatus(
     }
 
     // 4. When completing a refund, reverse the proportional coin spend.
-    const summary: { totalCoin: number; coinByMonth: Record<string, number> } =
-      {
-        totalCoin: 0,
-        coinByMonth: {},
-      };
+    //    - Calculate how much of the order was refunded.
+    //    - Apply that percentage to the order's original coin usage by month.
+    //    - Decrease monthly coinsSpent for all affected months so historical
+    //      usage stays accurate.
+    //    - Return coins to user.coins only for months that are not expired.
+    const summary: {
+      totalCoin: number;
+      returnableCoin: number;
+      coinByMonth: Record<
+        string,
+        {
+          coin: number;
+          expired: boolean;
+          returnedCoin: number;
+        }
+      >;
+    } = {
+      totalCoin: 0,
+      returnableCoin: 0,
+      coinByMonth: {},
+    };
 
     if (statusChanged && updates.status === "completed") {
+      // 4.1 Find the refunded order item.
       const [orderItem] = await tx
         .select()
         .from(schema.orderItemTable)
@@ -367,6 +395,7 @@ export async function updateRefundItemStatus(
         throw new CustomError("Order item not found", 404);
       }
 
+      // 4.2 Find the parent order so we can read subtotal and coinInfo.
       const [order] = await tx
         .select()
         .from(schema.orderTable)
@@ -377,13 +406,16 @@ export async function updateRefundItemStatus(
         throw new CustomError("Order not found", 404);
       }
 
+      // 4.3 Calculate what percentage of the order subtotal is being refunded.
       const refundTotal = refundItem.quantity * (refundItem.refundAmount ?? 0);
       const refundPercentage =
         order.subTotal > 0 ? refundTotal / order.subTotal : 0;
 
       if (refundPercentage > 0) {
+        // 4.4 Build the coin refund amount by month.
         const coinUpdates: Record<string, number> = {};
 
+        // Prefer the exact original coin usage saved on the order.
         if (
           isPlainObject(order.coinInfo) &&
           Object.keys(order.coinInfo as Record<string, number>).length > 0
@@ -394,6 +426,7 @@ export async function updateRefundItemStatus(
             coinUpdates[month] = coins * refundPercentage;
           }
         } else if (order.discountCoin && order.discountCoin > 0) {
+          // If older orders do not have coinInfo, fall back to the latest month.
           const [latestMonthlyStat] = await tx
             .select()
             .from(schema.userMonthlyCoinStatTable)
@@ -404,28 +437,77 @@ export async function updateRefundItemStatus(
 
           if (latestMonthlyStat) {
             coinUpdates[latestMonthlyStat.month] =
-              order.discountCoin * refundPercentage;
+            order.discountCoin * refundPercentage;
           }
         }
 
+        // 4.5 Total all affected monthly coin amounts for the summary.
         const coinSum = Object.values(coinUpdates).reduce(
           (sum, coins) => sum + coins,
           0,
         );
 
-        summary.totalCoin = coinSum;
-        summary.coinByMonth = coinUpdates;
-
         if (coinSum > 0) {
-          const promises: Promise<any>[] = [
-            tx
-              .update(schema.userTable)
-              .set({
-                coins: sql`${schema.userTable.coins} + ${coinSum}`,
-              })
-              .where(eq(schema.userTable.id, order.userId)),
-          ];
+          // 4.6 Load monthly expiration state before returning coins to balance.
+          const coinMonths = Object.keys(coinUpdates);
+          const monthlyStats = await tx
+            .select({
+              month: schema.userMonthlyCoinStatTable.month,
+              expired: schema.userMonthlyCoinStatTable.expired,
+            })
+            .from(schema.userMonthlyCoinStatTable)
+            .where(
+              and(
+                eq(schema.userMonthlyCoinStatTable.userId, order.userId),
+                inArray(schema.userMonthlyCoinStatTable.month, coinMonths),
+              ),
+            )
+            .for("update");
 
+          const expiredByMonth = new Map(
+            monthlyStats.map((stat) => [stat.month, stat.expired]),
+          );
+
+          // 4.7 Only non-expired months can be returned to user.coins.
+          const returnableCoinSum = Object.entries(coinUpdates).reduce(
+            (sum, [month, coins]) =>
+              expiredByMonth.get(month) === false ? sum + coins : sum,
+            0,
+          );
+
+          // 4.8 Save a detailed refund coin summary for future reference.
+          summary.totalCoin = coinSum;
+          summary.returnableCoin = returnableCoinSum;
+          summary.coinByMonth = Object.fromEntries(
+            Object.entries(coinUpdates).map(([month, coins]) => {
+              const expired = expiredByMonth.get(month) !== false;
+
+              return [
+                month,
+                {
+                  coin: coins,
+                  expired,
+                  returnedCoin: expired ? 0 : coins,
+                },
+              ];
+            }),
+          );
+
+          const promises: Promise<any>[] = [];
+
+          // 4.9 Return non-expired coins to the user's live coin balance.
+          if (returnableCoinSum > 0) {
+            promises.push(
+              tx
+                .update(schema.userTable)
+                .set({
+                  coins: sql`${schema.userTable.coins} + ${returnableCoinSum}`,
+                })
+                .where(eq(schema.userTable.id, order.userId)),
+            );
+          }
+
+          // 4.10 Reverse monthly coinsSpent for every affected month.
           for (const [month, coins] of Object.entries(coinUpdates)) {
             promises.push(
               tx
@@ -442,6 +524,7 @@ export async function updateRefundItemStatus(
             );
           }
 
+          // 4.11 Apply all coin updates atomically within the transaction.
           await Promise.all(promises);
         }
       }
