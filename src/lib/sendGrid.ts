@@ -1,8 +1,5 @@
 import sgMail from "@sendgrid/mail";
 
-console.log("SendGrid API Key loaded:", process.env.SENDGRID_API_KEY);
-console.log("SendGrid API Key length:", process.env.SENDGRID_API_KEY?.length);
-
 sgMail.setApiKey(process.env.SENDGRID_API_KEY!);
 
 export async function sendEmail({
