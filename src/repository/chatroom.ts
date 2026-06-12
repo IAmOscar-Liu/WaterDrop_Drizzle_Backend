@@ -15,6 +15,14 @@ import db from "../lib/initDB";
 import { CustomError } from "../lib/error";
 import { isAccountAdmin } from "./account";
 
+function chatRoomHasMessagesCondition() {
+  return sql`EXISTS (
+    SELECT 1
+    FROM ${schema.chatMessageTable} cm
+    WHERE cm.chat_room_id = ${schema.chatRoomTable.id}
+  )`;
+}
+
 /**
  * Finds an existing chat room or creates a new one.
  * This is a robust "get or create" pattern that prevents duplicate rooms.
@@ -332,6 +340,7 @@ export async function listChatRooms({
   // Build the conditions for the query
   conditions.push(eq(schema.chatRoomTable.userId, userId));
   conditions.push(eq(schema.chatRoomTable.status, "active"));
+  conditions.push(chatRoomHasMessagesCondition());
 
   // 1. Get the total count of chat rooms matching the criteria
   const totalResult = await db
@@ -483,6 +492,7 @@ export async function listAdminChatRooms({
   if (status) {
     conditions.push(eq(schema.chatRoomTable.status, status));
   }
+  conditions.push(chatRoomHasMessagesCondition());
 
   // 1. Get the total count of chat rooms matching the criteria
   const totalResult = await db
