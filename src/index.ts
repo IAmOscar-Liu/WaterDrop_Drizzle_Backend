@@ -32,6 +32,7 @@ import FileRouter from "./routers/file";
 import NotificationRouter from "./routers/notification";
 import OrderRouter from "./routers/order";
 import ProductRouter from "./routers/product";
+import SystemRouter from "./routers/system";
 import TreasureBoxRouter from "./routers/treasureBox";
 
 console.log(`HOST: ${process.env.HOST}`);
@@ -89,6 +90,7 @@ app.use("/api/auth", AuthRouter);
 app.use("/api/treasureBox", TreasureBoxRouter);
 app.use("/api/advertisement", AdvertisementRouter);
 app.use("/api/product", ProductRouter);
+app.use("/api/system", SystemRouter);
 app.use("/api/cart", CartRouter);
 app.use("/api/chatroom", ChatroomRouter);
 app.use("/api/ecpay", EcPayRouter);
