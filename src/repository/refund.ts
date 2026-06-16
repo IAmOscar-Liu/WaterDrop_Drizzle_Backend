@@ -513,7 +513,7 @@ export async function updateRefundItemStatus(
               tx
                 .update(schema.userMonthlyCoinStatTable)
                 .set({
-                  coinsSpent: sql`${schema.userMonthlyCoinStatTable.coinsSpent} - ${coins}`,
+                  coinsSpent: sql`GREATEST(${schema.userMonthlyCoinStatTable.coinsSpent} - ${coins}, 0)`,
                 })
                 .where(
                   and(

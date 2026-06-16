@@ -16,4 +16,10 @@ router.get(
   SystemController.getCustomerSupportContent,
 );
 
+router.get(
+  "/bank-list",
+  isAuth,
+  SystemController.getBankList,
+);
+
 export default router;

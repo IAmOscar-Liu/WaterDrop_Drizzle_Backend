@@ -12,6 +12,11 @@ class SystemController {
     const result = await systemService.getCustomerSupportContent();
     sendJsonResponse(res, result);
   }
+
+  async getBankList(_: Request, res: Response): Promise<any> {
+    const result = await systemService.getBankList();
+    sendJsonResponse(res, result);
+  }
 }
 
 export default new SystemController();

@@ -31,6 +31,21 @@ class SystemService {
       return handleServiceError(error);
     }
   }
+
+  async getBankList(): Promise<ServiceResponse<any>> {
+    try {
+      const filePath = path.resolve(
+        process.cwd(),
+        "src/assets/json/bankList.json",
+      );
+      const content = await fs.readFile(filePath, "utf-8");
+      const json = JSON.parse(content);
+
+      return { success: true, data: json["banks"] };
+    } catch (error) {
+      return handleServiceError(error);
+    }
+  }
 }
 
 export default new SystemService();

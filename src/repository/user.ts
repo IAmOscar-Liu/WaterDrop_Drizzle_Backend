@@ -1,3 +1,5 @@
+import fs from "fs";
+import path from "path";
 import {
   and,
   count,
@@ -12,6 +14,7 @@ import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
 import {
   generateInvitationCode,
+  getBankNameFromCode,
   getCurrentLocalDateTime,
   getLastMonthYYYYMM,
   getNumOfDaysInMonth,
@@ -262,8 +265,40 @@ export async function setMonthlyCoinExpire(userIds: string[], month: string) {
 
 export async function updateUser(
   userId: string,
-  data: Partial<Pick<schema.User, "name" | "phone" | "address" | "email">>,
+  data: Partial<
+    Pick<
+      schema.User,
+      "name" | "phone" | "address" | "email" | "bankCode" | "bankAccount"
+    >
+  >,
 ) {
+  const hasBankCode = Object.prototype.hasOwnProperty.call(data, "bankCode");
+  const hasBankAccount = Object.prototype.hasOwnProperty.call(
+    data,
+    "bankAccount",
+  );
+
+  if (hasBankCode !== hasBankAccount) {
+    throw new CustomError(
+      "bankCode and bankAccount must be provided together.",
+      400,
+    );
+  }
+
+  if (hasBankCode) {
+    const bankList = JSON.parse(
+      fs.readFileSync(
+        path.resolve(process.cwd(), "src/assets/json/bankList.json"),
+        "utf8",
+      ),
+    ) as { banks: { code: string }[] };
+    const bankCodeSet = new Set(bankList.banks.map((bank) => bank.code));
+    const bankCode = data.bankCode?.trim().padStart(3, "0");
+    if (!bankCode || !bankCodeSet.has(bankCode)) {
+      throw new CustomError(`Bank code "${data.bankCode}" not found.`, 400);
+    }
+  }
+
   const [updatedUser] = await db
     .update(schema.userTable)
     .set({
@@ -395,6 +430,7 @@ export async function getUserById(id: string) {
     ...user,
     ...getMemberInfo(user.referralCount),
     coinsExpireSoon: await getCoinsExpireSoon(user.id, user.timezone),
+    bankName: user.bankCode ? getBankNameFromCode(user.bankCode) : null,
   };
 }
 
@@ -437,6 +473,7 @@ export async function getUserByOauthProviderAndOauthId(
     ...user,
     ...getMemberInfo(user.referralCount),
     coinsExpireSoon: await getCoinsExpireSoon(user.id, user.timezone),
+    bankName: user.bankCode ? getBankNameFromCode(user.bankCode) : null,
   };
 }
 

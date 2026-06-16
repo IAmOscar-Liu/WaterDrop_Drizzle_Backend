@@ -102,7 +102,12 @@ class AuthService {
     data,
   }: {
     userId: string;
-    data: Partial<Pick<schema.User, "name" | "phone" | "address" | "email">>;
+    data: Partial<
+      Pick<
+        schema.User,
+        "name" | "phone" | "address" | "email" | "bankCode" | "bankAccount"
+      >
+    >;
   }): Promise<ServiceResponse<Awaited<ReturnType<typeof updateUser>>>> {
     try {
       const updatedUser = await updateUser(userId, data);

@@ -269,6 +269,8 @@ export const userTable = pgTable(
 
     groupId: uuid("group_id").references(() => groupTable.id),
     timezone: text("timezone"),
+    bankCode: text("bank_code"),
+    bankAccount: text("bank_account"),
 
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()

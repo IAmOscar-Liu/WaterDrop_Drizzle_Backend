@@ -1,6 +1,8 @@
 import { Response } from "express";
 import { ServiceResponse } from "../type/general";
 import crypto from "crypto";
+import fs from "fs";
+import path from "path";
 
 export function sendJsonResponse<T>(res: Response, result: ServiceResponse<T>) {
   res.status(result.statusCode ?? 200).json(result);
@@ -130,4 +132,19 @@ export function getCurrentLocalDateTime(timeZone: string) {
 
 export function isPlainObject(value: any) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+export function getBankNameFromCode(bankCode: string) {
+  const code = bankCode.trim().padStart(3, "0");
+  const bankList = JSON.parse(
+    fs.readFileSync(
+      path.resolve(process.cwd(), "src/assets/json/bankList.json"),
+      "utf8",
+    ),
+  ) as { banks: { code: string; name: string }[] };
+
+  const bankNameByCode = new Map(
+    bankList.banks.map((bank) => [bank.code, bank.name]),
+  );
+  return bankNameByCode.get(code) ?? null;
 }

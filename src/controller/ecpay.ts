@@ -5,7 +5,7 @@ import {
   ECPAY_LOGISTIC_BASE_URL,
   ECPAY_QUERY_LOGISTICS_TRADE_INFO_URL,
 } from "../constants/ecpay";
-import { sendJsonResponse } from "../lib/general";
+import { getBankNameFromCode, sendJsonResponse } from "../lib/general";
 import {
   getLogisticsStatus,
   getLogisticsStatusText,
@@ -241,7 +241,7 @@ class EcPayController {
     const orderId = data.CustomField1;
 
     if (orderId !== TEST_ORDER_ID) {
-      const bankName = ecpayService.getBankNameByCode(data.BankCode);
+      const bankName = getBankNameFromCode(data.BankCode);
       await updateOrderStatus({
         orderId,
         status: "payment-processing",
