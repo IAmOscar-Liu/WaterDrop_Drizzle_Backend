@@ -12,7 +12,7 @@ import {
 } from "drizzle-orm";
 import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
-import { isPlainObject } from "../lib/general";
+import { getBankNameFromCode, isPlainObject } from "../lib/general";
 import db from "../lib/initDB";
 
 export interface GetRefundListParams {
@@ -33,6 +33,8 @@ function formatRefundRow(row: {
   user: {
     name: string | null;
     email: string;
+    bankCode: string | null;
+    bankAccount: string | null;
   };
 }) {
   return {
@@ -42,7 +44,12 @@ function formatRefundRow(row: {
       product: row.product,
       order: {
         ...row.order,
-        user: row.user,
+        user: {
+          ...row.user,
+          bankName: row.user.bankCode
+            ? getBankNameFromCode(row.user.bankCode)
+            : null,
+        },
       },
     },
   };
@@ -90,6 +97,8 @@ function getRefundBaseQuery() {
       user: {
         name: schema.userTable.name,
         email: schema.userTable.email,
+        bankCode: schema.userTable.bankCode,
+        bankAccount: schema.userTable.bankAccount,
       },
     })
     .from(schema.refundItemTable)
@@ -437,7 +446,7 @@ export async function updateRefundItemStatus(
 
           if (latestMonthlyStat) {
             coinUpdates[latestMonthlyStat.month] =
-            order.discountCoin * refundPercentage;
+              order.discountCoin * refundPercentage;
           }
         }
 

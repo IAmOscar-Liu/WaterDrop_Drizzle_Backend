@@ -77,6 +77,16 @@ const router = Router();
  *                                   nullable: true
  *                                 email:
  *                                   type: string
+ *                                 bankCode:
+ *                                   type: string
+ *                                   nullable: true
+ *                                 bankName:
+ *                                   type: string
+ *                                   nullable: true
+ *                                 bankAccount:
+ *                                   type: string
+ *                                   nullable: true
+ *
  *
  *     ListRefundsResponse:
  *       type: object

@@ -285,7 +285,7 @@ export async function updateUser(
     );
   }
 
-  if (hasBankCode) {
+  if (hasBankCode && data.bankCode) {
     const bankList = JSON.parse(
       fs.readFileSync(
         path.resolve(process.cwd(), "src/assets/json/bankList.json"),
@@ -293,7 +293,7 @@ export async function updateUser(
       ),
     ) as { banks: { code: string }[] };
     const bankCodeSet = new Set(bankList.banks.map((bank) => bank.code));
-    const bankCode = data.bankCode?.trim().padStart(3, "0");
+    const bankCode = data.bankCode.trim().padStart(3, "0");
     if (!bankCode || !bankCodeSet.has(bankCode)) {
       throw new CustomError(`Bank code "${data.bankCode}" not found.`, 400);
     }

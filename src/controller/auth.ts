@@ -43,14 +43,18 @@ class AuthController {
 
   async updateProfile(req: RequestWithId, res: Response): Promise<any> {
     const userId = req.userId ?? "";
-    const { name, email, phone, address } = req.body;
+    const { name, email, phone, address, bankCode, bankAccount, resetBank } =
+      req.body;
     const result = await authService.updateProfile({
       userId,
       data: {
-        name: name ? String(name) : undefined,
-        email: email ? String(email) : undefined,
-        phone: phone ? String(phone) : undefined,
-        address: address ? String(address) : undefined,
+        ...(name ? { name: String(name) } : {}),
+        ...(email ? { email: String(email) } : {}),
+        ...(phone ? { phone: String(phone) } : {}),
+        ...(address ? { address: String(address) } : {}),
+        ...(bankCode ? { bankCode: String(bankCode) } : {}),
+        ...(bankAccount ? { bankAccount: String(bankAccount) } : {}),
+        ...(resetBank === true ? { bankCode: null, bankAccount: null } : {}),
       },
     });
     sendJsonResponse(res, result);
