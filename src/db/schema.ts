@@ -319,26 +319,6 @@ export const userDailyStatTable = pgTable("user_daily_stats", {
     .notNull(),
 });
 
-export const userDailyStatLogTable = pgTable(
-  "user_daily_stat_logs",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    userDailyStatId: uuid("user_daily_stat_id")
-      .notNull()
-      .references(() => userDailyStatTable.id),
-    update: jsonb("update"),
-    result: jsonb("result"),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-  },
-  (t) => ({
-    userDailyStatIdIdx: index("user_daily_stat_logs_stat_id_idx").on(
-      t.userDailyStatId,
-    ),
-  }),
-);
-
 export const treasureBoxTable = pgTable("treasure_boxes", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: uuid("user_id")
@@ -620,7 +600,9 @@ export const refundItemTable = pgTable(
     note: text("note"),
     refundAmount: doublePrecision("refund_amount"),
     paidRefundAmount: doublePrecision("paid_refund_amount"), // product refund amount after coin deduction
-    extraRefundAmount: doublePrecision("extra_refund_amount").default(0).notNull(),
+    extraRefundAmount: doublePrecision("extra_refund_amount")
+      .default(0)
+      .notNull(),
     metadata: jsonb("metadata"),
     summary: jsonb("summary"),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -892,21 +874,10 @@ export const shippingFeeRelations = relations(shippingFeeTable, ({ one }) => ({
 
 export const userDailyStatRelations = relations(
   userDailyStatTable,
-  ({ one, many }) => ({
+  ({ one }) => ({
     user: one(userTable, {
       fields: [userDailyStatTable.userId],
       references: [userTable.id],
-    }),
-    logs: many(userDailyStatLogTable),
-  }),
-);
-
-export const userDailyStatLogRelations = relations(
-  userDailyStatLogTable,
-  ({ one }) => ({
-    userDailyStat: one(userDailyStatTable, {
-      fields: [userDailyStatLogTable.userDailyStatId],
-      references: [userDailyStatTable.id],
     }),
   }),
 );
@@ -1169,9 +1140,6 @@ export type NewAccountGroup = typeof accountGroupTable.$inferInsert;
 
 export type UserDailyStat = typeof userDailyStatTable.$inferSelect;
 export type NewUserDailyStat = typeof userDailyStatTable.$inferInsert;
-
-export type UserDailyStatLog = typeof userDailyStatLogTable.$inferSelect;
-export type NewUserDailyStatLog = typeof userDailyStatLogTable.$inferInsert;
 
 export type TreasureBox = typeof treasureBoxTable.$inferSelect;
 export type NewTreasureBox = typeof treasureBoxTable.$inferInsert;
