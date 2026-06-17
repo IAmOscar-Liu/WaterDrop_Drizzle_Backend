@@ -619,6 +619,8 @@ export const refundItemTable = pgTable(
     reason: text("reason").notNull(),
     note: text("note"),
     refundAmount: doublePrecision("refund_amount"),
+    paidRefundAmount: doublePrecision("paid_refund_amount"), // product refund amount after coin deduction
+    extraRefundAmount: doublePrecision("extra_refund_amount").default(0).notNull(),
     metadata: jsonb("metadata"),
     summary: jsonb("summary"),
     createdAt: timestamp("created_at", { withTimezone: true })

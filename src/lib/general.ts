@@ -134,8 +134,11 @@ export function isPlainObject(value: any) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-export function getBankNameFromCode(bankCode: string) {
-  const code = bankCode.trim().padStart(3, "0");
+let bankNameByCode: ReadonlyMap<string, string> | null = null;
+
+export function getBankNameByCodeMap() {
+  if (bankNameByCode) return bankNameByCode;
+
   const bankList = JSON.parse(
     fs.readFileSync(
       path.resolve(process.cwd(), "src/assets/json/bankList.json"),
@@ -143,8 +146,14 @@ export function getBankNameFromCode(bankCode: string) {
     ),
   ) as { banks: { code: string; name: string }[] };
 
-  const bankNameByCode = new Map(
+  bankNameByCode = new Map(
     bankList.banks.map((bank) => [bank.code, bank.name]),
   );
+  return bankNameByCode;
+}
+
+export function getBankNameFromCode(bankCode: string) {
+  const code = bankCode.trim().padStart(3, "0");
+  const bankNameByCode = getBankNameByCodeMap();
   return bankNameByCode.get(code) ?? null;
 }

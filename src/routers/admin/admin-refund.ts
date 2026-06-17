@@ -16,6 +16,7 @@ const router = Router();
  *   schemas:
  *     RefundSummary:
  *       type: object
+ *       example: {}
  *       properties:
  *         totalCoin:
  *           type: number
@@ -46,11 +47,20 @@ const router = Router();
  *         refundAmount:
  *           type: number
  *           nullable: true
+ *         paidRefundAmount:
+ *           type: number
+ *           nullable: true
+ *           description: Product refund amount after coin deduction.
+ *         extraRefundAmount:
+ *           type: number
+ *           description: Additional refund amount for shipping, fees, or manual adjustments.
  *         metadata:
  *           type: object
  *           nullable: true
  *         summary:
- *           $ref: '#/components/schemas/RefundSummary'
+ *           type: object
+ *           nullable: true
+ *           example: {}
  *
  *     RefundWithOrderItem:
  *       allOf:
@@ -72,6 +82,9 @@ const router = Router();
  *                             user:
  *                               type: object
  *                               properties:
+ *                                 id:
+ *                                   type: string
+ *                                   format: uuid
  *                                 name:
  *                                   type: string
  *                                   nullable: true
@@ -234,6 +247,9 @@ router.get(
  *               refundAmount:
  *                 type: number
  *                 description: Defaults to the order item's unitPriceAtSale when omitted.
+ *               extraRefundAmount:
+ *                 type: number
+ *                 description: Additional refund amount for shipping, fees, or manual adjustments. Defaults to 0.
  *               metadata:
  *                 type: object
  *                 nullable: true
@@ -254,7 +270,7 @@ router.post(
  *   patch:
  *     tags: [Refund]
  *     summary: Update refund item
- *     description: Status, reason, and note are mutable. Once completed, the status cannot be changed.
+ *     description: Status, reason, note, and extraRefundAmount are mutable. Once completed, the status cannot be changed.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -270,7 +286,7 @@ router.post(
  *         application/json:
  *           schema:
  *             type: object
- *             description: Provide at least one of status, reason, or note.
+ *             description: Provide at least one of status, reason, note, or extraRefundAmount.
  *             properties:
  *               status:
  *                 type: string
@@ -280,6 +296,9 @@ router.post(
  *               note:
  *                 type: string
  *                 nullable: true
+ *               extraRefundAmount:
+ *                 type: number
+ *                 description: Additional refund amount for shipping, fees, or manual adjustments.
  *     responses:
  *       '200':
  *         description: The updated refund item.

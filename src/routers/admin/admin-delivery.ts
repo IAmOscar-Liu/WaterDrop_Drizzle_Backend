@@ -21,7 +21,22 @@ const router = Router();
  *         - type: object
  *           properties:
  *             order:
- *               $ref: '#/components/schemas/Order'
+ *               allOf:
+ *                 - $ref: '#/components/schemas/Order'
+ *                 - type: object
+ *                   properties:
+ *                     user:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                           format: uuid
+ *                         name:
+ *                           type: string
+ *                           nullable: true
+ *                         email:
+ *                           type: string
+ *                           format: email
  *             items:
  *               type: array
  *               items:
@@ -35,6 +50,9 @@ const router = Router();
  *                         type: array
  *                         items:
  *                           $ref: '#/components/schemas/RefundItem'
+ *                       canRefund:
+ *                         type: boolean
+ *                         description: Whether this order item still has refundable quantity for the current delivery/order status.
  *             logs:
  *               type: array
  *               items:
@@ -68,6 +86,7 @@ const router = Router();
  *         summary:
  *           type: object
  *           nullable: true
+ *           example: {}
  *
  *     DeliveryLog:
  *       type: object
@@ -91,6 +110,23 @@ const router = Router();
  *         - $ref: '#/components/schemas/Delivery'
  *         - type: object
  *           properties:
+ *             order:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/Order'
+ *                 - type: object
+ *                   properties:
+ *                     user:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                           format: uuid
+ *                         name:
+ *                           type: string
+ *                           nullable: true
+ *                         email:
+ *                           type: string
+ *                           format: email
  *             items:
  *               type: array
  *               items:
@@ -270,7 +306,7 @@ router.get(
  *                 data:
  *                   type: array
  *                   items:
- *                     $ref: '#/components/schemas/DeliveryWithOrderAndItems'
+ *                     $ref: '#/components/schemas/DeliveryWithItems'
  */
 router.get(
   "/merchant-trade-no/:merchantTradeNo",

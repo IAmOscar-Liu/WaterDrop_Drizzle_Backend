@@ -656,13 +656,62 @@ export async function getOrderStatusById(orderId: string) {
   return order?.orderStatus;
 }
 
+type RefundableOrder = Pick<schema.Order, "orderStatus">;
+
+type RefundableOrderDelivery = Pick<schema.Delivery, "id" | "status">;
+
+type RefundableOrderItem = Pick<schema.OrderItem, "deliveryId" | "quantity"> & {
+  refundItems: Pick<schema.RefundItem, "quantity" | "status">[];
+};
+
+function getRefundedQuantity(item: RefundableOrderItem) {
+  return item.refundItems.reduce(
+    (total, refundItem) =>
+      refundItem.status === "cancelled" ? total : total + refundItem.quantity,
+    0,
+  );
+}
+
+function isRefundableOrderDelivery(
+  order: RefundableOrder,
+  delivery?: RefundableOrderDelivery,
+) {
+  if (order.orderStatus !== "paid" || !delivery) {
+    return false;
+  }
+
+  if (
+    (process.env.NODE_ENV === "stg" || process.env.NODE_ENV === "production") &&
+    delivery.status !== "delivered"
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+function canRefundOrderItem(
+  order: RefundableOrder,
+  delivery: RefundableOrderDelivery | undefined,
+  item: RefundableOrderItem,
+) {
+  return (
+    Boolean(item.deliveryId) &&
+    isRefundableOrderDelivery(order, delivery) &&
+    getRefundedQuantity(item) < item.quantity
+  );
+}
+
 export async function getOrderById(orderId: string) {
-  return db.query.orderTable.findFirst({
+  const order = await db.query.orderTable.findFirst({
     where: eq(schema.orderTable.id, orderId),
     with: {
       items: {
         with: {
           product: true,
+          refundItems: {
+            orderBy: (refundItems, { desc }) => [desc(refundItems.createdAt)],
+          },
         },
       },
       deliveries: {
@@ -688,6 +737,30 @@ export async function getOrderById(orderId: string) {
       },
     },
   });
+
+  if (!order) {
+    return order;
+  }
+
+  const deliveryById = new Map(
+    order.deliveries.map((delivery) => [delivery.id, delivery]),
+  );
+
+  // Reuse loaded order/delivery/refund relations instead of calling
+  // refund.canRefund for each item and triggering duplicate queries.
+  return {
+    ...order,
+    items: order.items.map((item) => {
+      const delivery = item.deliveryId
+        ? deliveryById.get(item.deliveryId)
+        : undefined;
+
+      return {
+        ...item,
+        canRefund: canRefundOrderItem(order, delivery, item),
+      };
+    }),
+  };
 }
 
 export async function getOrdersByMerchantTradeNo(

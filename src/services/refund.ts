@@ -1,5 +1,6 @@
 import { handleServiceError } from "../lib/error";
 import {
+  canRefund as canRefundOrderItem,
   createRefund,
   getRefundById,
   getRefundList,
@@ -60,6 +61,14 @@ class RefundService {
       return { success: true, data: refund };
     } catch (error) {
       return handleServiceError(error);
+    }
+  }
+
+  async canRefund(orderItemId: string): Promise<boolean> {
+    try {
+      return await canRefundOrderItem(orderItemId);
+    } catch (error) {
+      return false;
     }
   }
 }

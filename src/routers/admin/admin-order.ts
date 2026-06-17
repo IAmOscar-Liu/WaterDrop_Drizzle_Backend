@@ -265,6 +265,14 @@ const router = Router();
  *                   - $ref: '#/components/schemas/OrderItem'
  *                   - type: object
  *                     properties:
+ *                       refundItems:
+ *                         type: array
+ *                         description: Refund requests associated with this order item.
+ *                         items:
+ *                           $ref: '#/components/schemas/RefundItem'
+ *                       canRefund:
+ *                         type: boolean
+ *                         description: Whether this order item still has refundable quantity for the current order and delivery status.
  *                       product:
  *                         type: object
  *                         properties:

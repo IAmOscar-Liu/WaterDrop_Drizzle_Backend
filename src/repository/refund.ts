@@ -12,7 +12,7 @@ import {
 } from "drizzle-orm";
 import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
-import { getBankNameFromCode, isPlainObject } from "../lib/general";
+import { getBankNameByCodeMap, isPlainObject } from "../lib/general";
 import db from "../lib/initDB";
 
 export interface GetRefundListParams {
@@ -25,18 +25,24 @@ export interface GetRefundListParams {
   status?: schema.RefundItem["status"];
 }
 
-function formatRefundRow(row: {
-  refundItem: schema.RefundItem;
-  orderItem: schema.OrderItem;
-  product: schema.Product;
-  order: schema.Order;
-  user: {
-    name: string | null;
-    email: string;
-    bankCode: string | null;
-    bankAccount: string | null;
-  };
-}) {
+function formatRefundRow(
+  row: {
+    refundItem: schema.RefundItem;
+    orderItem: schema.OrderItem;
+    product: schema.Product;
+    order: schema.Order;
+    user: {
+      id: string;
+      name: string | null;
+      email: string;
+      bankCode: string | null;
+      bankAccount: string | null;
+    };
+  },
+  bankNameByCode = getBankNameByCodeMap(),
+) {
+  const bankCode = row.user.bankCode?.trim().padStart(3, "0");
+
   return {
     ...row.refundItem,
     orderItem: {
@@ -46,9 +52,7 @@ function formatRefundRow(row: {
         ...row.order,
         user: {
           ...row.user,
-          bankName: row.user.bankCode
-            ? getBankNameFromCode(row.user.bankCode)
-            : null,
+          bankName: bankCode ? (bankNameByCode.get(bankCode) ?? null) : null,
         },
       },
     },
@@ -95,6 +99,7 @@ function getRefundBaseQuery() {
       product: schema.productTable,
       order: schema.orderTable,
       user: {
+        id: schema.userTable.id,
         name: schema.userTable.name,
         email: schema.userTable.email,
         bankCode: schema.userTable.bankCode,
@@ -160,8 +165,10 @@ export async function getRefundList({
   const total = totalResult.total;
   const totalPages = Math.ceil(total / limit);
 
+  const bankNameByCode = getBankNameByCodeMap();
+
   return {
-    refunds: rows.map(formatRefundRow),
+    refunds: rows.map((row) => formatRefundRow(row, bankNameByCode)),
     total,
     page,
     limit,
@@ -310,12 +317,20 @@ export async function createRefund(item: schema.NewRefundItem) {
     }
 
     // 7. Fill the default refund amount from the original unit sale price.
+    const refundPaidRatio =
+      order?.subTotal && order.subTotal > 0
+        ? Math.max(order.subTotal - (order.discountCoin ?? 0) / 10, 0) /
+          order.subTotal
+        : 1;
+
     const refundItem = {
       orderItemId: item.orderItemId,
       quantity: item.quantity,
       reason: item.reason,
       note: item.note,
       refundAmount,
+      paidRefundAmount: refundAmount * item.quantity * refundPaidRatio,
+      extraRefundAmount: item.extraRefundAmount ?? 0,
       metadata: item.metadata,
     };
 
@@ -329,12 +344,70 @@ export async function createRefund(item: schema.NewRefundItem) {
   });
 }
 
+export async function canRefund(orderItemId: string): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const [orderItem] = await tx
+      .select()
+      .from(schema.orderItemTable)
+      .where(eq(schema.orderItemTable.id, orderItemId))
+      .for("update");
+
+    if (!orderItem) {
+      return false;
+    }
+
+    const [order] = await tx
+      .select()
+      .from(schema.orderTable)
+      .where(eq(schema.orderTable.id, orderItem.orderId))
+      .for("update");
+
+    if (!order || order.orderStatus !== "paid") {
+      return false;
+    }
+
+    if (!orderItem.deliveryId) {
+      return false;
+    }
+
+    const [delivery] = await tx
+      .select()
+      .from(schema.deliveryTable)
+      .where(eq(schema.deliveryTable.id, orderItem.deliveryId))
+      .for("update");
+
+    if (
+      !delivery ||
+      ((process.env.NODE_ENV === "stg" ||
+        process.env.NODE_ENV === "production") &&
+        delivery.status !== "delivered")
+    ) {
+      return false;
+    }
+
+    const [refundedRow] = await tx
+      .select({
+        quantity: sql<number>`coalesce(sum(${schema.refundItemTable.quantity}), 0)`,
+      })
+      .from(schema.refundItemTable)
+      .where(
+        and(
+          eq(schema.refundItemTable.orderItemId, orderItemId),
+          ne(schema.refundItemTable.status, "cancelled"),
+        ),
+      );
+
+    return Number(refundedRow.quantity) < orderItem.quantity;
+  });
+}
+
 export async function updateRefundItemStatus(
   refundItemId: string,
   updates: {
     status?: schema.RefundItem["status"];
     reason?: string;
     note?: string | null;
+    extraRefundAmount?: number;
   },
 ) {
   return db.transaction(async (tx) => {
@@ -364,7 +437,8 @@ export async function updateRefundItemStatus(
     if (
       !statusChanged &&
       updates.reason === undefined &&
-      updates.note === undefined
+      updates.note === undefined &&
+      updates.extraRefundAmount === undefined
     ) {
       return refundItem;
     }
@@ -539,13 +613,16 @@ export async function updateRefundItemStatus(
       }
     }
 
-    // 5. Status, reason, and note are the only mutable refund item fields.
+    // 5. Status, reason, note, and extra refund amount are mutable.
     const [updatedRefundItem] = await tx
       .update(schema.refundItemTable)
       .set({
         ...(updates.status !== undefined ? { status: updates.status } : {}),
         ...(updates.reason !== undefined ? { reason: updates.reason } : {}),
         ...(updates.note !== undefined ? { note: updates.note } : {}),
+        ...(updates.extraRefundAmount !== undefined
+          ? { extraRefundAmount: updates.extraRefundAmount }
+          : {}),
         ...(statusChanged && updates.status === "completed" ? { summary } : {}),
         updatedAt: new Date(),
       })

@@ -34,6 +34,7 @@ export const refundValidation = {
     reason: nonEmptyString.optional(),
     note: z.string().optional().nullable(),
     refundAmount: nonNegativeNumber.optional(),
+    extraRefundAmount: nonNegativeNumber.optional(),
     metadata: jsonObject.optional().nullable(),
   }),
   updateStatusBody: requireAtLeastOneField(
@@ -41,6 +42,7 @@ export const refundValidation = {
       status: refundStatus.optional(),
       reason: nonEmptyString.optional(),
       note: z.string().optional().nullable(),
+      extraRefundAmount: nonNegativeNumber.optional(),
     }),
   ),
 };
