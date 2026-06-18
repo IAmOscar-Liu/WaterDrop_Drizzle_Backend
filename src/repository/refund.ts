@@ -14,10 +14,12 @@ import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
 import { getBankNameByCodeMap, isPlainObject } from "../lib/general";
 import db from "../lib/initDB";
+import { isAccountAdmin } from "./account";
 
 export interface GetRefundListParams {
   page?: number;
   limit?: number;
+  accountId?: string;
   userId?: string;
   productId?: string;
   startAt?: Date;
@@ -128,6 +130,7 @@ function getRefundBaseQuery() {
 export async function getRefundList({
   page = 1,
   limit = 10,
+  accountId,
   userId,
   productId,
   startAt,
@@ -142,6 +145,11 @@ export async function getRefundList({
     endAt,
     status,
   });
+  const sellerScope =
+    accountId && !(await isAccountAdmin(accountId))
+      ? eq(schema.productTable.sellerId, accountId)
+      : undefined;
+  const scopedWhereClause = and(whereClause, sellerScope);
 
   const [totalResult] = await db
     .select({ total: count() })
@@ -154,10 +162,14 @@ export async function getRefundList({
       schema.orderTable,
       eq(schema.orderItemTable.orderId, schema.orderTable.id),
     )
-    .where(whereClause);
+    .innerJoin(
+      schema.productTable,
+      eq(schema.orderItemTable.productId, schema.productTable.id),
+    )
+    .where(scopedWhereClause);
 
   const rows = await getRefundBaseQuery()
-    .where(whereClause)
+    .where(scopedWhereClause)
     .orderBy(desc(schema.refundItemTable.createdAt))
     .limit(limit)
     .offset(offset);

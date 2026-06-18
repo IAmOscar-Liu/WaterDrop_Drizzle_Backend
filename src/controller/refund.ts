@@ -3,15 +3,17 @@ import * as schema from "../db/schema";
 import { sendJsonResponse } from "../lib/general";
 import { GetRefundListParams } from "../repository/refund";
 import refundService from "../services/refund";
+import { RequestWithId } from "../type/request";
 
 class RefundController {
-  async getRefundList(req: Request, res: Response): Promise<any> {
+  async getRefundList(req: RequestWithId, res: Response): Promise<any> {
     const { page, limit, userId, productId, startAt, endAt, status } =
       req.query;
 
     const result = await refundService.getRefundList({
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
+      accountId: req.userId ?? "",
       userId: userId ? String(userId) : undefined,
       productId: productId ? String(productId) : undefined,
       startAt: startAt ? new Date(String(startAt)) : undefined,
