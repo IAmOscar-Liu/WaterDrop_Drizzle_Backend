@@ -5,8 +5,10 @@ import {
   eq,
   gte,
   inArray,
+  like,
   lte,
   ne,
+  or,
   SQL,
   sql,
 } from "drizzle-orm";
@@ -22,6 +24,7 @@ export interface GetRefundListParams {
   accountId?: string;
   userId?: string;
   productId?: string;
+  merchantTradeNo?: string;
   startAt?: Date;
   endAt?: Date;
   status?: schema.RefundItem["status"];
@@ -32,6 +35,13 @@ function formatRefundRow(
     refundItem: schema.RefundItem;
     orderItem: schema.OrderItem;
     product: schema.Product;
+    delivery: {
+      id: string;
+      merchantTradeNo: string | null;
+      status: schema.Delivery["status"];
+      LogisticsType: schema.Delivery["LogisticsType"];
+      LogisticsSubType: string | null;
+    } | null;
     order: schema.Order;
     user: {
       id: string;
@@ -50,6 +60,7 @@ function formatRefundRow(
     orderItem: {
       ...row.orderItem,
       product: row.product,
+      delivery: row.delivery,
       order: {
         ...row.order,
         user: {
@@ -99,6 +110,13 @@ function getRefundBaseQuery() {
       refundItem: schema.refundItemTable,
       orderItem: schema.orderItemTable,
       product: schema.productTable,
+      delivery: {
+        id: schema.deliveryTable.id,
+        merchantTradeNo: schema.deliveryTable.merchantTradeNo,
+        status: schema.deliveryTable.status,
+        LogisticsType: schema.deliveryTable.LogisticsType,
+        LogisticsSubType: schema.deliveryTable.LogisticsSubType,
+      },
       order: schema.orderTable,
       user: {
         id: schema.userTable.id,
@@ -117,6 +135,10 @@ function getRefundBaseQuery() {
       schema.productTable,
       eq(schema.orderItemTable.productId, schema.productTable.id),
     )
+    .leftJoin(
+      schema.deliveryTable,
+      eq(schema.orderItemTable.deliveryId, schema.deliveryTable.id),
+    )
     .innerJoin(
       schema.orderTable,
       eq(schema.orderItemTable.orderId, schema.orderTable.id),
@@ -133,6 +155,7 @@ export async function getRefundList({
   accountId,
   userId,
   productId,
+  merchantTradeNo,
   startAt,
   endAt,
   status,
@@ -149,7 +172,25 @@ export async function getRefundList({
     accountId && !(await isAccountAdmin(accountId))
       ? eq(schema.productTable.sellerId, accountId)
       : undefined;
-  const scopedWhereClause = and(whereClause, sellerScope);
+  const merchantTradeNoPrefix = merchantTradeNo?.trim();
+  const merchantTradeNoScope =
+    merchantTradeNoPrefix && merchantTradeNoPrefix.length >= 4
+      ? or(
+          like(
+            schema.orderTable.merchantTradeNo,
+            `${merchantTradeNoPrefix}%`,
+          ),
+          like(
+            schema.deliveryTable.merchantTradeNo,
+            `${merchantTradeNoPrefix}%`,
+          ),
+        )
+      : undefined;
+  const scopedWhereClause = and(
+    whereClause,
+    sellerScope,
+    merchantTradeNoScope,
+  );
 
   const [totalResult] = await db
     .select({ total: count() })
@@ -165,6 +206,10 @@ export async function getRefundList({
     .innerJoin(
       schema.productTable,
       eq(schema.orderItemTable.productId, schema.productTable.id),
+    )
+    .leftJoin(
+      schema.deliveryTable,
+      eq(schema.orderItemTable.deliveryId, schema.deliveryTable.id),
     )
     .where(scopedWhereClause);
 

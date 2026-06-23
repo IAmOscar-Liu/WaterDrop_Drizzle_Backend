@@ -1,9 +1,19 @@
 import fs from "fs/promises";
 import path from "path";
+import { BANK_ACCOUNT_UPDATE_REMINDER } from "../constants/user";
 import { handleServiceError } from "../lib/error";
 import { ServiceResponse } from "../type/general";
 
 class SystemService {
+  async getInfo(): Promise<ServiceResponse<Record<string, any>>> {
+    return Promise.resolve({
+      success: true,
+      data: {
+        bankAccountUpdateReminder: BANK_ACCOUNT_UPDATE_REMINDER,
+      },
+    });
+  }
+
   async getProductRecommendation(): Promise<ServiceResponse<any>> {
     try {
       const filePath = path.resolve(

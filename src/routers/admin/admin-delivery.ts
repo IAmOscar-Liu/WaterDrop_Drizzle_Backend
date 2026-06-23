@@ -53,6 +53,9 @@ const router = Router();
  *                       canRefund:
  *                         type: boolean
  *                         description: Whether this order item still has refundable quantity for the current delivery/order status.
+ *                       remainingRefundQuantity:
+ *                         type: integer
+ *                         description: Remaining refundable quantity for this order item. Returns 0 when the item is not currently refundable.
  *             logs:
  *               type: array
  *               items:
@@ -199,6 +202,11 @@ const router = Router();
  *         schema:
  *           type: integer
  *           default: 10
+ *       - in: query
+ *         name: merchantTradeNo
+ *         description: Filters by delivery or order merchant trade number prefix when at least 4 characters are provided. Shorter values are ignored.
+ *         schema:
+ *           type: string
  *       - in: query
  *         name: status
  *         schema:

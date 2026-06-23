@@ -7,8 +7,16 @@ import { RequestWithId } from "../type/request";
 
 class RefundController {
   async getRefundList(req: RequestWithId, res: Response): Promise<any> {
-    const { page, limit, userId, productId, startAt, endAt, status } =
-      req.query;
+    const {
+      page,
+      limit,
+      userId,
+      productId,
+      merchantTradeNo,
+      startAt,
+      endAt,
+      status,
+    } = req.query;
 
     const result = await refundService.getRefundList({
       page: page ? Number(page) : undefined,
@@ -16,6 +24,7 @@ class RefundController {
       accountId: req.userId ?? "",
       userId: userId ? String(userId) : undefined,
       productId: productId ? String(productId) : undefined,
+      merchantTradeNo: merchantTradeNo ? String(merchantTradeNo) : undefined,
       startAt: startAt ? new Date(String(startAt)) : undefined,
       endAt: endAt ? new Date(String(endAt)) : undefined,
       status: status

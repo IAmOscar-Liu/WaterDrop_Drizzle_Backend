@@ -21,6 +21,7 @@ export const refundValidation = {
   listQuery: paginationQuery.extend({
     userId: uuid.optional(),
     productId: uuid.optional(),
+    merchantTradeNo: z.string().optional(),
     startAt: dateTimeString.optional(),
     endAt: dateTimeString.optional(),
     status: refundStatus.optional(),

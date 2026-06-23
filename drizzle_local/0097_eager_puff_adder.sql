@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "bank_account_updated_at" timestamp with time zone;

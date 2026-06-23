@@ -552,6 +552,7 @@ export interface ListAdminOrdersParams {
   limit?: number;
   accountId: string;
   userId?: string;
+  merchantTradeNo?: string;
   status: schema.NewOrder["orderStatus"];
   order?: "asc" | "desc";
   startDate?: Date;
@@ -563,6 +564,7 @@ export async function listAdminOrders({
   limit = 10,
   accountId,
   userId,
+  merchantTradeNo,
   status,
   order = "desc",
   startDate,
@@ -587,6 +589,13 @@ export async function listAdminOrders({
 
   if (userId) {
     conditions.push(eq(schema.orderTable.userId, userId));
+  }
+
+  const merchantTradeNoPrefix = merchantTradeNo?.trim();
+  if (merchantTradeNoPrefix && merchantTradeNoPrefix.length >= 4) {
+    conditions.push(
+      like(schema.orderTable.merchantTradeNo, `${merchantTradeNoPrefix}%`),
+    );
   }
 
   if (status) {
@@ -635,6 +644,10 @@ export async function listAdminOrders({
       deliveries: {
         columns: {
           id: true,
+          merchantTradeNo: true,
+          status: true,
+          LogisticsType: true,
+          LogisticsSubType: true,
         },
       },
     },
@@ -690,16 +703,24 @@ function isRefundableOrderDelivery(
   return true;
 }
 
+function getRemainingRefundQuantity(
+  order: RefundableOrder,
+  delivery: RefundableOrderDelivery | undefined,
+  item: RefundableOrderItem,
+) {
+  if (!item.deliveryId || !isRefundableOrderDelivery(order, delivery)) {
+    return 0;
+  }
+
+  return Math.max(item.quantity - getRefundedQuantity(item), 0);
+}
+
 function canRefundOrderItem(
   order: RefundableOrder,
   delivery: RefundableOrderDelivery | undefined,
   item: RefundableOrderItem,
 ) {
-  return (
-    Boolean(item.deliveryId) &&
-    isRefundableOrderDelivery(order, delivery) &&
-    getRefundedQuantity(item) < item.quantity
-  );
+  return getRemainingRefundQuantity(order, delivery, item) > 0;
 }
 
 export async function getOrderById(orderId: string) {
@@ -758,6 +779,11 @@ export async function getOrderById(orderId: string) {
       return {
         ...item,
         canRefund: canRefundOrderItem(order, delivery, item),
+        remainingRefundQuantity: getRemainingRefundQuantity(
+          order,
+          delivery,
+          item,
+        ),
       };
     }),
   };

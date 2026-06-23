@@ -1,5 +1,3 @@
-import fs from "fs";
-import path from "path";
 import {
   and,
   count,
@@ -10,6 +8,13 @@ import {
   lt,
   sql,
 } from "drizzle-orm";
+import fs from "fs";
+import path from "path";
+import {
+  BANK_ACCOUNT_UPDATE_MAX_MS,
+  BANK_ACCOUNT_UPDATE_MIN_MS,
+  BANK_ACCOUNT_UPDATE_TIMEOUT_ERROR_MESSAGE,
+} from "../constants/user";
 import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
 import {
@@ -299,14 +304,48 @@ export async function updateUser(
     }
   }
 
-  const [updatedUser] = await db
-    .update(schema.userTable)
-    .set({
+  const updatedUser = await db.transaction(async (tx) => {
+    const now = new Date();
+    const updateData: Partial<schema.NewUser> = {
       ...data,
-      updatedAt: new Date(), // Explicitly update the timestamp
-    })
-    .where(eq(schema.userTable.id, userId))
-    .returning();
+      updatedAt: now,
+    };
+
+    if (hasBankCode || hasBankAccount) {
+      const [user] = await tx
+        .select({
+          bankAccountUpdatedAt: schema.userTable.bankAccountUpdatedAt,
+        })
+        .from(schema.userTable)
+        .where(eq(schema.userTable.id, userId))
+        .for("update");
+
+      if (!user) {
+        return undefined;
+      }
+
+      if (user.bankAccountUpdatedAt) {
+        const elapsedMs = now.getTime() - user.bankAccountUpdatedAt.getTime();
+        const canUpdate =
+          elapsedMs < BANK_ACCOUNT_UPDATE_MIN_MS ||
+          elapsedMs > BANK_ACCOUNT_UPDATE_MAX_MS;
+
+        if (!canUpdate) {
+          throw new CustomError(BANK_ACCOUNT_UPDATE_TIMEOUT_ERROR_MESSAGE, 400);
+        }
+      }
+
+      updateData.bankAccountUpdatedAt = now;
+    }
+
+    const [updatedUser] = await tx
+      .update(schema.userTable)
+      .set(updateData)
+      .where(eq(schema.userTable.id, userId))
+      .returning();
+
+    return updatedUser;
+  });
 
   if (!updatedUser) {
     throw new CustomError(`User with id "${userId}" not found.`, 404);

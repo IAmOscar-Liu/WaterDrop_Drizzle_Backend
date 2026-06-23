@@ -20,13 +20,22 @@ class OrderController {
   }
 
   async listAdminOrders(req: RequestWithId, res: Response): Promise<any> {
-    const { page, limit, userId, status, order, startDate, endDate } =
-      req.query;
+    const {
+      page,
+      limit,
+      userId,
+      merchantTradeNo,
+      status,
+      order,
+      startDate,
+      endDate,
+    } = req.query;
     const result = await orderService.listAdminOrders({
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
       accountId: req.userId ?? "",
       userId: userId ? String(userId) : undefined,
+      merchantTradeNo: merchantTradeNo ? String(merchantTradeNo) : undefined,
       status: status
         ? (String(status) as schema.NewOrder["orderStatus"])
         : undefined,

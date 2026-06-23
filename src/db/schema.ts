@@ -271,6 +271,9 @@ export const userTable = pgTable(
     timezone: text("timezone"),
     bankCode: text("bank_code"),
     bankAccount: text("bank_account"),
+    bankAccountUpdatedAt: timestamp("bank_account_updated_at", {
+      withTimezone: true,
+    }),
 
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()

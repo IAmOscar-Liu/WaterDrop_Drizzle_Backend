@@ -7,6 +7,7 @@ import {
   isNotNull,
   like,
   lte,
+  or,
   SQL,
 } from "drizzle-orm";
 import * as schema from "../db/schema";
@@ -152,15 +153,22 @@ function getRefundedQuantity(item: RefundableDeliveryItem) {
   );
 }
 
+function getRemainingRefundQuantity(
+  delivery: RefundableDelivery,
+  item: RefundableDeliveryItem,
+) {
+  if (!isRefundableDelivery(delivery) || !item.deliveryId) {
+    return 0;
+  }
+
+  return Math.max(item.quantity - getRefundedQuantity(item), 0);
+}
+
 function canRefundDeliveryItem(
   delivery: RefundableDelivery,
   item: RefundableDeliveryItem,
 ) {
-  return (
-    isRefundableDelivery(delivery) &&
-    Boolean(item.deliveryId) &&
-    getRefundedQuantity(item) < item.quantity
-  );
+  return getRemainingRefundQuantity(delivery, item) > 0;
 }
 
 export async function getDeliveryById(deliveryId: string) {
@@ -203,6 +211,7 @@ export async function getDeliveryById(deliveryId: string) {
     items: delivery.items.map((item) => ({
       ...item,
       canRefund: canRefundDeliveryItem(delivery, item),
+      remainingRefundQuantity: getRemainingRefundQuantity(delivery, item),
     })),
   };
 }
@@ -253,6 +262,7 @@ export interface ListAdminDeliveriesParams {
   page?: number;
   limit?: number;
   accountId: string;
+  merchantTradeNo?: string;
   logisticsType?: schema.Delivery["LogisticsType"];
   status?: schema.Delivery["status"];
   startDate?: Date;
@@ -263,6 +273,7 @@ export async function listAdminDeliveries({
   page = 1,
   limit = 10,
   accountId,
+  merchantTradeNo,
   logisticsType,
   status,
   startDate,
@@ -288,6 +299,22 @@ export async function listAdminDeliveries({
       );
     conditions.push(
       inArray(schema.deliveryTable.id, sellerDeliveryIdsSubquery),
+    );
+  }
+
+  const merchantTradeNoPrefix = merchantTradeNo?.trim();
+  if (merchantTradeNoPrefix && merchantTradeNoPrefix.length >= 4) {
+    const orderIdsSubquery = db
+      .select({ id: schema.orderTable.id })
+      .from(schema.orderTable)
+      .where(
+        like(schema.orderTable.merchantTradeNo, `${merchantTradeNoPrefix}%`),
+      );
+    conditions.push(
+      or(
+        like(schema.deliveryTable.merchantTradeNo, `${merchantTradeNoPrefix}%`),
+        inArray(schema.deliveryTable.orderId, orderIdsSubquery),
+      ),
     );
   }
 

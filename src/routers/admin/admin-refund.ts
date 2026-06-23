@@ -74,6 +74,25 @@ const router = Router();
  *                   properties:
  *                     product:
  *                       $ref: '#/components/schemas/Product'
+ *                     delivery:
+ *                       type: object
+ *                       nullable: true
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                           format: uuid
+ *                         merchantTradeNo:
+ *                           type: string
+ *                           nullable: true
+ *                         status:
+ *                           type: string
+ *                           enum: [pending, shipped, ready_for_pickup, delivered, returned, cancelled, exception, unknown]
+ *                         LogisticsType:
+ *                           type: string
+ *                           enum: [CVS, home_delivery, virtual]
+ *                         LogisticsSubType:
+ *                           type: string
+ *                           nullable: true
  *                     order:
  *                       allOf:
  *                         - $ref: '#/components/schemas/Order'
@@ -147,6 +166,11 @@ const router = Router();
  *         schema:
  *           type: string
  *           format: uuid
+ *       - in: query
+ *         name: merchantTradeNo
+ *         description: Filters by order or delivery merchant trade number prefix when at least 4 characters are provided. Shorter values are ignored.
+ *         schema:
+ *           type: string
  *       - in: query
  *         name: startAt
  *         schema:
