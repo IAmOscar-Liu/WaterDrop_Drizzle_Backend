@@ -372,6 +372,13 @@
       "when": 1782232602588,
       "tag": "0052_slow_daimon_hellstrom",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1782283168453,
+      "tag": "0053_lonely_monster_badoon",
+      "breakpoints": true
     }
   ]
 }

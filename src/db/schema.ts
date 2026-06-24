@@ -1,5 +1,6 @@
 // schema.ts
 import { relations } from "drizzle-orm";
+import { convertIndexToString } from "drizzle-orm/mysql-core";
 import {
   boolean,
   doublePrecision,
@@ -606,6 +607,8 @@ export const refundItemTable = pgTable(
     extraRefundAmount: doublePrecision("extra_refund_amount")
       .default(0)
       .notNull(),
+    coins: doublePrecision("coins").default(0).notNull(),
+    returnableCoins: doublePrecision("returnable_coins"),
     metadata: jsonb("metadata"),
     summary: jsonb("summary"),
     createdAt: timestamp("created_at", { withTimezone: true })

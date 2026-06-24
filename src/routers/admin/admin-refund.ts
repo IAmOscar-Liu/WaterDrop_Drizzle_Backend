@@ -54,6 +54,13 @@ const router = Router();
  *         extraRefundAmount:
  *           type: number
  *           description: Additional refund amount for shipping, fees, or manual adjustments.
+ *         coins:
+ *           type: number
+ *           description: Proportional discount coins associated with this refund item.
+ *         returnableCoins:
+ *           type: number
+ *           nullable: true
+ *           description: Portion of refund coins that can be returned to the user.
  *         metadata:
  *           type: object
  *           nullable: true

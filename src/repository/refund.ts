@@ -374,6 +374,9 @@ export async function createRefund(item: schema.NewRefundItem) {
     }
 
     // 7. Fill the default refund amount from the original unit sale price.
+    const refundTotal = refundAmount * item.quantity;
+    const refundSubtotalRatio =
+      order?.subTotal && order.subTotal > 0 ? refundTotal / order.subTotal : 0;
     const refundPaidRatio =
       order?.subTotal && order.subTotal > 0
         ? Math.max(order.subTotal - (order.discountCoin ?? 0) / 10, 0) /
@@ -386,8 +389,9 @@ export async function createRefund(item: schema.NewRefundItem) {
       reason: item.reason,
       note: item.note,
       refundAmount,
-      paidRefundAmount: refundAmount * item.quantity * refundPaidRatio,
+      paidRefundAmount: refundTotal * refundPaidRatio,
       extraRefundAmount: item.extraRefundAmount ?? 0,
+      coins: (order?.discountCoin ?? 0) * refundSubtotalRatio,
       metadata: item.metadata,
     };
 
@@ -680,7 +684,9 @@ export async function updateRefundItemStatus(
         ...(updates.extraRefundAmount !== undefined
           ? { extraRefundAmount: updates.extraRefundAmount }
           : {}),
-        ...(statusChanged && updates.status === "completed" ? { summary } : {}),
+        ...(statusChanged && updates.status === "completed"
+          ? { returnableCoins: summary.returnableCoin, summary }
+          : {}),
         updatedAt: new Date(),
       })
       .where(eq(schema.refundItemTable.id, refundItemId))
