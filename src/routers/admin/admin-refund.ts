@@ -100,6 +100,12 @@ const router = Router();
  *                         LogisticsSubType:
  *                           type: string
  *                           nullable: true
+ *                         RtnCode:
+ *                           type: string
+ *                           nullable: true
+ *                         RtnMsg:
+ *                           type: string
+ *                           nullable: true
  *                     order:
  *                       allOf:
  *                         - $ref: '#/components/schemas/Order'

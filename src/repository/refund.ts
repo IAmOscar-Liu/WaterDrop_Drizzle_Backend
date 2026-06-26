@@ -41,6 +41,8 @@ function formatRefundRow(
       status: schema.Delivery["status"];
       LogisticsType: schema.Delivery["LogisticsType"];
       LogisticsSubType: string | null;
+      RtnCode: string | null;
+      RtnMsg: string | null;
     } | null;
     order: schema.Order;
     user: {
@@ -116,6 +118,8 @@ function getRefundBaseQuery() {
         status: schema.deliveryTable.status,
         LogisticsType: schema.deliveryTable.LogisticsType,
         LogisticsSubType: schema.deliveryTable.LogisticsSubType,
+        RtnCode: schema.deliveryTable.RtnCode,
+        RtnMsg: schema.deliveryTable.RtnMsg,
       },
       order: schema.orderTable,
       user: {

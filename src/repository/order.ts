@@ -648,6 +648,8 @@ export async function listAdminOrders({
           status: true,
           LogisticsType: true,
           LogisticsSubType: true,
+          RtnCode: true,
+          RtnMsg: true,
         },
       },
     },

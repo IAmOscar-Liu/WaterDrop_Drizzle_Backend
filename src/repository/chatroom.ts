@@ -601,6 +601,8 @@ export async function listAdminChatRooms({
             discountCoin: order.discountCoin,
             delivery: delivery
               ? {
+                  id: delivery.id,
+                  merchantTradeNo: delivery.merchantTradeNo,
                   LogisticsType: delivery.LogisticsType,
                   LogisticsSubType: delivery.LogisticsSubType,
                   status: delivery.status,

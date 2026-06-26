@@ -264,6 +264,12 @@ const router = Router();
  *                   LogisticsSubType:
  *                     type: string
  *                     nullable: true
+ *                   RtnCode:
+ *                     type: string
+ *                     nullable: true
+ *                   RtnMsg:
+ *                     type: string
+ *                     nullable: true
  *
  *     OrderWithRelations:
  *       allOf:
