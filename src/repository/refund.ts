@@ -176,21 +176,14 @@ export async function getRefundList({
   const merchantTradeNoScope =
     merchantTradeNoPrefix && merchantTradeNoPrefix.length >= 4
       ? or(
-          like(
-            schema.orderTable.merchantTradeNo,
-            `${merchantTradeNoPrefix}%`,
-          ),
+          like(schema.orderTable.merchantTradeNo, `${merchantTradeNoPrefix}%`),
           like(
             schema.deliveryTable.merchantTradeNo,
             `${merchantTradeNoPrefix}%`,
           ),
         )
       : undefined;
-  const scopedWhereClause = and(
-    whereClause,
-    sellerScope,
-    merchantTradeNoScope,
-  );
+  const scopedWhereClause = and(whereClause, sellerScope, merchantTradeNoScope);
 
   const [totalResult] = await db
     .select({ total: count() })
@@ -469,6 +462,7 @@ export async function updateRefundItemStatus(
     reason?: string;
     note?: string | null;
     extraRefundAmount?: number;
+    metadata?: schema.RefundItem["metadata"];
   },
 ) {
   return db.transaction(async (tx) => {
@@ -499,7 +493,8 @@ export async function updateRefundItemStatus(
       !statusChanged &&
       updates.reason === undefined &&
       updates.note === undefined &&
-      updates.extraRefundAmount === undefined
+      updates.extraRefundAmount === undefined &&
+      updates.metadata === undefined
     ) {
       return refundItem;
     }
@@ -684,6 +679,7 @@ export async function updateRefundItemStatus(
         ...(updates.extraRefundAmount !== undefined
           ? { extraRefundAmount: updates.extraRefundAmount }
           : {}),
+        ...(updates.metadata !== undefined ? { metadata: updates.metadata } : {}),
         ...(statusChanged && updates.status === "completed"
           ? { returnableCoins: summary.returnableCoin, summary }
           : {}),

@@ -67,7 +67,7 @@ class RefundController {
 
   async updateRefundItemStatus(req: Request, res: Response): Promise<any> {
     const { refundItemId } = req.params;
-    const { status, reason, note, extraRefundAmount } = req.body;
+    const { status, reason, note, extraRefundAmount, metadata } = req.body;
     const result = await refundService.updateRefundItemStatus(
       refundItemId,
       {
@@ -77,6 +77,7 @@ class RefundController {
         ...(extraRefundAmount !== undefined
           ? { extraRefundAmount }
           : {}),
+        ...(metadata !== undefined ? { metadata } : {}),
       },
     );
     sendJsonResponse(res, result);

@@ -301,7 +301,7 @@ router.post(
  *   patch:
  *     tags: [Refund]
  *     summary: Update refund item
- *     description: Status, reason, note, and extraRefundAmount are mutable. Once completed, the status cannot be changed.
+ *     description: Status, reason, note, extraRefundAmount, and metadata are mutable. Once completed, the status cannot be changed.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -317,7 +317,7 @@ router.post(
  *         application/json:
  *           schema:
  *             type: object
- *             description: Provide at least one of status, reason, note, or extraRefundAmount.
+ *             description: Provide at least one of status, reason, note, extraRefundAmount, or metadata.
  *             properties:
  *               status:
  *                 type: string
@@ -330,6 +330,9 @@ router.post(
  *               extraRefundAmount:
  *                 type: number
  *                 description: Additional refund amount for shipping, fees, or manual adjustments.
+ *               metadata:
+ *                 type: object
+ *                 nullable: true
  *     responses:
  *       '200':
  *         description: The updated refund item.
