@@ -41,6 +41,8 @@ export const refundValidation = {
   updateStatusBody: requireAtLeastOneField(
     z.object({
       status: refundStatus.optional(),
+      quantity: positiveInt.optional(),
+      refundAmount: nonNegativeNumber.optional(),
       reason: nonEmptyString.optional(),
       note: z.string().optional().nullable(),
       extraRefundAmount: nonNegativeNumber.optional(),

@@ -41,7 +41,7 @@ class RefundController {
     sendJsonResponse(res, result);
   }
 
-  async createRefund(req: Request, res: Response): Promise<any> {
+  async createRefund(req: RequestWithId, res: Response): Promise<any> {
     const {
       orderItemId,
       quantity,
@@ -60,6 +60,7 @@ class RefundController {
       refundAmount,
       extraRefundAmount,
       metadata,
+      accountId: req.userId,
     });
 
     sendJsonResponse(res, result);
@@ -67,11 +68,21 @@ class RefundController {
 
   async updateRefundItemStatus(req: Request, res: Response): Promise<any> {
     const { refundItemId } = req.params;
-    const { status, reason, note, extraRefundAmount, metadata } = req.body;
+    const {
+      status,
+      quantity,
+      refundAmount,
+      reason,
+      note,
+      extraRefundAmount,
+      metadata,
+    } = req.body;
     const result = await refundService.updateRefundItemStatus(
       refundItemId,
       {
         ...(status ? { status: status as schema.RefundItem["status"] } : {}),
+        ...(quantity !== undefined ? { quantity } : {}),
+        ...(refundAmount !== undefined ? { refundAmount } : {}),
         ...(reason !== undefined ? { reason } : {}),
         ...(note !== undefined ? { note } : {}),
         ...(extraRefundAmount !== undefined

@@ -307,7 +307,7 @@ router.post(
  *   patch:
  *     tags: [Refund]
  *     summary: Update refund item
- *     description: Status, reason, note, extraRefundAmount, and metadata are mutable. Once completed, the status cannot be changed.
+ *     description: Status, quantity, refundAmount, reason, note, extraRefundAmount, and metadata are mutable. Quantity and refundAmount can only be changed while the current refund status is pending or processing. Once completed, the status cannot be changed.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -323,11 +323,17 @@ router.post(
  *         application/json:
  *           schema:
  *             type: object
- *             description: Provide at least one of status, reason, note, extraRefundAmount, or metadata.
+ *             description: Provide at least one of status, quantity, refundAmount, reason, note, extraRefundAmount, or metadata.
  *             properties:
  *               status:
  *                 type: string
  *                 enum: [pending, processing, completed, cancelled]
+ *               quantity:
+ *                 type: integer
+ *                 description: Refund quantity. Must not exceed the remaining refundable quantity for the order item.
+ *               refundAmount:
+ *                 type: number
+ *                 description: Unit refund amount. Must not exceed the order item's unitPriceAtSale.
  *               reason:
  *                 type: string
  *               note:

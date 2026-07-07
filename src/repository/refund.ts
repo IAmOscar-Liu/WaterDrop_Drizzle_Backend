@@ -17,6 +17,7 @@ import { CustomError } from "../lib/error";
 import { getBankNameByCodeMap, isPlainObject } from "../lib/general";
 import db from "../lib/initDB";
 import { isAccountAdmin } from "./account";
+import { findOrCreateChatRoom, sendChatMessage } from "./chatroom";
 
 export interface GetRefundListParams {
   page?: number;
@@ -153,6 +154,147 @@ function getRefundBaseQuery() {
     );
 }
 
+function calculateRefundFinancials(
+  order: schema.Order | undefined,
+  quantity: number,
+  refundAmount: number,
+) {
+  const refundTotal = refundAmount * quantity;
+  const refundSubtotalRatio =
+    order?.subTotal && order.subTotal > 0 ? refundTotal / order.subTotal : 0;
+  const refundPaidRatio =
+    order?.subTotal && order.subTotal > 0
+      ? Math.max(order.subTotal - (order.discountCoin ?? 0) / 10, 0) /
+        order.subTotal
+      : 1;
+
+  return {
+    refundTotal,
+    paidRefundAmount: refundTotal * refundPaidRatio,
+    coins: (order?.discountCoin ?? 0) * refundSubtotalRatio,
+  };
+}
+
+function validateRefundQuantityAndAmount({
+  orderItem,
+  refundedQuantity,
+  quantity,
+  refundAmount,
+}: {
+  orderItem: schema.OrderItem;
+  refundedQuantity: number;
+  quantity: number;
+  refundAmount: number;
+}) {
+  const errors = [];
+
+  if (refundedQuantity >= orderItem.quantity) {
+    errors.push({
+      orderItemId: orderItem.id,
+      reason: "Order item already fully refunded",
+    });
+  }
+
+  if (quantity <= 0 || quantity > orderItem.quantity) {
+    errors.push({
+      orderItemId: orderItem.id,
+      reason: "Invalid refund quantity",
+      quantity,
+      orderItemQuantity: orderItem.quantity,
+    });
+  }
+
+  if (refundedQuantity + quantity > orderItem.quantity) {
+    errors.push({
+      orderItemId: orderItem.id,
+      reason: "Refund quantity exceeds remaining refundable quantity",
+      quantity,
+      remaining: orderItem.quantity - refundedQuantity,
+    });
+  }
+
+  if (refundAmount > orderItem.unitPriceAtSale) {
+    errors.push({
+      orderItemId: orderItem.id,
+      reason: "Refund amount exceeds unit price at sale",
+      refundAmount,
+      unitPriceAtSale: orderItem.unitPriceAtSale,
+    });
+  }
+
+  return errors;
+}
+
+function formatRefundChatMessage({
+  createdAt,
+  productName,
+  quantity,
+  coins,
+  reason,
+  note,
+}: {
+  createdAt: Date;
+  productName: string;
+  quantity: number;
+  coins: number;
+  reason?: string | null;
+  note?: string | null;
+}) {
+  const appliedAt = createdAt.toLocaleString("zh-TW", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+
+  return [
+    "[退貨申請]",
+    `申請時間：${appliedAt}`,
+    `商品名稱：${productName}`,
+    `退貨數量：${quantity}`,
+    `退還金幣：${coins}`,
+    `退貨原因：${reason || "無"}`,
+    `備註：${note || "無"}`,
+  ].join("\n");
+}
+
+async function sendRefundCreatedChatMessage({
+  accountId,
+  userId,
+  productId,
+  orderId,
+  content,
+}: {
+  accountId: string;
+  userId: string;
+  productId: string;
+  orderId: string;
+  content: string;
+}) {
+  const chatRoomResult = await findOrCreateChatRoom({
+    userId,
+    accountId,
+    productId,
+    orderId,
+  });
+  const chatRoom = Array.isArray(chatRoomResult)
+    ? chatRoomResult[0]
+    : chatRoomResult;
+
+  if (!chatRoom) {
+    throw new CustomError("Chat room could not be created", 500);
+  }
+
+  await sendChatMessage({
+    chatRoomId: chatRoom.id,
+    senderType: (await isAccountAdmin(accountId)) ? "admin" : "seller",
+    content,
+  });
+}
+
 export async function getRefundList({
   page = 1,
   limit = 10,
@@ -238,8 +380,10 @@ export async function getRefundById(refundItemId: string) {
   return row ? formatRefundRow(row) : undefined;
 }
 
-export async function createRefund(item: schema.NewRefundItem) {
-  return db.transaction(async (tx) => {
+export async function createRefund(
+  item: schema.NewRefundItem & { accountId?: string },
+) {
+  const result = await db.transaction(async (tx) => {
     // 1. Lock the order item so concurrent refunds cannot over-refund it.
     const [orderItem] = await tx
       .select()
@@ -331,54 +475,40 @@ export async function createRefund(item: schema.NewRefundItem) {
     const refundAmount = item.refundAmount ?? orderItem.unitPriceAtSale;
 
     // 5. Validate the single requested refund item before inserting anything.
-    if (refundedQuantity >= orderItem.quantity) {
-      errors.push({
-        orderItemId: item.orderItemId,
-        reason: "Order item already fully refunded",
-      });
-    }
-
-    if (item.quantity <= 0 || item.quantity > orderItem.quantity) {
-      errors.push({
-        orderItemId: item.orderItemId,
-        reason: "Invalid refund quantity",
+    errors.push(
+      ...validateRefundQuantityAndAmount({
+        orderItem,
+        refundedQuantity,
         quantity: item.quantity,
-        orderItemQuantity: orderItem.quantity,
-      });
-    }
-
-    if (refundedQuantity + item.quantity > orderItem.quantity) {
-      errors.push({
-        orderItemId: item.orderItemId,
-        reason: "Refund quantity exceeds remaining refundable quantity",
-        quantity: item.quantity,
-        remaining: orderItem.quantity - refundedQuantity,
-      });
-    }
-
-    if (refundAmount > orderItem.unitPriceAtSale) {
-      errors.push({
-        orderItemId: item.orderItemId,
-        reason: "Refund amount exceeds unit price at sale",
         refundAmount,
-        unitPriceAtSale: orderItem.unitPriceAtSale,
-      });
-    }
+      }),
+    );
 
     // 6. Fail the refund request if the item is invalid.
     if (errors.length > 0) {
       throw new CustomError(JSON.stringify({ error: errors }), 400);
     }
 
+    if (!order) {
+      throw new CustomError("Order not found", 404);
+    }
+
+    const [product] = await tx
+      .select()
+      .from(schema.productTable)
+      .where(eq(schema.productTable.id, orderItem.productId))
+      .for("update");
+
+    if (!product) {
+      throw new CustomError("Product not found", 404);
+    }
+
     // 7. Fill the default refund amount from the original unit sale price.
-    const refundTotal = refundAmount * item.quantity;
-    const refundSubtotalRatio =
-      order?.subTotal && order.subTotal > 0 ? refundTotal / order.subTotal : 0;
-    const refundPaidRatio =
-      order?.subTotal && order.subTotal > 0
-        ? Math.max(order.subTotal - (order.discountCoin ?? 0) / 10, 0) /
-          order.subTotal
-        : 1;
+    const refundFinancials = calculateRefundFinancials(
+      order,
+      item.quantity,
+      refundAmount,
+    );
 
     const refundItem = {
       orderItemId: item.orderItemId,
@@ -386,9 +516,9 @@ export async function createRefund(item: schema.NewRefundItem) {
       reason: item.reason,
       note: item.note,
       refundAmount,
-      paidRefundAmount: refundTotal * refundPaidRatio,
+      paidRefundAmount: refundFinancials.paidRefundAmount,
       extraRefundAmount: item.extraRefundAmount ?? 0,
-      coins: (order?.discountCoin ?? 0) * refundSubtotalRatio,
+      coins: refundFinancials.coins,
       metadata: item.metadata,
     };
 
@@ -398,8 +528,34 @@ export async function createRefund(item: schema.NewRefundItem) {
       .values(refundItem)
       .returning();
 
-    return newRefundItem;
+    return {
+      refundItem: newRefundItem,
+      chatMessageInput: item.accountId
+        ? {
+            accountId: item.accountId,
+            userId: order.userId,
+            productId: orderItem.productId,
+            orderId: orderItem.orderId,
+            content: formatRefundChatMessage({
+              createdAt: newRefundItem.createdAt,
+              productName: product.name,
+              quantity: newRefundItem.quantity,
+              coins: newRefundItem.coins,
+              reason: newRefundItem.reason,
+              note: newRefundItem.note,
+            }),
+          }
+        : undefined,
+    };
   });
+
+  if (result.chatMessageInput) {
+    void sendRefundCreatedChatMessage(result.chatMessageInput).catch((error) => {
+      console.error("Failed to send refund chat message:", error);
+    });
+  }
+
+  return result.refundItem;
 }
 
 export async function canRefund(orderItemId: string): Promise<boolean> {
@@ -463,6 +619,8 @@ export async function updateRefundItemStatus(
   refundItemId: string,
   updates: {
     status?: schema.RefundItem["status"];
+    quantity?: number;
+    refundAmount?: number;
     reason?: string;
     note?: string | null;
     extraRefundAmount?: number;
@@ -483,6 +641,8 @@ export async function updateRefundItemStatus(
 
     const statusChanged =
       updates.status !== undefined && refundItem.status !== updates.status;
+    const financialChanged =
+      updates.quantity !== undefined || updates.refundAmount !== undefined;
 
     // 2. Completed refund items cannot have their status changed again.
     if (refundItem.status === "completed" && statusChanged) {
@@ -492,15 +652,105 @@ export async function updateRefundItemStatus(
       );
     }
 
+    if (
+      financialChanged &&
+      (refundItem.status === "completed" || refundItem.status === "cancelled")
+    ) {
+      throw new CustomError(
+        "Cannot change quantity or refund amount once refund is completed or cancelled",
+        400,
+      );
+    }
+
     // 3. If nothing changes, return the current refund item.
     if (
       !statusChanged &&
+      !financialChanged &&
       updates.reason === undefined &&
       updates.note === undefined &&
       updates.extraRefundAmount === undefined &&
       updates.metadata === undefined
     ) {
       return refundItem;
+    }
+
+    let orderItem: schema.OrderItem | undefined;
+    let order: schema.Order | undefined;
+
+    async function getLockedOrderContext() {
+      if (!orderItem) {
+        [orderItem] = await tx
+          .select()
+          .from(schema.orderItemTable)
+          .where(eq(schema.orderItemTable.id, refundItem.orderItemId))
+          .for("update");
+
+        if (!orderItem) {
+          throw new CustomError("Order item not found", 404);
+        }
+      }
+
+      if (!order) {
+        [order] = await tx
+          .select()
+          .from(schema.orderTable)
+          .where(eq(schema.orderTable.id, orderItem.orderId))
+          .for("update");
+
+        if (!order) {
+          throw new CustomError("Order not found", 404);
+        }
+      }
+
+      return { orderItem, order };
+    }
+
+    let financialUpdates:
+      | {
+          quantity: number;
+          refundAmount: number;
+          paidRefundAmount: number;
+          coins: number;
+        }
+      | undefined;
+
+    if (financialChanged) {
+      const context = await getLockedOrderContext();
+      const quantity = updates.quantity ?? refundItem.quantity;
+      const refundAmount =
+        updates.refundAmount ??
+        refundItem.refundAmount ??
+        context.orderItem.unitPriceAtSale;
+
+      const [refundedRow] = await tx
+        .select({
+          quantity: sql<number>`coalesce(sum(${schema.refundItemTable.quantity}), 0)`,
+        })
+        .from(schema.refundItemTable)
+        .where(
+          and(
+            eq(schema.refundItemTable.orderItemId, refundItem.orderItemId),
+            ne(schema.refundItemTable.id, refundItem.id),
+            ne(schema.refundItemTable.status, "cancelled"),
+          ),
+        );
+
+      const errors = validateRefundQuantityAndAmount({
+        orderItem: context.orderItem,
+        refundedQuantity: Number(refundedRow.quantity),
+        quantity,
+        refundAmount,
+      });
+
+      if (errors.length > 0) {
+        throw new CustomError(JSON.stringify({ error: errors }), 400);
+      }
+
+      financialUpdates = {
+        quantity,
+        refundAmount,
+        ...calculateRefundFinancials(context.order, quantity, refundAmount),
+      };
     }
 
     // 4. When completing a refund, reverse the proportional coin spend.
@@ -528,31 +778,16 @@ export async function updateRefundItemStatus(
 
     if (statusChanged && updates.status === "completed") {
       // 4.1 Find the refunded order item.
-      const [orderItem] = await tx
-        .select()
-        .from(schema.orderItemTable)
-        .where(eq(schema.orderItemTable.id, refundItem.orderItemId))
-        .for("update");
-
-      if (!orderItem) {
-        throw new CustomError("Order item not found", 404);
-      }
-
-      // 4.2 Find the parent order so we can read subtotal and coinInfo.
-      const [order] = await tx
-        .select()
-        .from(schema.orderTable)
-        .where(eq(schema.orderTable.id, orderItem.orderId))
-        .for("update");
-
-      if (!order) {
-        throw new CustomError("Order not found", 404);
-      }
+      const context = await getLockedOrderContext();
+      const effectiveQuantity =
+        financialUpdates?.quantity ?? refundItem.quantity;
+      const effectiveRefundAmount =
+        financialUpdates?.refundAmount ?? refundItem.refundAmount ?? 0;
 
       // 4.3 Calculate what percentage of the order subtotal is being refunded.
-      const refundTotal = refundItem.quantity * (refundItem.refundAmount ?? 0);
+      const refundTotal = effectiveQuantity * effectiveRefundAmount;
       const refundPercentage =
-        order.subTotal > 0 ? refundTotal / order.subTotal : 0;
+        context.order.subTotal > 0 ? refundTotal / context.order.subTotal : 0;
 
       if (refundPercentage > 0) {
         // 4.4 Build the coin refund amount by month.
@@ -560,27 +795,33 @@ export async function updateRefundItemStatus(
 
         // Prefer the exact original coin usage saved on the order.
         if (
-          isPlainObject(order.coinInfo) &&
-          Object.keys(order.coinInfo as Record<string, number>).length > 0
+          isPlainObject(context.order.coinInfo) &&
+          Object.keys(context.order.coinInfo as Record<string, number>).length >
+            0
         ) {
           for (const [month, coins] of Object.entries(
-            order.coinInfo as Record<string, number>,
+            context.order.coinInfo as Record<string, number>,
           )) {
             coinUpdates[month] = coins * refundPercentage;
           }
-        } else if (order.discountCoin && order.discountCoin > 0) {
+        } else if (
+          context.order.discountCoin &&
+          context.order.discountCoin > 0
+        ) {
           // If older orders do not have coinInfo, fall back to the latest month.
           const [latestMonthlyStat] = await tx
             .select()
             .from(schema.userMonthlyCoinStatTable)
-            .where(eq(schema.userMonthlyCoinStatTable.userId, order.userId))
+            .where(
+              eq(schema.userMonthlyCoinStatTable.userId, context.order.userId),
+            )
             .orderBy(desc(schema.userMonthlyCoinStatTable.month))
             .limit(1)
             .for("update");
 
           if (latestMonthlyStat) {
             coinUpdates[latestMonthlyStat.month] =
-              order.discountCoin * refundPercentage;
+              context.order.discountCoin * refundPercentage;
           }
         }
 
@@ -601,7 +842,10 @@ export async function updateRefundItemStatus(
             .from(schema.userMonthlyCoinStatTable)
             .where(
               and(
-                eq(schema.userMonthlyCoinStatTable.userId, order.userId),
+                eq(
+                  schema.userMonthlyCoinStatTable.userId,
+                  context.order.userId,
+                ),
                 inArray(schema.userMonthlyCoinStatTable.month, coinMonths),
               ),
             )
@@ -646,7 +890,7 @@ export async function updateRefundItemStatus(
                 .set({
                   coins: sql`${schema.userTable.coins} + ${returnableCoinSum}`,
                 })
-                .where(eq(schema.userTable.id, order.userId)),
+                .where(eq(schema.userTable.id, context.order.userId)),
             );
           }
 
@@ -660,7 +904,10 @@ export async function updateRefundItemStatus(
                 })
                 .where(
                   and(
-                    eq(schema.userMonthlyCoinStatTable.userId, order.userId),
+                    eq(
+                      schema.userMonthlyCoinStatTable.userId,
+                      context.order.userId,
+                    ),
                     eq(schema.userMonthlyCoinStatTable.month, month),
                   ),
                 ),
@@ -678,6 +925,14 @@ export async function updateRefundItemStatus(
       .update(schema.refundItemTable)
       .set({
         ...(updates.status !== undefined ? { status: updates.status } : {}),
+        ...(financialUpdates
+          ? {
+              quantity: financialUpdates.quantity,
+              refundAmount: financialUpdates.refundAmount,
+              paidRefundAmount: financialUpdates.paidRefundAmount,
+              coins: financialUpdates.coins,
+            }
+          : {}),
         ...(updates.reason !== undefined ? { reason: updates.reason } : {}),
         ...(updates.note !== undefined ? { note: updates.note } : {}),
         ...(updates.extraRefundAmount !== undefined
