@@ -157,3 +157,7 @@ export function getBankNameFromCode(bankCode: string) {
   const bankNameByCode = getBankNameByCodeMap();
   return bankNameByCode.get(code) ?? null;
 }
+
+export function formatInteger(value: number | null) {
+  return Math.floor(value ?? 0).toLocaleString("en-US");
+}

@@ -32,6 +32,7 @@ import FileRouter from "./routers/file";
 import NotificationRouter from "./routers/notification";
 import OrderRouter from "./routers/order";
 import ProductRouter from "./routers/product";
+import RefundRouter from "./routers/refund";
 import SystemRouter from "./routers/system";
 import TreasureBoxRouter from "./routers/treasureBox";
 
@@ -96,6 +97,7 @@ app.use("/api/chatroom", ChatroomRouter);
 app.use("/api/ecpay", EcPayRouter);
 app.use("/api/order", OrderRouter);
 app.use("/api/delivery", DeliveryRouter);
+app.use("/api/refund", RefundRouter);
 app.use("/api/collection", CollectionRouter);
 app.use("/api/notification", NotificationRouter);
 app.use("/api/file", FileRouter);

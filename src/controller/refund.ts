@@ -66,6 +66,34 @@ class RefundController {
     sendJsonResponse(res, result);
   }
 
+  async createUserRefund(req: RequestWithId, res: Response): Promise<any> {
+    const {
+      orderItemId,
+      quantity,
+      accountId,
+      reason,
+      note,
+      refundAmount,
+      extraRefundAmount,
+      metadata,
+    } = req.body;
+
+    const result = await refundService.createUserRefund({
+      orderItemId,
+      quantity,
+      reason: reason ?? "",
+      note,
+      refundAmount,
+      extraRefundAmount,
+      metadata,
+      accountId,
+      userId: req.userId,
+      chatSenderType: "user",
+    });
+
+    sendJsonResponse(res, result);
+  }
+
   async updateRefundItemStatus(req: Request, res: Response): Promise<any> {
     const { refundItemId } = req.params;
     const {

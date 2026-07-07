@@ -14,7 +14,11 @@ import {
 } from "drizzle-orm";
 import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
-import { getBankNameByCodeMap, isPlainObject } from "../lib/general";
+import {
+  formatInteger,
+  getBankNameByCodeMap,
+  isPlainObject,
+} from "../lib/general";
 import db from "../lib/initDB";
 import { isAccountAdmin } from "./account";
 import { findOrCreateChatRoom, sendChatMessage } from "./chatroom";
@@ -229,6 +233,7 @@ function formatRefundChatMessage({
   createdAt,
   productName,
   quantity,
+  paidRefundAmount,
   coins,
   reason,
   note,
@@ -236,6 +241,7 @@ function formatRefundChatMessage({
   createdAt: Date;
   productName: string;
   quantity: number;
+  paidRefundAmount: number | null;
   coins: number;
   reason?: string | null;
   note?: string | null;
@@ -251,13 +257,15 @@ function formatRefundChatMessage({
   });
 
   return [
-    "[退貨申請]",
-    `申請時間：${appliedAt}`,
-    `商品名稱：${productName}`,
-    `退貨數量：${quantity}`,
-    `退還金幣：${coins}`,
-    `退貨原因：${reason || "無"}`,
-    `備註：${note || "無"}`,
+    "【退貨申請】",
+    `• 申請時間：${appliedAt}`,
+    `• 商品名稱：${productName}`,
+    `• 退貨數量：${quantity}`,
+    `• 退款金額：NT$ ${formatInteger(paidRefundAmount)}`,
+    `• 退還金幣：${formatInteger(coins)}`,
+    `• 退貨原因：${reason || "無"}`,
+    `• 備註：${note || "無"}`,
+    "※ 以上為退貨申請草稿資訊，後續可能調整，請至訂單記錄查詢最新退款內容。",
   ].join("\n");
 }
 
@@ -266,12 +274,14 @@ async function sendRefundCreatedChatMessage({
   userId,
   productId,
   orderId,
+  senderType,
   content,
 }: {
   accountId: string;
   userId: string;
   productId: string;
   orderId: string;
+  senderType?: schema.ChatMessage["senderType"];
   content: string;
 }) {
   const chatRoomResult = await findOrCreateChatRoom({
@@ -290,7 +300,8 @@ async function sendRefundCreatedChatMessage({
 
   await sendChatMessage({
     chatRoomId: chatRoom.id,
-    senderType: (await isAccountAdmin(accountId)) ? "admin" : "seller",
+    senderType:
+      senderType ?? ((await isAccountAdmin(accountId)) ? "admin" : "seller"),
     content,
   });
 }
@@ -381,7 +392,11 @@ export async function getRefundById(refundItemId: string) {
 }
 
 export async function createRefund(
-  item: schema.NewRefundItem & { accountId?: string },
+  item: schema.NewRefundItem & {
+    accountId?: string;
+    userId?: string;
+    chatSenderType?: schema.ChatMessage["senderType"];
+  },
 ) {
   const result = await db.transaction(async (tx) => {
     // 1. Lock the order item so concurrent refunds cannot over-refund it.
@@ -424,6 +439,13 @@ export async function createRefund(
         orderItemId: item.orderItemId,
         reason: "Order is not paid",
         orderStatus: order.orderStatus,
+      });
+    }
+
+    if (item.userId && order && order.userId !== item.userId) {
+      errors.push({
+        orderItemId: item.orderItemId,
+        reason: "Order item does not belong to user",
       });
     }
 
@@ -533,13 +555,15 @@ export async function createRefund(
       chatMessageInput: item.accountId
         ? {
             accountId: item.accountId,
-            userId: order.userId,
+            userId: item.userId ?? order.userId,
             productId: orderItem.productId,
             orderId: orderItem.orderId,
+            senderType: item.chatSenderType,
             content: formatRefundChatMessage({
               createdAt: newRefundItem.createdAt,
               productName: product.name,
               quantity: newRefundItem.quantity,
+              paidRefundAmount: newRefundItem.paidRefundAmount,
               coins: newRefundItem.coins,
               reason: newRefundItem.reason,
               note: newRefundItem.note,
@@ -550,9 +574,11 @@ export async function createRefund(
   });
 
   if (result.chatMessageInput) {
-    void sendRefundCreatedChatMessage(result.chatMessageInput).catch((error) => {
-      console.error("Failed to send refund chat message:", error);
-    });
+    void sendRefundCreatedChatMessage(result.chatMessageInput).catch(
+      (error) => {
+        console.error("Failed to send refund chat message:", error);
+      },
+    );
   }
 
   return result.refundItem;
@@ -938,7 +964,9 @@ export async function updateRefundItemStatus(
         ...(updates.extraRefundAmount !== undefined
           ? { extraRefundAmount: updates.extraRefundAmount }
           : {}),
-        ...(updates.metadata !== undefined ? { metadata: updates.metadata } : {}),
+        ...(updates.metadata !== undefined
+          ? { metadata: updates.metadata }
+          : {}),
         ...(statusChanged && updates.status === "completed"
           ? { returnableCoins: summary.returnableCoin, summary }
           : {}),

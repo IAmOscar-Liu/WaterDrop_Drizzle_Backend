@@ -50,6 +50,17 @@ class RefundService {
     }
   }
 
+  async createUserRefund(
+    item: Parameters<typeof createRefund>[0],
+  ): Promise<ServiceResponse<Awaited<ReturnType<typeof createRefund>>>> {
+    try {
+      const refund = await createRefund(item);
+      return { success: true, data: refund };
+    } catch (error) {
+      return handleServiceError(error);
+    }
+  }
+
   async updateRefundItemStatus(
     refundItemId: string,
     updates: Parameters<typeof updateRefundItemStatus>[1],
