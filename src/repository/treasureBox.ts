@@ -281,12 +281,6 @@ export async function resetDailyStats(userId: string) {
       );
     }
 
-    await tx.insert(schema.userDailyStatLogTable).values({
-      userDailyStatId: updatedStat.id,
-      update: resetData,
-      result: updatedStat,
-    });
-
     console.log(`Daily stats reset for user ${userId}`);
 
     return updatedStat;

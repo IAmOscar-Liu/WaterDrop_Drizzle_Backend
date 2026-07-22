@@ -1,6 +1,8 @@
 import { Response } from "express";
 import { ServiceResponse } from "../type/general";
 import crypto from "crypto";
+import fs from "fs";
+import path from "path";
 
 export function sendJsonResponse<T>(res: Response, result: ServiceResponse<T>) {
   res.status(result.statusCode ?? 200).json(result);
@@ -126,4 +128,36 @@ export function getCurrentLocalDateTime(timeZone: string) {
     localMinute,
     localSecond,
   };
+}
+
+export function isPlainObject(value: any) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+let bankNameByCode: ReadonlyMap<string, string> | null = null;
+
+export function getBankNameByCodeMap() {
+  if (bankNameByCode) return bankNameByCode;
+
+  const bankList = JSON.parse(
+    fs.readFileSync(
+      path.resolve(process.cwd(), "src/assets/json/bankList.json"),
+      "utf8",
+    ),
+  ) as { banks: { code: string; name: string }[] };
+
+  bankNameByCode = new Map(
+    bankList.banks.map((bank) => [bank.code, bank.name]),
+  );
+  return bankNameByCode;
+}
+
+export function getBankNameFromCode(bankCode: string) {
+  const code = bankCode.trim().padStart(3, "0");
+  const bankNameByCode = getBankNameByCodeMap();
+  return bankNameByCode.get(code) ?? null;
+}
+
+export function formatInteger(value: number | null) {
+  return Math.floor(value ?? 0).toLocaleString("en-US");
 }

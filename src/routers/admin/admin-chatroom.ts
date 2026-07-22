@@ -188,6 +188,12 @@ const router = Router();
  *                 delivery:
  *                   type: object
  *                   properties:
+ *                     id:
+ *                       type: string
+ *                       format: uuid
+ *                     merchantTradeNo:
+ *                       type: string
+ *                       nullable: true
  *                     LogisticsType:
  *                       type: string
  *                       enum: [CVS, home_delivery, virtual]

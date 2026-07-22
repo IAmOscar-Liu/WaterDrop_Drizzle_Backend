@@ -8,10 +8,18 @@ import {
   lt,
   sql,
 } from "drizzle-orm";
+import fs from "fs";
+import path from "path";
+import {
+  BANK_ACCOUNT_UPDATE_MAX_MS,
+  BANK_ACCOUNT_UPDATE_MIN_MS,
+  BANK_ACCOUNT_UPDATE_TIMEOUT_ERROR_MESSAGE,
+} from "../constants/user";
 import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
 import {
   generateInvitationCode,
+  getBankNameFromCode,
   getCurrentLocalDateTime,
   getLastMonthYYYYMM,
   getNumOfDaysInMonth,
@@ -262,16 +270,82 @@ export async function setMonthlyCoinExpire(userIds: string[], month: string) {
 
 export async function updateUser(
   userId: string,
-  data: Partial<Pick<schema.User, "name" | "phone" | "address" | "email">>,
+  data: Partial<
+    Pick<
+      schema.User,
+      "name" | "phone" | "address" | "email" | "bankCode" | "bankAccount"
+    >
+  >,
 ) {
-  const [updatedUser] = await db
-    .update(schema.userTable)
-    .set({
+  const hasBankCode = Object.prototype.hasOwnProperty.call(data, "bankCode");
+  const hasBankAccount = Object.prototype.hasOwnProperty.call(
+    data,
+    "bankAccount",
+  );
+
+  if (hasBankCode !== hasBankAccount) {
+    throw new CustomError(
+      "bankCode and bankAccount must be provided together.",
+      400,
+    );
+  }
+
+  if (hasBankCode && data.bankCode) {
+    const bankList = JSON.parse(
+      fs.readFileSync(
+        path.resolve(process.cwd(), "src/assets/json/bankList.json"),
+        "utf8",
+      ),
+    ) as { banks: { code: string }[] };
+    const bankCodeSet = new Set(bankList.banks.map((bank) => bank.code));
+    const bankCode = data.bankCode.trim().padStart(3, "0");
+    if (!bankCode || !bankCodeSet.has(bankCode)) {
+      throw new CustomError(`Bank code "${data.bankCode}" not found.`, 400);
+    }
+  }
+
+  const updatedUser = await db.transaction(async (tx) => {
+    const now = new Date();
+    const updateData: Partial<schema.NewUser> = {
       ...data,
-      updatedAt: new Date(), // Explicitly update the timestamp
-    })
-    .where(eq(schema.userTable.id, userId))
-    .returning();
+      updatedAt: now,
+    };
+
+    if (hasBankCode || hasBankAccount) {
+      const [user] = await tx
+        .select({
+          bankAccountUpdatedAt: schema.userTable.bankAccountUpdatedAt,
+        })
+        .from(schema.userTable)
+        .where(eq(schema.userTable.id, userId))
+        .for("update");
+
+      if (!user) {
+        return undefined;
+      }
+
+      if (user.bankAccountUpdatedAt) {
+        const elapsedMs = now.getTime() - user.bankAccountUpdatedAt.getTime();
+        const canUpdate =
+          elapsedMs < BANK_ACCOUNT_UPDATE_MIN_MS ||
+          elapsedMs > BANK_ACCOUNT_UPDATE_MAX_MS;
+
+        if (!canUpdate) {
+          throw new CustomError(BANK_ACCOUNT_UPDATE_TIMEOUT_ERROR_MESSAGE, 400);
+        }
+      }
+
+      updateData.bankAccountUpdatedAt = now;
+    }
+
+    const [updatedUser] = await tx
+      .update(schema.userTable)
+      .set(updateData)
+      .where(eq(schema.userTable.id, userId))
+      .returning();
+
+    return updatedUser;
+  });
 
   if (!updatedUser) {
     throw new CustomError(`User with id "${userId}" not found.`, 404);
@@ -395,6 +469,7 @@ export async function getUserById(id: string) {
     ...user,
     ...getMemberInfo(user.referralCount),
     coinsExpireSoon: await getCoinsExpireSoon(user.id, user.timezone),
+    bankName: user.bankCode ? getBankNameFromCode(user.bankCode) : null,
   };
 }
 
@@ -437,6 +512,7 @@ export async function getUserByOauthProviderAndOauthId(
     ...user,
     ...getMemberInfo(user.referralCount),
     coinsExpireSoon: await getCoinsExpireSoon(user.id, user.timezone),
+    bankName: user.bankCode ? getBankNameFromCode(user.bankCode) : null,
   };
 }
 
@@ -517,12 +593,6 @@ export async function updateGroupAdViewsCountYesterday(userId: string) {
       .set({ groupAdViewsCountYesterday })
       .where(eq(schema.userDailyStatTable.userId, userId))
       .returning();
-
-    await tx.insert(schema.userDailyStatLogTable).values({
-      userDailyStatId: updatedStat.id,
-      update: { groupAdViewsCountYesterday },
-      result: updatedStat,
-    });
 
     return updatedStat;
   });

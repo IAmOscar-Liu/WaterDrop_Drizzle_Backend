@@ -252,6 +252,24 @@ const router = Router();
  *                   id:
  *                     type: string
  *                     format: uuid
+ *                   merchantTradeNo:
+ *                     type: string
+ *                     nullable: true
+ *                   status:
+ *                     type: string
+ *                     enum: [pending, shipped, ready_for_pickup, delivered, returned, cancelled, exception, unknown]
+ *                   LogisticsType:
+ *                     type: string
+ *                     enum: [CVS, home_delivery, virtual]
+ *                   LogisticsSubType:
+ *                     type: string
+ *                     nullable: true
+ *                   RtnCode:
+ *                     type: string
+ *                     nullable: true
+ *                   RtnMsg:
+ *                     type: string
+ *                     nullable: true
  *
  *     OrderWithRelations:
  *       allOf:
@@ -265,6 +283,17 @@ const router = Router();
  *                   - $ref: '#/components/schemas/OrderItem'
  *                   - type: object
  *                     properties:
+ *                       refundItems:
+ *                         type: array
+ *                         description: Refund requests associated with this order item.
+ *                         items:
+ *                           $ref: '#/components/schemas/RefundItem'
+ *                       canRefund:
+ *                         type: boolean
+ *                         description: Whether this order item still has refundable quantity for the current order and delivery status.
+ *                       remainingRefundQuantity:
+ *                         type: integer
+ *                         description: Remaining refundable quantity for this order item. Returns 0 when the item is not currently refundable.
  *                       product:
  *                         type: object
  *                         properties:
@@ -386,6 +415,11 @@ const router = Router();
  *         schema:
  *           type: string
  *           format: uuid
+ *       - in: query
+ *         name: merchantTradeNo
+ *         description: Filters by merchant trade number prefix when at least 4 characters are provided. Shorter values are ignored.
+ *         schema:
+ *           type: string
  *       - in: query
  *         name: status
  *         schema:

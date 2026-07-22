@@ -1,0 +1,1 @@
+DROP TABLE "user_daily_stat_logs" CASCADE;

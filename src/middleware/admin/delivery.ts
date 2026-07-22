@@ -23,6 +23,7 @@ const logisticsType = z.enum(["CVS", "home_delivery", "virtual"]);
 
 export const deliveryValidation = {
   listQuery: paginationQuery.extend({
+    merchantTradeNo: z.string().optional(),
     status: deliveryStatus.optional(),
     logisticsType: logisticsType.optional(),
     startDate: dateTimeString.optional(),

@@ -10,13 +10,13 @@ import { ensureEcpayStoreListOnStartup } from "./lib/initEcpayStoreList";
 import {
   dailyNotificationTask,
   dailyResetTask,
+  deleteIdempotencyKeysTask,
   deleteUnusedDeviceTokensTask,
   expireOrdersTask,
   fetchEcPayStoreListTask,
   monthlyCoinExpirationNotificationTask,
   monthlyCoinStatExpirationTask,
   pollLogisticsTradeInfoTask,
-  deleteIdempotencyKeysTask,
 } from "./lib/scheduler";
 import { swaggerSpec } from "./lib/swagger";
 import { errorHandler } from "./middleware/errorHandler";
@@ -32,6 +32,8 @@ import FileRouter from "./routers/file";
 import NotificationRouter from "./routers/notification";
 import OrderRouter from "./routers/order";
 import ProductRouter from "./routers/product";
+import RefundRouter from "./routers/refund";
+import SystemRouter from "./routers/system";
 import TreasureBoxRouter from "./routers/treasureBox";
 
 console.log(`HOST: ${process.env.HOST}`);
@@ -89,11 +91,13 @@ app.use("/api/auth", AuthRouter);
 app.use("/api/treasureBox", TreasureBoxRouter);
 app.use("/api/advertisement", AdvertisementRouter);
 app.use("/api/product", ProductRouter);
+app.use("/api/system", SystemRouter);
 app.use("/api/cart", CartRouter);
 app.use("/api/chatroom", ChatroomRouter);
 app.use("/api/ecpay", EcPayRouter);
 app.use("/api/order", OrderRouter);
 app.use("/api/delivery", DeliveryRouter);
+app.use("/api/refund", RefundRouter);
 app.use("/api/collection", CollectionRouter);
 app.use("/api/notification", NotificationRouter);
 app.use("/api/file", FileRouter);

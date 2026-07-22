@@ -26,67 +26,68 @@ const RESET_BATCH_SIZE = 100;
 //   console.log(await getUserById("e9b24ffc-7bc4-4c74-ab4a-d7983e20b314"));
 // }
 
-// export async function testScript1() {
-//   let userIds = await getUserIdsInTimezones(["Asia/Taipei"]);
+export async function testScript1() {
+  let userIds = await getUserIdsInTimezones(["Asia/Taipei"]);
 
-//   if (userIds.length === 0) {
-//     console.log("No users found in the targeted timezones.");
-//     return;
-//   }
+  if (userIds.length === 0) {
+    console.log("No users found in the targeted timezones.");
+    return;
+  }
 
-//   const yearMonthString = getLastMonthYYYYMM("Asia/Taipei"); // yyyy-mm
+  const yearMonthString = getLastMonthYYYYMM("Asia/Taipei"); // yyyy-mm
+  console.log("yearMonthString:", yearMonthString);
 
-//   const userMonthlyCoinStats = (
-//     await getUserMonthlyCoinStatsInUserIds(userIds, yearMonthString)
-//   ).filter((stat) => stat.coinsEarned > stat.coinsSpent);
-//   console.log(userMonthlyCoinStats);
+  const userMonthlyCoinStats = (
+    await getUserMonthlyCoinStatsInUserIds(userIds, yearMonthString)
+  ).filter((stat) => stat.coinsEarned > stat.coinsSpent);
+  console.log(userMonthlyCoinStats);
 
-//   const { localMonth, localYear } = getCurrentLocalDateTime("Asia/Taipei");
-//   const lastMonth = localMonth === 1 ? 12 : localMonth - 1;
-//   const nextMonth = localMonth === 12 ? 1 : localMonth + 1;
-//   const nextYear = localMonth === 12 ? localYear + 1 : localYear;
+  const { localMonth, localYear } = getCurrentLocalDateTime("Asia/Taipei");
+  const lastMonth = localMonth === 1 ? 12 : localMonth - 1;
+  const nextMonth = localMonth === 12 ? 1 : localMonth + 1;
+  const nextYear = localMonth === 12 ? localYear + 1 : localYear;
 
-//   for (let i = 0; i < userMonthlyCoinStats.length; i += RESET_BATCH_SIZE) {
-//     const batchCoinStats = userMonthlyCoinStats.slice(i, i + RESET_BATCH_SIZE);
+  for (let i = 0; i < userMonthlyCoinStats.length; i += RESET_BATCH_SIZE) {
+    const batchCoinStats = userMonthlyCoinStats.slice(i, i + RESET_BATCH_SIZE);
 
-//     await Promise.allSettled(
-//       batchCoinStats.map((stat) =>
-//         createNotification({
-//           userId: stat.userId,
-//           type: "system_alert",
-//           title: "金幣即將過期通知",
-//           body: `您${lastMonth}月份的金幣尚有${
-//             stat.coinsEarned - stat.coinsSpent
-//           }未使用，即將在 ${nextYear}/${nextMonth
-//             .toString()
-//             .padStart(2, "0")}/01 00:00 過期，快把握時間使用您的金幣吧!`,
-//         }),
-//       ),
-//     );
-//   }
+    await Promise.allSettled(
+      batchCoinStats.map((stat) =>
+        createNotification({
+          userId: stat.userId,
+          type: "system_alert",
+          title: "金幣即將過期通知",
+          body: `您${lastMonth}月份的金幣尚有${
+            stat.coinsEarned - stat.coinsSpent
+          }未使用，即將在 ${nextYear}/${nextMonth
+            .toString()
+            .padStart(2, "0")}/01 00:00 過期，快把握時間使用您的金幣吧!`,
+        }),
+      ),
+    );
+  }
 
-//   userIds = userMonthlyCoinStats.map((stats) => stats.userId);
+  userIds = userMonthlyCoinStats.map((stats) => stats.userId);
 
-//   const fcmTokens = await getFcmTokensInUserIds(userIds);
-//   for (let i = 0; i < fcmTokens.length; i += FCM_MAX_BATCH_SIZE) {
-//     const batchFcmTokens = fcmTokens.slice(i, i + FCM_MAX_BATCH_SIZE);
+  const fcmTokens = await getFcmTokensInUserIds(userIds);
+  for (let i = 0; i < fcmTokens.length; i += FCM_MAX_BATCH_SIZE) {
+    const batchFcmTokens = fcmTokens.slice(i, i + FCM_MAX_BATCH_SIZE);
 
-//     await sendMulticastPushNotification({
-//       tokens: batchFcmTokens,
-//       notification: {
-//         title: "金幣即將過期通知",
-//         body: `您${lastMonth}月份的金幣即將在 ${nextYear}/${nextMonth
-//           .toString()
-//           .padStart(2, "0")}/01 00:00 過期，快把握時間使用您的金幣吧!`,
-//       },
-//       data: {
-//         command: "message",
-//       },
-//     });
+    await sendMulticastPushNotification({
+      tokens: batchFcmTokens,
+      notification: {
+        title: "金幣即將過期通知",
+        body: `您${lastMonth}月份的金幣即將在 ${nextYear}/${nextMonth
+          .toString()
+          .padStart(2, "0")}/01 00:00 過期，快把握時間使用您的金幣吧!`,
+      },
+      data: {
+        command: "message",
+      },
+    });
 
-//     console.log(`Total tokens processed: ${i + batchFcmTokens.length}`);
-//   }
-// }
+    console.log(`Total tokens processed: ${i + batchFcmTokens.length}`);
+  }
+}
 
 // async function testScript2() {
 //   setMonthlyCoinExpire(
@@ -132,6 +133,7 @@ async function calculateOrderSubTotal() {
   console.log("calculateOrderSubTotal done");
 }
 
+testScript1();
 // generateHashPassword("test1234");
 // testScript();
 // testScript3();

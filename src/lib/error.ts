@@ -1,5 +1,9 @@
-import { ValidationError } from "express-validator";
 import { ServiceResponseFailure } from "../type/general";
+
+export type ZodValidationIssue = {
+  field: string;
+  message: string;
+};
 
 export class CustomError extends Error {
   public statusCode: number;
@@ -12,12 +16,12 @@ export class CustomError extends Error {
   }
 }
 
-export class RequestValidationError extends Error {
+export class ZodValidationError extends Error {
   public statusCode: number;
-  public validationErrors: ValidationError[];
+  public validationErrors: ZodValidationIssue[];
 
-  constructor(validationErrors: ValidationError[], statusCode: number) {
-    super();
+  constructor(validationErrors: ZodValidationIssue[], statusCode = 400) {
+    super("Validation failed");
     this.validationErrors = validationErrors;
     this.statusCode = statusCode;
     Object.setPrototypeOf(this, new.target.prototype);

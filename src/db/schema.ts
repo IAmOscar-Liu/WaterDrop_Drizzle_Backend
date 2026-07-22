@@ -1,5 +1,6 @@
 // schema.ts
 import { relations } from "drizzle-orm";
+import { convertIndexToString } from "drizzle-orm/mysql-core";
 import {
   boolean,
   doublePrecision,
@@ -64,6 +65,13 @@ export const orderStatusEnum = pgEnum("order_status", [
   "failed",
   "expired",
   "canceled",
+]);
+
+export const refundStatusEnum = pgEnum("refund_status", [
+  "pending",
+  "processing",
+  "completed",
+  "cancelled",
 ]);
 
 export const deliveryStatusEnum = pgEnum("delivery_status", [
@@ -262,6 +270,11 @@ export const userTable = pgTable(
 
     groupId: uuid("group_id").references(() => groupTable.id),
     timezone: text("timezone"),
+    bankCode: text("bank_code"),
+    bankAccount: text("bank_account"),
+    bankAccountUpdatedAt: timestamp("bank_account_updated_at", {
+      withTimezone: true,
+    }),
 
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
@@ -309,26 +322,6 @@ export const userDailyStatTable = pgTable("user_daily_stats", {
     .$onUpdate(() => new Date())
     .notNull(),
 });
-
-export const userDailyStatLogTable = pgTable(
-  "user_daily_stat_logs",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    userDailyStatId: uuid("user_daily_stat_id")
-      .notNull()
-      .references(() => userDailyStatTable.id),
-    update: jsonb("update"),
-    result: jsonb("result"),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-  },
-  (t) => ({
-    userDailyStatIdIdx: index("user_daily_stat_logs_stat_id_idx").on(
-      t.userDailyStatId,
-    ),
-  }),
-);
 
 export const treasureBoxTable = pgTable("treasure_boxes", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -553,6 +546,7 @@ export const orderTable = pgTable("orders", {
   completedAt: timestamp("completed_at", { withTimezone: true }),
   shippingInfo: jsonb("shipping_info"),
   paymentInfo: jsonb("payment_info"),
+  coinInfo: jsonb("coin_info"), // To store details about coins used/earned in the order
   metadata: jsonb("metadata"), // Optional: Store additional info like payment method, shipping info, etc.
 });
 
@@ -594,6 +588,39 @@ export const orderItemTable = pgTable(
       t.orderId,
       t.productId,
     ),
+  }),
+);
+
+export const refundItemTable = pgTable(
+  "refund_items",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orderItemId: uuid("order_item_id")
+      .notNull()
+      .references(() => orderItemTable.id, { onDelete: "cascade" }),
+    quantity: integer("quantity").notNull(),
+    status: refundStatusEnum("status").default("pending").notNull(),
+    reason: text("reason").notNull(),
+    note: text("note"),
+    refundAmount: doublePrecision("refund_amount"),
+    paidRefundAmount: doublePrecision("paid_refund_amount"), // product refund amount after coin deduction
+    extraRefundAmount: doublePrecision("extra_refund_amount")
+      .default(0)
+      .notNull(),
+    coins: doublePrecision("coins").default(0).notNull(),
+    returnableCoins: doublePrecision("returnable_coins"),
+    metadata: jsonb("metadata"),
+    summary: jsonb("summary"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (t) => ({
+    orderItemIdIdx: index("refund_items_order_item_id_idx").on(t.orderItemId),
   }),
 );
 
@@ -853,21 +880,10 @@ export const shippingFeeRelations = relations(shippingFeeTable, ({ one }) => ({
 
 export const userDailyStatRelations = relations(
   userDailyStatTable,
-  ({ one, many }) => ({
+  ({ one }) => ({
     user: one(userTable, {
       fields: [userDailyStatTable.userId],
       references: [userTable.id],
-    }),
-    logs: many(userDailyStatLogTable),
-  }),
-);
-
-export const userDailyStatLogRelations = relations(
-  userDailyStatLogTable,
-  ({ one }) => ({
-    userDailyStat: one(userDailyStatTable, {
-      fields: [userDailyStatLogTable.userDailyStatId],
-      references: [userDailyStatTable.id],
     }),
   }),
 );
@@ -1045,18 +1061,29 @@ export const merchantTradeRelations = relations(
   }),
 );
 
-export const orderItemRelations = relations(orderItemTable, ({ one }) => ({
-  order: one(orderTable, {
-    fields: [orderItemTable.orderId],
-    references: [orderTable.id],
+export const orderItemRelations = relations(
+  orderItemTable,
+  ({ one, many }) => ({
+    order: one(orderTable, {
+      fields: [orderItemTable.orderId],
+      references: [orderTable.id],
+    }),
+    delivery: one(deliveryTable, {
+      fields: [orderItemTable.deliveryId],
+      references: [deliveryTable.id],
+    }),
+    product: one(productTable, {
+      fields: [orderItemTable.productId],
+      references: [productTable.id],
+    }),
+    refundItems: many(refundItemTable),
   }),
-  delivery: one(deliveryTable, {
-    fields: [orderItemTable.deliveryId],
-    references: [deliveryTable.id],
-  }),
-  product: one(productTable, {
-    fields: [orderItemTable.productId],
-    references: [productTable.id],
+);
+
+export const refundItemRelations = relations(refundItemTable, ({ one }) => ({
+  orderItem: one(orderItemTable, {
+    fields: [refundItemTable.orderItemId],
+    references: [orderItemTable.id],
   }),
 }));
 
@@ -1120,9 +1147,6 @@ export type NewAccountGroup = typeof accountGroupTable.$inferInsert;
 export type UserDailyStat = typeof userDailyStatTable.$inferSelect;
 export type NewUserDailyStat = typeof userDailyStatTable.$inferInsert;
 
-export type UserDailyStatLog = typeof userDailyStatLogTable.$inferSelect;
-export type NewUserDailyStatLog = typeof userDailyStatLogTable.$inferInsert;
-
 export type TreasureBox = typeof treasureBoxTable.$inferSelect;
 export type NewTreasureBox = typeof treasureBoxTable.$inferInsert;
 
@@ -1178,6 +1202,9 @@ export type NewOrder = typeof orderTable.$inferInsert;
 
 export type OrderItem = typeof orderItemTable.$inferSelect;
 export type NewOrderItem = typeof orderItemTable.$inferInsert;
+
+export type RefundItem = typeof refundItemTable.$inferSelect;
+export type NewRefundItem = typeof refundItemTable.$inferInsert;
 
 export type Delivery = typeof deliveryTable.$inferSelect;
 export type NewDelivery = typeof deliveryTable.$inferInsert;

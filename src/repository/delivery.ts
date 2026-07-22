@@ -7,6 +7,7 @@ import {
   isNotNull,
   like,
   lte,
+  or,
   SQL,
 } from "drizzle-orm";
 import * as schema from "../db/schema";
@@ -118,14 +119,79 @@ export async function updateDelivery(
   return newDeliveryDetails;
 }
 
+type RefundableDelivery = Pick<schema.Delivery, "status"> & {
+  order: Pick<schema.Order, "orderStatus">;
+};
+
+type RefundableDeliveryItem = Pick<
+  schema.OrderItem,
+  "deliveryId" | "quantity"
+> & {
+  refundItems: Pick<schema.RefundItem, "quantity" | "status">[];
+};
+
+function isRefundableDelivery(delivery: RefundableDelivery) {
+  if (delivery.order.orderStatus !== "paid") {
+    return false;
+  }
+
+  if (
+    (process.env.NODE_ENV === "stg" || process.env.NODE_ENV === "production") &&
+    delivery.status !== "delivered"
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+function getRefundedQuantity(item: RefundableDeliveryItem) {
+  return item.refundItems.reduce(
+    (total, refundItem) =>
+      refundItem.status === "cancelled" ? total : total + refundItem.quantity,
+    0,
+  );
+}
+
+function getRemainingRefundQuantity(
+  delivery: RefundableDelivery,
+  item: RefundableDeliveryItem,
+) {
+  if (!isRefundableDelivery(delivery) || !item.deliveryId) {
+    return 0;
+  }
+
+  return Math.max(item.quantity - getRefundedQuantity(item), 0);
+}
+
+function canRefundDeliveryItem(
+  delivery: RefundableDelivery,
+  item: RefundableDeliveryItem,
+) {
+  return getRemainingRefundQuantity(delivery, item) > 0;
+}
+
 export async function getDeliveryById(deliveryId: string) {
-  return db.query.deliveryTable.findFirst({
+  const delivery = await db.query.deliveryTable.findFirst({
     where: eq(schema.deliveryTable.id, deliveryId),
     with: {
-      order: true,
+      order: {
+        with: {
+          user: {
+            columns: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+        },
+      },
       items: {
         with: {
           product: true,
+          refundItems: {
+            orderBy: (refundItems, { desc }) => [desc(refundItems.createdAt)],
+          },
         },
       },
       logs: {
@@ -133,6 +199,21 @@ export async function getDeliveryById(deliveryId: string) {
       },
     },
   });
+
+  if (!delivery) {
+    return delivery;
+  }
+
+  // Reuse the loaded delivery/order/refund relations instead of calling
+  // refund.canRefund for each item and triggering duplicate queries.
+  return {
+    ...delivery,
+    items: delivery.items.map((item) => ({
+      ...item,
+      canRefund: canRefundDeliveryItem(delivery, item),
+      remainingRefundQuantity: getRemainingRefundQuantity(delivery, item),
+    })),
+  };
 }
 
 export async function getDeliveryByMerchantTradeNo(merchantTradeNo: string) {
@@ -161,12 +242,18 @@ export async function getDeliveriesByMerchantTradeNo(
   return db.query.deliveryTable.findMany({
     where: whereClause,
     with: {
-      order: true,
-      items: {
+      order: {
         with: {
-          product: true,
+          user: {
+            columns: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
         },
       },
+      items: true,
     },
   });
 }
@@ -175,6 +262,7 @@ export interface ListAdminDeliveriesParams {
   page?: number;
   limit?: number;
   accountId: string;
+  merchantTradeNo?: string;
   logisticsType?: schema.Delivery["LogisticsType"];
   status?: schema.Delivery["status"];
   startDate?: Date;
@@ -185,6 +273,7 @@ export async function listAdminDeliveries({
   page = 1,
   limit = 10,
   accountId,
+  merchantTradeNo,
   logisticsType,
   status,
   startDate,
@@ -210,6 +299,22 @@ export async function listAdminDeliveries({
       );
     conditions.push(
       inArray(schema.deliveryTable.id, sellerDeliveryIdsSubquery),
+    );
+  }
+
+  const merchantTradeNoPrefix = merchantTradeNo?.trim();
+  if (merchantTradeNoPrefix && merchantTradeNoPrefix.length >= 4) {
+    const orderIdsSubquery = db
+      .select({ id: schema.orderTable.id })
+      .from(schema.orderTable)
+      .where(
+        like(schema.orderTable.merchantTradeNo, `${merchantTradeNoPrefix}%`),
+      );
+    conditions.push(
+      or(
+        like(schema.deliveryTable.merchantTradeNo, `${merchantTradeNoPrefix}%`),
+        inArray(schema.deliveryTable.orderId, orderIdsSubquery),
+      ),
     );
   }
 
@@ -240,6 +345,17 @@ export async function listAdminDeliveries({
     offset,
     with: {
       items: true,
+      order: {
+        with: {
+          user: {
+            columns: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+        },
+      },
     },
     orderBy: (deliveries, { desc }) => [desc(deliveries.createdAt)],
   });

@@ -21,7 +21,22 @@ const router = Router();
  *         - type: object
  *           properties:
  *             order:
- *               $ref: '#/components/schemas/Order'
+ *               allOf:
+ *                 - $ref: '#/components/schemas/Order'
+ *                 - type: object
+ *                   properties:
+ *                     user:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                           format: uuid
+ *                         name:
+ *                           type: string
+ *                           nullable: true
+ *                         email:
+ *                           type: string
+ *                           format: email
  *             items:
  *               type: array
  *               items:
@@ -31,10 +46,50 @@ const router = Router();
  *                     properties:
  *                       product:
  *                         $ref: '#/components/schemas/Product'
+ *                       refundItems:
+ *                         type: array
+ *                         items:
+ *                           $ref: '#/components/schemas/RefundItem'
+ *                       canRefund:
+ *                         type: boolean
+ *                         description: Whether this order item still has refundable quantity for the current delivery/order status.
+ *                       remainingRefundQuantity:
+ *                         type: integer
+ *                         description: Remaining refundable quantity for this order item. Returns 0 when the item is not currently refundable.
  *             logs:
  *               type: array
  *               items:
  *                 $ref: '#/components/schemas/DeliveryLog'
+ *
+ *     RefundItem:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: string
+ *           format: uuid
+ *         orderItemId:
+ *           type: string
+ *           format: uuid
+ *         quantity:
+ *           type: integer
+ *         status:
+ *           type: string
+ *           enum: [pending, processing, completed, cancelled]
+ *         reason:
+ *           type: string
+ *         note:
+ *           type: string
+ *           nullable: true
+ *         refundAmount:
+ *           type: number
+ *           nullable: true
+ *         metadata:
+ *           type: object
+ *           nullable: true
+ *         summary:
+ *           type: object
+ *           nullable: true
+ *           example: {}
  *
  *     DeliveryLog:
  *       type: object
@@ -58,6 +113,23 @@ const router = Router();
  *         - $ref: '#/components/schemas/Delivery'
  *         - type: object
  *           properties:
+ *             order:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/Order'
+ *                 - type: object
+ *                   properties:
+ *                     user:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                           format: uuid
+ *                         name:
+ *                           type: string
+ *                           nullable: true
+ *                         email:
+ *                           type: string
+ *                           format: email
  *             items:
  *               type: array
  *               items:
@@ -130,6 +202,11 @@ const router = Router();
  *         schema:
  *           type: integer
  *           default: 10
+ *       - in: query
+ *         name: merchantTradeNo
+ *         description: Filters by delivery or order merchant trade number prefix when at least 4 characters are provided. Shorter values are ignored.
+ *         schema:
+ *           type: string
  *       - in: query
  *         name: status
  *         schema:
@@ -237,7 +314,7 @@ router.get(
  *                 data:
  *                   type: array
  *                   items:
- *                     $ref: '#/components/schemas/DeliveryWithOrderAndItems'
+ *                     $ref: '#/components/schemas/DeliveryWithItems'
  */
 router.get(
   "/merchant-trade-no/:merchantTradeNo",

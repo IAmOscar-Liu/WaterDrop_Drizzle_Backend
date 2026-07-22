@@ -14,6 +14,7 @@ const sortOrder = z.enum(["asc", "desc"]);
 export const orderValidation = {
   listQuery: paginationQuery.extend({
     userId: uuid.optional(),
+    merchantTradeNo: z.string().optional(),
     status: orderStatus.optional(),
     order: sortOrder.optional(),
     startDate: dateTimeString.optional(),

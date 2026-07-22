@@ -12,6 +12,7 @@ import {
 } from "drizzle-orm";
 import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
+import { isPlainObject } from "../lib/general";
 import db from "../lib/initDB";
 import { isAccountAdmin } from "./account";
 import { upsertCartItem } from "./cart";
@@ -197,6 +198,8 @@ export async function updateOrderStatus({
 
     if (!order) throw new CustomError("Order not found", 404);
 
+    const coinInfo: Record<string, number> = {};
+
     // If the new status is "paid", remove the corresponding items from the cart
     if (status === "paid") {
       const promises: Promise<any>[] = [];
@@ -226,7 +229,11 @@ export async function updateOrderStatus({
           );
         }
       }
-      if (order.discountCoin && order.discountCoin > 0) {
+      if (
+        order.orderStatus === "pending" &&
+        order.discountCoin &&
+        order.discountCoin > 0
+      ) {
         // Deduct the used discount coins from the user's balance
         promises.push(
           tx
@@ -274,6 +281,7 @@ export async function updateOrderStatus({
                 ),
             );
             remainingDiscountCoins -= amountToSpendInThisMonth;
+            coinInfo[stat.month] = amountToSpendInThisMonth;
           }
         }
       }
@@ -283,6 +291,62 @@ export async function updateOrderStatus({
       if (order.items.length > 0) {
         for (let item of order.items) {
           promises.push(upsertCartItem(order.userId, item.productId, 0));
+        }
+      }
+      if (
+        order.orderStatus === "pending" &&
+        order.discountCoin &&
+        order.discountCoin > 0
+      ) {
+        // Deduct the used discount coins from the user's balance
+        promises.push(
+          tx
+            .update(schema.userTable)
+            .set({
+              coins: sql`${schema.userTable.coins} - ${order.discountCoin}`,
+            })
+            .where(eq(schema.userTable.id, order.userId)),
+        );
+
+        // Update coinsSpent in userMonthlyCoinStatTable
+        let remainingDiscountCoins = order.discountCoin;
+
+        // 1. Find rows where expired is false, ordered by month (fartherest first)
+        const monthlyStats = await tx.query.userMonthlyCoinStatTable.findMany({
+          where: and(
+            eq(schema.userMonthlyCoinStatTable.userId, order.userId),
+            eq(schema.userMonthlyCoinStatTable.expired, false),
+          ),
+          orderBy: (stats, { asc }) => [asc(stats.month)],
+        });
+
+        for (const stat of monthlyStats) {
+          if (remainingDiscountCoins <= 0) break; // No more discount coins to apply
+
+          const availableCoinsToSpend = stat.coinsEarned - stat.coinsSpent;
+
+          if (availableCoinsToSpend > 0) {
+            const amountToSpendInThisMonth = Math.min(
+              remainingDiscountCoins,
+              availableCoinsToSpend,
+            );
+
+            promises.push(
+              tx
+                .update(schema.userMonthlyCoinStatTable)
+                .set({
+                  coinsSpent: sql`${schema.userMonthlyCoinStatTable.coinsSpent} + ${amountToSpendInThisMonth}`,
+                })
+                .where(
+                  and(
+                    eq(schema.userMonthlyCoinStatTable.userId, order.userId),
+                    eq(schema.userMonthlyCoinStatTable.month, stat.month),
+                  ),
+                ),
+            );
+            remainingDiscountCoins -= amountToSpendInThisMonth;
+            coinInfo[stat.month] = amountToSpendInThisMonth;
+          }
         }
       }
       await Promise.all(promises);
@@ -310,6 +374,39 @@ export async function updateOrderStatus({
           );
         }
       }
+      if (
+        order.orderStatus === "payment-processing" &&
+        isPlainObject(order.coinInfo) &&
+        Object.keys(order.coinInfo as Record<string, number>).length > 0
+      ) {
+        let coinSum = 0;
+        for (const [month, coins] of Object.entries(
+          order.coinInfo as Record<string, number>,
+        )) {
+          coinSum += coins;
+          promises.push(
+            tx
+              .update(schema.userMonthlyCoinStatTable)
+              .set({
+                coinsSpent: sql`${schema.userMonthlyCoinStatTable.coinsSpent} - ${coins}`,
+              })
+              .where(
+                and(
+                  eq(schema.userMonthlyCoinStatTable.userId, order.userId),
+                  eq(schema.userMonthlyCoinStatTable.month, month),
+                ),
+              ),
+          );
+        }
+        promises.push(
+          tx
+            .update(schema.userTable)
+            .set({
+              coins: sql`${schema.userTable.coins} + ${coinSum}`,
+            })
+            .where(eq(schema.userTable.id, order.userId)),
+        );
+      }
       await Promise.all(promises);
     }
 
@@ -321,6 +418,7 @@ export async function updateOrderStatus({
         updatedAt: new Date(),
         completedAt: status === "paid" ? new Date() : null,
         ...(paymentInfo ? { paymentInfo } : {}),
+        ...(Object.keys(coinInfo).length > 0 ? { coinInfo } : {}),
         ...(metadata
           ? {
               metadata,
@@ -454,6 +552,7 @@ export interface ListAdminOrdersParams {
   limit?: number;
   accountId: string;
   userId?: string;
+  merchantTradeNo?: string;
   status: schema.NewOrder["orderStatus"];
   order?: "asc" | "desc";
   startDate?: Date;
@@ -465,6 +564,7 @@ export async function listAdminOrders({
   limit = 10,
   accountId,
   userId,
+  merchantTradeNo,
   status,
   order = "desc",
   startDate,
@@ -489,6 +589,13 @@ export async function listAdminOrders({
 
   if (userId) {
     conditions.push(eq(schema.orderTable.userId, userId));
+  }
+
+  const merchantTradeNoPrefix = merchantTradeNo?.trim();
+  if (merchantTradeNoPrefix && merchantTradeNoPrefix.length >= 4) {
+    conditions.push(
+      like(schema.orderTable.merchantTradeNo, `${merchantTradeNoPrefix}%`),
+    );
   }
 
   if (status) {
@@ -537,6 +644,12 @@ export async function listAdminOrders({
       deliveries: {
         columns: {
           id: true,
+          merchantTradeNo: true,
+          status: true,
+          LogisticsType: true,
+          LogisticsSubType: true,
+          RtnCode: true,
+          RtnMsg: true,
         },
       },
     },
@@ -558,13 +671,70 @@ export async function getOrderStatusById(orderId: string) {
   return order?.orderStatus;
 }
 
+type RefundableOrder = Pick<schema.Order, "orderStatus">;
+
+type RefundableOrderDelivery = Pick<schema.Delivery, "id" | "status">;
+
+type RefundableOrderItem = Pick<schema.OrderItem, "deliveryId" | "quantity"> & {
+  refundItems: Pick<schema.RefundItem, "quantity" | "status">[];
+};
+
+function getRefundedQuantity(item: RefundableOrderItem) {
+  return item.refundItems.reduce(
+    (total, refundItem) =>
+      refundItem.status === "cancelled" ? total : total + refundItem.quantity,
+    0,
+  );
+}
+
+function isRefundableOrderDelivery(
+  order: RefundableOrder,
+  delivery?: RefundableOrderDelivery,
+) {
+  if (order.orderStatus !== "paid" || !delivery) {
+    return false;
+  }
+
+  if (
+    (process.env.NODE_ENV === "stg" || process.env.NODE_ENV === "production") &&
+    delivery.status !== "delivered"
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+function getRemainingRefundQuantity(
+  order: RefundableOrder,
+  delivery: RefundableOrderDelivery | undefined,
+  item: RefundableOrderItem,
+) {
+  if (!item.deliveryId || !isRefundableOrderDelivery(order, delivery)) {
+    return 0;
+  }
+
+  return Math.max(item.quantity - getRefundedQuantity(item), 0);
+}
+
+function canRefundOrderItem(
+  order: RefundableOrder,
+  delivery: RefundableOrderDelivery | undefined,
+  item: RefundableOrderItem,
+) {
+  return getRemainingRefundQuantity(order, delivery, item) > 0;
+}
+
 export async function getOrderById(orderId: string) {
-  return db.query.orderTable.findFirst({
+  const order = await db.query.orderTable.findFirst({
     where: eq(schema.orderTable.id, orderId),
     with: {
       items: {
         with: {
           product: true,
+          refundItems: {
+            orderBy: (refundItems, { desc }) => [desc(refundItems.createdAt)],
+          },
         },
       },
       deliveries: {
@@ -590,6 +760,35 @@ export async function getOrderById(orderId: string) {
       },
     },
   });
+
+  if (!order) {
+    return order;
+  }
+
+  const deliveryById = new Map(
+    order.deliveries.map((delivery) => [delivery.id, delivery]),
+  );
+
+  // Reuse loaded order/delivery/refund relations instead of calling
+  // refund.canRefund for each item and triggering duplicate queries.
+  return {
+    ...order,
+    items: order.items.map((item) => {
+      const delivery = item.deliveryId
+        ? deliveryById.get(item.deliveryId)
+        : undefined;
+
+      return {
+        ...item,
+        canRefund: canRefundOrderItem(order, delivery, item),
+        remainingRefundQuantity: getRemainingRefundQuantity(
+          order,
+          delivery,
+          item,
+        ),
+      };
+    }),
+  };
 }
 
 export async function getOrdersByMerchantTradeNo(
