@@ -3,7 +3,7 @@ import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
 import { getCurrentYYYYMM } from "../lib/general";
 import db from "../lib/initDB";
-import { spendAdBalance } from "./advertisement";
+import { spendAdBalanceWithTx } from "./advertisement";
 
 /**
  * Processes a user completing a video watch.
@@ -15,13 +15,20 @@ export async function processVideoCompletion(
   advertisementId?: string,
 ) {
   return db.transaction(async (tx) => {
+    await tx
+      .select({ id: schema.userTable.id })
+      .from(schema.userTable)
+      .where(eq(schema.userTable.id, userId))
+      .for("update");
+
     // Step 1: Get or create the user's daily stats for today.
-    let dailyStat = await tx.query.userDailyStatTable.findFirst({
-      where: eq(schema.userDailyStatTable.userId, userId),
-    });
+    let [dailyStat] = await tx
+      .select()
+      .from(schema.userDailyStatTable)
+      .where(eq(schema.userDailyStatTable.userId, userId))
+      .for("update");
 
     if (!dailyStat) {
-      console.log(`No daily stat found for user ${userId}. Creating one...`);
       [dailyStat] = await tx
         .insert(schema.userDailyStatTable)
         .values({ userId })
@@ -37,8 +44,7 @@ export async function processVideoCompletion(
     }
 
     // Step 3: Decrement video counters
-    // let [updatedStat] = await tx
-    const updateDailyStatPromise = tx
+    let [updatedStat] = await tx
       .update(schema.userDailyStatTable)
       .set({
         totalViews: sql`${schema.userDailyStatTable.totalViews} + 1`,
@@ -52,39 +58,25 @@ export async function processVideoCompletion(
       .returning();
 
     // Step 3.1: Create an ad view record
-    const addAdViewCountPromise = advertisementId
-      ? tx.insert(schema.adViewCountTable).values({
-          userId,
-          advertisementId,
-        })
-      : Promise.resolve();
+    if (advertisementId) {
+      await tx.insert(schema.adViewCountTable).values({
+        userId,
+        advertisementId,
+      });
 
-    // Step 3.2: Decrease seller's ad balance
-    const spendAdBalancePromise = advertisementId
-      ? spendAdBalance({ advertisementId, amount: 1.5 })
-      : Promise.resolve();
+      await spendAdBalanceWithTx(tx, { advertisementId, amount: 1.5 });
+    }
 
-    // let [updatedStat] = await updateDailyStatPromise;
-    // await addViewPromise;
-    // await spendAdBalancePromise;
+    if (!updatedStat) {
+      throw new CustomError(`User stats for user id "${userId}" not found.`, 404);
+    }
 
-    let [[updatedStat]] = await Promise.all([
-      updateDailyStatPromise,
-      addAdViewCountPromise,
-      spendAdBalancePromise,
-    ]);
-
-    console.log(
-      `User ${userId} watched a video. Remaining views: ${updatedStat.remainingViews}, Next box in: ${updatedStat.nextTreasureBoxIn}`,
-    );
     // Step 4: Check if a treasure box should be awarded
     let isAwarded = false;
     if (
       updatedStat.nextTreasureBoxIn <= 0 &&
       updatedStat.treasureBoxesEarned < 10
     ) {
-      console.log(`Awarding a treasure box to user ${userId}...`);
-
       // Generate random coins for the treasure box
       // const coinsAwarded = getRandomInteger(5, 10);
       const coinsAwarded = Math.min(
@@ -94,10 +86,9 @@ export async function processVideoCompletion(
 
       // Insert new treasure box
       await tx.insert(schema.treasureBoxTable).values({
-        userId: userId,
+        userId,
         coinsAwarded: coinsAwarded,
       });
-      console.log(`Awarded a treasure box with ${coinsAwarded} coins.`);
 
       // Reset the counter for the next treasure box and increment earned boxes
       [updatedStat] = await tx
@@ -113,7 +104,6 @@ export async function processVideoCompletion(
 
     // Step 5: If user has no remaining views, update their status
     if (updatedStat.remainingViews <= 0) {
-      console.log(`User ${userId} has no remaining views for today.`);
       [updatedStat] = await tx
         .update(schema.userDailyStatTable)
         .set({ canWatchMore: false })
@@ -174,10 +164,6 @@ export async function openTreasureBox(userId: string, treasureBoxId: string) {
       throw new CustomError("User not found.", 404);
     }
 
-    console.log(
-      `User "${updatedUser.name}" claimed ${treasureBox.coinsAwarded} coins! New balance: ${updatedUser.coins}.`,
-    );
-
     // Step 3: Mark the treasure box as opened.
     [treasureBox] = await tx
       .update(schema.treasureBoxTable)
@@ -187,8 +173,6 @@ export async function openTreasureBox(userId: string, treasureBoxId: string) {
       })
       .where(eq(schema.treasureBoxTable.id, treasureBoxId))
       .returning();
-
-    console.log(`Treasure box ${treasureBoxId} has been opened.`);
 
     // Step 4: Update coinsEarned in userMonthlyCoinStatTable (create a row if it doesn't exist)
     await tx
@@ -226,9 +210,6 @@ export async function getTreasureBoxesByUserId(userId: string) {
     orderBy: (treasureBoxes, { desc }) => [desc(treasureBoxes.earnedAt)],
   });
 
-  console.log(
-    `Treasure boxes for user ${userId}: ${treasureBoxes.length} boxes`,
-  );
   return treasureBoxes;
 }
 
@@ -280,8 +261,6 @@ export async function resetDailyStats(userId: string) {
         404,
       );
     }
-
-    console.log(`Daily stats reset for user ${userId}`);
 
     return updatedStat;
   });

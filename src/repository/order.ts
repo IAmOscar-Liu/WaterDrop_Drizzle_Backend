@@ -15,7 +15,12 @@ import { CustomError } from "../lib/error";
 import { isPlainObject } from "../lib/general";
 import db from "../lib/initDB";
 import { isAccountAdmin } from "./account";
-import { upsertCartItem } from "./cart";
+import {
+  compactConditions,
+  getPagination,
+  getTotalPages,
+  PaginationParams,
+} from "./utils/query";
 
 /**
  * Creates a new order, inserts order items, and updates product reserves.
@@ -87,8 +92,6 @@ export async function createOrder({
       .insert(schema.orderTable)
       .values(orderData)
       .returning();
-
-    console.log("New Order Created:", newOrder.id);
 
     await Promise.all([
       tx.insert(schema.orderItemTable).values(
@@ -206,7 +209,16 @@ export async function updateOrderStatus({
       if (order.items.length > 0) {
         for (let item of order.items) {
           if (order.orderStatus === "pending") {
-            promises.push(upsertCartItem(order.userId, item.productId, 0));
+            promises.push(
+              tx
+                .delete(schema.cartItemTable)
+                .where(
+                  and(
+                    eq(schema.cartItemTable.userId, order.userId),
+                    eq(schema.cartItemTable.productId, item.productId),
+                  ),
+                ),
+            );
           }
           promises.push(
             tx
@@ -290,7 +302,16 @@ export async function updateOrderStatus({
       const promises: Promise<any>[] = [];
       if (order.items.length > 0) {
         for (let item of order.items) {
-          promises.push(upsertCartItem(order.userId, item.productId, 0));
+          promises.push(
+            tx
+              .delete(schema.cartItemTable)
+              .where(
+                and(
+                  eq(schema.cartItemTable.userId, order.userId),
+                  eq(schema.cartItemTable.productId, item.productId),
+                ),
+              ),
+          );
         }
       }
       if (
@@ -492,10 +513,8 @@ export async function expirePaymentProcessingOrders(expireInMs: number) {
   return results;
 }
 
-export interface ListOrdersParams {
+export interface ListOrdersParams extends PaginationParams {
   userId: string;
-  page?: number;
-  limit?: number;
   statusIn: Exclude<schema.NewOrder["orderStatus"], undefined>[];
   order?: "asc" | "desc";
 }
@@ -507,30 +526,26 @@ export async function listOrders({
   statusIn,
   order = "desc",
 }: ListOrdersParams) {
-  const offset = (page - 1) * limit;
+  const pagination = getPagination(page, limit);
+  const whereClause = compactConditions([
+    inArray(schema.orderTable.orderStatus, statusIn),
+    eq(schema.orderTable.userId, userId),
+  ]);
 
   // Query for total count
   const totalResult = await db
     .select({ total: count() })
     .from(schema.orderTable)
-    .where(
-      and(
-        inArray(schema.orderTable.orderStatus, statusIn),
-        eq(schema.orderTable.userId, userId),
-      ),
-    );
+    .where(whereClause);
 
   const total = totalResult[0].total;
-  const totalPages = Math.ceil(total / limit);
+  const totalPages = getTotalPages(total, pagination.limit);
 
   // Query for the paginated orders with their related items and products
   const orders = await db.query.orderTable.findMany({
-    limit,
-    offset,
-    where: and(
-      inArray(schema.orderTable.orderStatus, statusIn),
-      eq(schema.orderTable.userId, userId),
-    ),
+    limit: pagination.limit,
+    offset: pagination.offset,
+    where: whereClause,
     // with: {
     //   items: {
     //     with: {
@@ -544,12 +559,16 @@ export async function listOrders({
     ],
   });
 
-  return { orders, total, page, limit, totalPages };
+  return {
+    orders,
+    total,
+    page: pagination.page,
+    limit: pagination.limit,
+    totalPages,
+  };
 }
 
-export interface ListAdminOrdersParams {
-  page?: number;
-  limit?: number;
+export interface ListAdminOrdersParams extends PaginationParams {
   accountId: string;
   userId?: string;
   merchantTradeNo?: string;
@@ -570,7 +589,7 @@ export async function listAdminOrders({
   startDate,
   endDate,
 }: ListAdminOrdersParams) {
-  const offset = (page - 1) * limit;
+  const pagination = getPagination(page, limit);
   const conditions: (SQL | undefined)[] = [];
 
   const isAdmin = await isAccountAdmin(accountId);
@@ -610,7 +629,7 @@ export async function listAdminOrders({
     conditions.push(lte(schema.orderTable.createdAt, endDate));
   }
 
-  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+  const whereClause = compactConditions(conditions);
 
   // Query for total count matching the filters
   const totalResult = await db
@@ -619,13 +638,13 @@ export async function listAdminOrders({
     .where(whereClause);
 
   const total = totalResult[0].total;
-  const totalPages = Math.ceil(total / limit);
+  const totalPages = getTotalPages(total, pagination.limit);
 
   // Query for the paginated orders
   const orders = await db.query.orderTable.findMany({
     where: whereClause,
-    limit,
-    offset,
+    limit: pagination.limit,
+    offset: pagination.offset,
     with: {
       items: {
         columns: {
@@ -658,7 +677,13 @@ export async function listAdminOrders({
     ],
   });
 
-  return { orders, total, page, limit, totalPages };
+  return {
+    orders,
+    total,
+    page: pagination.page,
+    limit: pagination.limit,
+    totalPages,
+  };
 }
 
 export async function getOrderStatusById(orderId: string) {
@@ -864,9 +889,6 @@ export async function createMerchantTrade({
       shippingCostDeduction,
     })
     .returning();
-  console.log(
-    `merchantTrade created successfully, merchantTradeNo: ${merchantTradeNo}`,
-  );
   return merchantTrade;
 }
 

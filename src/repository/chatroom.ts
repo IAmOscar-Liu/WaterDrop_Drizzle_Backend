@@ -14,6 +14,7 @@ import * as schema from "../db/schema";
 import db from "../lib/initDB";
 import { CustomError } from "../lib/error";
 import { isAccountAdmin } from "./account";
+import { compactConditions, getPagination, getTotalPages } from "./utils/query";
 
 function chatRoomHasMessagesCondition() {
   return sql`EXISTS (
@@ -21,6 +22,31 @@ function chatRoomHasMessagesCondition() {
     FROM ${schema.chatMessageTable} cm
     WHERE cm.chat_room_id = ${schema.chatRoomTable.id}
   )`;
+}
+
+function getChatRoomLookupCondition({
+  userId,
+  accountId,
+  productId,
+  orderId,
+}: {
+  userId: string;
+  accountId: string | null;
+  productId: string | null;
+  orderId: string | null;
+}) {
+  return and(
+    eq(schema.chatRoomTable.userId, userId),
+    accountId === null
+      ? isNull(schema.chatRoomTable.accountId)
+      : eq(schema.chatRoomTable.accountId, accountId),
+    productId === null
+      ? isNull(schema.chatRoomTable.productId)
+      : eq(schema.chatRoomTable.productId, productId),
+    orderId === null
+      ? isNull(schema.chatRoomTable.orderId)
+      : eq(schema.chatRoomTable.orderId, orderId),
+  );
 }
 
 /**
@@ -43,88 +69,71 @@ export async function findOrCreateChatRoom({
   productId?: string | null;
   orderId?: string | null;
 }) {
-  const accountIdCondition =
-    accountId == null
-      ? isNull(schema.chatRoomTable.accountId)
-      : eq(schema.chatRoomTable.accountId, accountId);
+  const lookup = {
+    userId,
+    accountId: accountId ?? null,
+    productId: productId ?? null,
+    orderId: orderId ?? null,
+  };
 
-  // 1. Try to find an existing chat room
-  let existingRoom = await db.query.chatRoomTable.findFirst({
-    where: and(
-      eq(schema.chatRoomTable.userId, userId),
-      accountIdCondition,
-      orderId
-        ? eq(schema.chatRoomTable.orderId, orderId)
-        : isNull(schema.chatRoomTable.orderId),
-      productId
-        ? eq(schema.chatRoomTable.productId, productId)
-        : isNull(schema.chatRoomTable.productId),
-    ),
-  });
+  return db.transaction(async (tx) => {
+    const [user] = await tx
+      .select({ id: schema.userTable.id })
+      .from(schema.userTable)
+      .where(eq(schema.userTable.id, userId))
+      .for("update");
 
-  // 1.1 Try to find an existing chat room without orderId
-  if (!existingRoom && orderId) {
-    existingRoom = await db.query.chatRoomTable.findFirst({
-      where: and(
-        eq(schema.chatRoomTable.userId, userId),
-        accountIdCondition,
-        isNull(schema.chatRoomTable.orderId),
-        productId
-          ? eq(schema.chatRoomTable.productId, productId)
-          : isNull(schema.chatRoomTable.productId),
-      ),
-    });
-    if (existingRoom) {
-      [existingRoom] = await db
-        .update(schema.chatRoomTable)
-        .set({ orderId })
-        .where(eq(schema.chatRoomTable.id, existingRoom.id))
-        .returning();
+    if (!user) {
+      throw new CustomError("User not found", 404);
     }
-  }
 
-  // const existingRoom = await db.query.chatRoomTable.findFirst({
-  //   where: and(
-  //     eq(schema.chatRoomTable.userId, userId),
-  //     eq(schema.chatRoomTable.accountId, accountId),
-  //     productId
-  //       ? eq(schema.chatRoomTable.productId, productId)
-  //       : isNull(schema.chatRoomTable.productId)
-  //   ),
-  // });
+    const activateChatRoom = async (room: schema.ChatRoom) => {
+      if (room.status === "active") return room;
 
-  if (existingRoom) {
-    console.log("Found existing chat room:", existingRoom.id);
-    if (existingRoom.status !== "active") {
-      // if existing room is inactive, set it to active
-      return await db
+      const [updatedRoom] = await tx
         .update(schema.chatRoomTable)
         .set({ status: "active" })
-        .where(eq(schema.chatRoomTable.id, existingRoom.id))
+        .where(eq(schema.chatRoomTable.id, room.id))
         .returning();
+
+      return updatedRoom ?? room;
+    };
+
+    let existingRoom = await tx.query.chatRoomTable.findFirst({
+      where: getChatRoomLookupCondition(lookup),
+    });
+
+    if (!existingRoom && lookup.orderId) {
+      existingRoom = await tx.query.chatRoomTable.findFirst({
+        where: getChatRoomLookupCondition({ ...lookup, orderId: null }),
+      });
+
+      if (existingRoom) {
+        const [updatedRoom] = await tx
+          .update(schema.chatRoomTable)
+          .set({ orderId: lookup.orderId })
+          .where(eq(schema.chatRoomTable.id, existingRoom.id))
+          .returning();
+
+        existingRoom = updatedRoom ?? existingRoom;
+      }
     }
 
-    return existingRoom;
-  }
+    if (existingRoom) {
+      return activateChatRoom(existingRoom);
+    }
 
-  // 2. If not found, create a new one
-  console.log("No chat room found, creating a new one...");
-  let [newRoom] = await db
-    .insert(schema.chatRoomTable)
-    .values({ userId, accountId, productId: productId ?? null })
-    .returning();
-
-  console.log("New chat room created:", newRoom.id);
-
-  // 2.2 If order is given and not in the room, update it
-  if (orderId && newRoom.orderId !== orderId) {
-    [newRoom] = await db
-      .update(schema.chatRoomTable)
-      .set({ orderId })
-      .where(eq(schema.chatRoomTable.id, newRoom.id))
+    const [newRoom] = await tx
+      .insert(schema.chatRoomTable)
+      .values(lookup)
       .returning();
-  }
-  return newRoom;
+
+    if (!newRoom) {
+      throw new CustomError("Chat room could not be created", 500);
+    }
+
+    return newRoom;
+  });
 }
 
 export async function getChatRoomById(chatRoomId: string) {
@@ -186,8 +195,6 @@ export async function sendChatMessage({
       })
       .returning();
 
-    console.log("New message sent:", newMessage.id);
-
     if (attachments && attachments.length > 0) {
       await tx.insert(schema.chatMessageAttachmentTable).values(
         attachments.map((a) => ({
@@ -238,31 +245,29 @@ export async function getChatHistory({
   startAt,
   endAt,
 }: GetChatHistoryParams) {
-  const offset = (page - 1) * limit;
+  const pagination = getPagination(page, limit);
 
   // Build the conditions for the query
-  const conditions = [eq(schema.chatMessageTable.chatRoomId, chatRoomId)];
-  if (startAt) {
-    conditions.push(gte(schema.chatMessageTable.createdAt, startAt));
-  }
-  if (endAt) {
-    conditions.push(lte(schema.chatMessageTable.createdAt, endAt));
-  }
+  const whereClause = compactConditions([
+    eq(schema.chatMessageTable.chatRoomId, chatRoomId),
+    startAt ? gte(schema.chatMessageTable.createdAt, startAt) : undefined,
+    endAt ? lte(schema.chatMessageTable.createdAt, endAt) : undefined,
+  ]);
 
   // Query for total count of messages in the room
   const totalResult = await db
     .select({ total: count() })
     .from(schema.chatMessageTable)
-    .where(and(...conditions));
+    .where(whereClause);
 
   const total = totalResult[0]?.total ?? 0;
-  const totalPages = Math.ceil(total / limit);
+  const totalPages = getTotalPages(total, pagination.limit);
 
   // Query for the paginated messages, sorted by most recent first
   const messages = await db.query.chatMessageTable.findMany({
-    where: and(...conditions),
-    limit: limit,
-    offset: offset,
+    where: whereClause,
+    limit: pagination.limit,
+    offset: pagination.offset,
     orderBy: (messages, { desc }) => [desc(messages.createdAt)],
     with: {
       attachments: true,
@@ -279,8 +284,8 @@ export async function getChatHistory({
   return {
     messages,
     total,
-    page,
-    limit,
+    page: pagination.page,
+    limit: pagination.limit,
     totalPages,
   };
 }
@@ -308,9 +313,6 @@ export async function markMessagesAsRead(
     throw new CustomError("Chat room not found or not active", 404);
   }
 
-  console.log(
-    `Marking messages in room ${chatRoomId} as read for ${readerType}.`,
-  );
   return db
     .update(schema.chatMessageTable)
     .set({ isRead: true, updatedAt: new Date() })
@@ -335,7 +337,7 @@ export async function listChatRooms({
   page = 1,
   limit = 20,
 }: ListChatRoomsParams) {
-  const offset = (page - 1) * limit;
+  const pagination = getPagination(page, limit);
   const conditions: (SQL | undefined)[] = [];
   // Build the conditions for the query
   conditions.push(eq(schema.chatRoomTable.userId, userId));
@@ -346,23 +348,23 @@ export async function listChatRooms({
   const totalResult = await db
     .select({ total: count() })
     .from(schema.chatRoomTable)
-    .where(and(...conditions));
+    .where(compactConditions(conditions));
 
   const total = totalResult[0].total;
-  const totalPages = Math.ceil(total / limit);
+  const totalPages = getTotalPages(total, pagination.limit);
 
   // 2. Get the paginated list of chat rooms
   // We order by the last message's timestamp (prioritizing rooms with messages), then by room creation date.
   const roomsData = await db.query.chatRoomTable.findMany({
-    where: and(...conditions),
+    where: compactConditions(conditions),
     orderBy: (chatRooms, { desc }) => [
       sql`(SELECT cm.created_at FROM ${schema.chatMessageTable} cm 
            WHERE cm.chat_room_id = ${chatRooms.id} 
            ORDER BY cm.created_at DESC LIMIT 1) DESC NULLS LAST`,
       desc(chatRooms.createdAt),
     ],
-    limit: limit,
-    offset: offset,
+    limit: pagination.limit,
+    offset: pagination.offset,
     with: {
       product: true,
       order: {
@@ -451,8 +453,8 @@ export async function listChatRooms({
   return {
     rooms,
     total,
-    page,
-    limit,
+    page: pagination.page,
+    limit: pagination.limit,
     totalPages,
   };
 }
@@ -474,7 +476,7 @@ export async function listAdminChatRooms({
   limit = 20,
   supportOnly = false,
 }: ListAdminChatRoomsParams) {
-  const offset = (page - 1) * limit;
+  const pagination = getPagination(page, limit);
   const conditions: (SQL | undefined)[] = [];
   // Build the conditions for the query
 
@@ -498,23 +500,23 @@ export async function listAdminChatRooms({
   const totalResult = await db
     .select({ total: count() })
     .from(schema.chatRoomTable)
-    .where(and(...conditions));
+    .where(compactConditions(conditions));
 
   const total = totalResult[0].total;
-  const totalPages = Math.ceil(total / limit);
+  const totalPages = getTotalPages(total, pagination.limit);
 
   // 2. Get the paginated list of chat rooms
   // We order by the last message's timestamp (prioritizing rooms with messages), then by room creation date.
   const roomsData = await db.query.chatRoomTable.findMany({
-    where: and(...conditions),
+    where: compactConditions(conditions),
     orderBy: (chatRooms, { desc }) => [
       sql`(SELECT cm.created_at FROM ${schema.chatMessageTable} cm 
            WHERE cm.chat_room_id = ${chatRooms.id} 
            ORDER BY cm.created_at DESC LIMIT 1) DESC NULLS LAST`,
       desc(chatRooms.createdAt),
     ],
-    limit: limit,
-    offset: offset,
+    limit: pagination.limit,
+    offset: pagination.offset,
     with: {
       product: {
         columns: {
@@ -618,8 +620,8 @@ export async function listAdminChatRooms({
   return {
     rooms,
     total,
-    page,
-    limit,
+    page: pagination.page,
+    limit: pagination.limit,
     totalPages,
   };
 }

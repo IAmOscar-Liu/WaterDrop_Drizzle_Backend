@@ -1,7 +1,13 @@
-import { and, count, eq, ilike, inArray, or, SQL } from "drizzle-orm";
+import { and, count, eq, ilike, inArray, or } from "drizzle-orm";
 import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
 import db from "../lib/initDB";
+import {
+  compactConditions,
+  getPagination,
+  getTotalPages,
+  PaginationParams,
+} from "./utils/query";
 
 /**
  * Finds an existing collection for a user and product, or creates a new one if it doesn't exist.
@@ -22,9 +28,6 @@ export async function findOrCreateCollection(
   });
 
   if (existingCollection) {
-    console.log(
-      `Product ${collectionData.productId} already in user ${collectionData.userId}'s collection.`,
-    );
     return existingCollection;
   }
 
@@ -52,14 +55,11 @@ export async function removeCollection(userId: string, productId: string) {
     throw new CustomError("Collection not found", 404);
   }
 
-  console.log(`Removed product ${productId} from user ${userId}'s collection.`);
   return deletedCollection;
 }
 
-export interface ListCollectionsParams {
+export interface ListCollectionsParams extends PaginationParams {
   userId: string;
-  page?: number;
-  limit?: number;
   search?: string;
 }
 
@@ -69,9 +69,9 @@ export async function listCollections({
   limit = 10,
   search,
 }: ListCollectionsParams) {
-  const offset = (page - 1) * limit;
+  const pagination = getPagination(page, limit);
 
-  const conditions: (SQL | undefined)[] = [
+  const conditions = [
     eq(schema.collectionTable.userId, userId),
   ];
 
@@ -93,7 +93,7 @@ export async function listCollections({
     );
   }
 
-  const whereClause = and(...conditions);
+  const whereClause = compactConditions(conditions);
 
   // Query for total count
   const totalResult = await db
@@ -102,13 +102,13 @@ export async function listCollections({
     .where(whereClause);
 
   const total = totalResult[0].total;
-  const totalPages = Math.ceil(total / limit);
+  const totalPages = getTotalPages(total, pagination.limit);
 
   // Query for paginated collections
   const collections = await db.query.collectionTable.findMany({
     where: whereClause,
-    limit,
-    offset,
+    limit: pagination.limit,
+    offset: pagination.offset,
     with: {
       product: {
         with: {
@@ -134,8 +134,8 @@ export async function listCollections({
   return {
     collections,
     total,
-    page,
-    limit,
+    page: pagination.page,
+    limit: pagination.limit,
     totalPages,
   };
 }

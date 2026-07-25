@@ -14,11 +14,16 @@ import {
 } from "drizzle-orm";
 
 import * as schema from "../db/schema";
+import { getEcpayLength, hasSpecialChars } from "../lib/ecpayValidation";
 import { CustomError } from "../lib/error";
 import db from "../lib/initDB";
 import { isAccountAdmin } from "./account";
-import ecpayService from "../services/ecpay";
-import product from "../services/product";
+import {
+  compactConditions,
+  getPagination,
+  getTotalPages,
+  PaginationParams,
+} from "./utils/query";
 
 // --- Category Functions ---
 
@@ -32,7 +37,6 @@ export async function createCategory(categoryData: schema.NewCategory) {
     .insert(schema.categoryTable)
     .values(categoryData)
     .returning();
-  console.log("New category created:", newCategory.id);
   return newCategory;
 }
 
@@ -41,11 +45,9 @@ export async function createCategory(categoryData: schema.NewCategory) {
  * @returns An array of all categories.
  */
 export async function listCategory() {
-  const categories = await db.query.categoryTable.findMany({
+  return db.query.categoryTable.findMany({
     orderBy: (categories, { asc }) => [asc(categories.name)],
   });
-  console.log("No. of categories:", categories.length);
-  return categories;
 }
 
 // --- Product Functions ---
@@ -99,15 +101,16 @@ export async function createProduct(
   categoryIds?: string[],
 ) {
   // 0. Check product name before creating the product
-  if (ecpayService.hasSpecialChars(productData.name)) {
+  if (hasSpecialChars(productData.name)) {
     throw new CustomError(
       `商品名稱「${productData.name}」不得包含 ^ ‘ \` ! @ # % & * + \\ ” < > | _ [ ] 等特殊符號`,
       400,
     );
   }
-  if (ecpayService.getEcpayLength(productData.name) > 50) {
+  const productNameLength = getEcpayLength(productData.name);
+  if (productNameLength > 50) {
     throw new CustomError(
-      `商品名稱「${productData.name}」總長度超過 50 字元 (目前長度: ${ecpayService.getEcpayLength(productData.name)})`,
+      `商品名稱「${productData.name}」總長度超過 50 字元 (目前長度: ${productNameLength})`,
       400,
     );
   }
@@ -130,8 +133,6 @@ export async function createProduct(
         .insert(schema.productsToCategoriesTable)
         .values(productToCategoryValues);
     }
-
-    console.log("New product created:", newProduct.id);
 
     // 3. Return the full product with relations for confirmation
     return tx.query.productTable.findFirst({
@@ -161,15 +162,16 @@ export async function updateProduct(
 ) {
   // 0. Check product name before updating the product
   if (productData.name) {
-    if (ecpayService.hasSpecialChars(productData.name)) {
+    if (hasSpecialChars(productData.name)) {
       throw new CustomError(
         `商品名稱「${productData.name}」不得包含 ^ ‘ \` ! @ # % & * + \\ ” < > | _ [ ] 等特殊符號`,
         400,
       );
     }
-    if (ecpayService.getEcpayLength(productData.name) > 50) {
+    const productNameLength = getEcpayLength(productData.name);
+    if (productNameLength > 50) {
       throw new CustomError(
-        `商品名稱「${productData.name}」總長度超過 50 字元 (目前長度: ${ecpayService.getEcpayLength(productData.name)})`,
+        `商品名稱「${productData.name}」總長度超過 50 字元 (目前長度: ${productNameLength})`,
         400,
       );
     }
@@ -201,8 +203,6 @@ export async function updateProduct(
           .values(productToCategoryValues);
       }
     }
-
-    console.log("Product updated:", updatedProduct.id);
 
     // 3. Return the fully updated product with its relations
     // We re-fetch it to get the latest state including the new category relations.
@@ -249,9 +249,7 @@ export async function decreaseProductStock(
   return updatedProduct;
 }
 
-export interface ListAdminProductsParams {
-  page?: number;
-  limit?: number;
+export interface ListAdminProductsParams extends PaginationParams {
   categoryId?: string;
   search?: string;
   status?: schema.NewProduct["status"];
@@ -275,7 +273,7 @@ export async function listAdminProducts({
   minPrice,
   maxPrice,
 }: ListAdminProductsParams) {
-  const offset = (page - 1) * limit;
+  const pagination = getPagination(page, limit);
   const conditions: (SQL | undefined)[] = [];
 
   // Only return products that have an associated seller.
@@ -319,7 +317,7 @@ export async function listAdminProducts({
     conditions.push(lte(schema.productTable.price, maxPrice));
   }
 
-  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+  const whereClause = compactConditions(conditions);
 
   // Query for total count matching the filters
   const totalResult = await db
@@ -328,7 +326,7 @@ export async function listAdminProducts({
     .where(whereClause);
 
   const total = totalResult[0].total;
-  const totalPages = Math.ceil(total / limit);
+  const totalPages = getTotalPages(total, pagination.limit);
 
   // Query for the paginated products with their relations
   const products = await db.query.productTable.findMany({
@@ -341,23 +339,21 @@ export async function listAdminProducts({
         },
       },
     },
-    limit: limit,
-    offset: offset,
+    limit: pagination.limit,
+    offset: pagination.offset,
     orderBy: (products, { desc }) => [desc(products.createdAt)],
   });
 
   return {
     products,
     total,
-    page,
-    limit,
+    page: pagination.page,
+    limit: pagination.limit,
     totalPages,
   };
 }
 
-export interface ListProductsParams {
-  page?: number;
-  limit?: number;
+export interface ListProductsParams extends PaginationParams {
   categoryId?: string;
   search?: string;
   status?: schema.NewProduct["status"];
@@ -379,7 +375,7 @@ export async function listProducts({
   minPrice,
   maxPrice,
 }: ListProductsParams) {
-  const offset = (page - 1) * limit;
+  const pagination = getPagination(page, limit);
   const conditions: (SQL | undefined)[] = [];
 
   // Only return products that have an associated seller.
@@ -418,7 +414,7 @@ export async function listProducts({
 
   conditions.push(gt(schema.productTable.stock, schema.productTable.reserve));
 
-  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+  const whereClause = compactConditions(conditions);
 
   // Query for total count matching the filters
   const totalResult = await db
@@ -427,7 +423,7 @@ export async function listProducts({
     .where(whereClause);
 
   const total = totalResult[0].total;
-  const totalPages = Math.ceil(total / limit);
+  const totalPages = getTotalPages(total, pagination.limit);
 
   // Query for the paginated products with their relations
   const products = await db.query.productTable.findMany({
@@ -450,16 +446,16 @@ export async function listProducts({
         },
       },
     },
-    limit: limit,
-    offset: offset,
+    limit: pagination.limit,
+    offset: pagination.offset,
     orderBy: (products, { desc }) => [desc(products.createdAt)],
   });
 
   return {
     products,
     total,
-    page,
-    limit,
+    page: pagination.page,
+    limit: pagination.limit,
     totalPages,
   };
 }

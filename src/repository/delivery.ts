@@ -20,103 +20,142 @@ import {
   OKMARTC2C_LOW_TMP_DELIVERY,
 } from "../constants/delivery";
 import { ECPAY_SHIPPING_FEE } from "../constants/ecpay";
-import { sendDeliveryNotification } from "../lib/polling";
+import {
+  compactConditions,
+  getPagination,
+  getTotalPages,
+  PaginationParams,
+} from "./utils/query";
 
 export async function createDelivery(
   deliveryData: schema.NewDelivery,
   productIds?: string[],
 ) {
-  const [newDelivery] = await db
-    .insert(schema.deliveryTable)
-    .values(deliveryData)
-    .returning();
+  return db.transaction(async (tx) => {
+    const [newDelivery] = await tx
+      .insert(schema.deliveryTable)
+      .values(deliveryData)
+      .returning();
 
-  console.log("New Delivery Created:", newDelivery.id);
-
-  if (newDelivery.RtnCode && newDelivery.RtnMsg) {
-    await db.insert(schema.deliveryLogTable).values({
-      deliveryId: newDelivery.id,
-      status: newDelivery.status,
-      RtnCode: newDelivery.RtnCode,
-      RtnMsg: newDelivery.RtnMsg,
-    });
-  }
-
-  if (productIds && productIds.length > 0) {
-    await db
-      .update(schema.orderItemTable)
-      .set({
+    if (newDelivery.RtnCode && newDelivery.RtnMsg) {
+      await tx.insert(schema.deliveryLogTable).values({
         deliveryId: newDelivery.id,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(schema.orderItemTable.orderId, newDelivery.orderId),
-          inArray(schema.orderItemTable.productId, productIds),
-        ),
-      );
-  }
+        status: newDelivery.status,
+        RtnCode: newDelivery.RtnCode,
+        RtnMsg: newDelivery.RtnMsg,
+      });
+    }
 
-  return newDelivery;
+    if (productIds && productIds.length > 0) {
+      await tx
+        .update(schema.orderItemTable)
+        .set({
+          deliveryId: newDelivery.id,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(schema.orderItemTable.orderId, newDelivery.orderId),
+            inArray(schema.orderItemTable.productId, productIds),
+          ),
+        );
+    }
+
+    return newDelivery;
+  });
 }
 
-export async function updateDelivery(
+export type DeliveryNotificationContext = {
+  lastStatus?: schema.Delivery["status"];
+  update: {
+    status?: schema.Delivery["status"];
+    RtnCode?: string | null;
+    RtnMsg?: string | null;
+  };
+};
+
+export async function updateDeliveryWithNotificationContext(
   deliveryId: string,
   updates: Omit<
     Partial<schema.NewDelivery>,
     "id" | "orderId" | "createdAt" | "updatedAt"
   >,
 ) {
-  const latestLog = await db.query.deliveryLogTable.findFirst({
-    where: eq(schema.deliveryLogTable.deliveryId, deliveryId),
-    orderBy: (logs, { desc }) => [desc(logs.createdAt)],
+  const result = await db.transaction(async (tx) => {
+    const [existingDelivery] = await tx
+      .select()
+      .from(schema.deliveryTable)
+      .where(eq(schema.deliveryTable.id, deliveryId))
+      .for("update");
+
+    if (!existingDelivery) return null;
+
+    const latestLog = await tx.query.deliveryLogTable.findFirst({
+      where: eq(schema.deliveryLogTable.deliveryId, deliveryId),
+      orderBy: (logs, { desc }) => [desc(logs.createdAt)],
+    });
+
+    const [updatedDelivery] = await tx
+      .update(schema.deliveryTable)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(schema.deliveryTable.id, deliveryId))
+      .returning();
+
+    const shouldLog =
+      (updates.status !== undefined && updates.status !== latestLog?.status) ||
+      (updates.RtnCode !== undefined &&
+        updates.RtnCode !== latestLog?.RtnCode) ||
+      (updates.RtnMsg !== undefined && updates.RtnMsg !== latestLog?.RtnMsg);
+
+    if (shouldLog) {
+      await tx.insert(schema.deliveryLogTable).values({
+        deliveryId: updatedDelivery.id,
+        status:
+          updates.status !== undefined
+            ? updates.status
+            : (latestLog?.status ?? updatedDelivery.status),
+        RtnCode:
+          updates.RtnCode !== undefined
+            ? updates.RtnCode
+            : (latestLog?.RtnCode ?? updatedDelivery.RtnCode),
+        RtnMsg:
+          updates.RtnMsg !== undefined
+            ? updates.RtnMsg
+            : (latestLog?.RtnMsg ?? updatedDelivery.RtnMsg),
+      });
+    }
+
+    return { updatedDelivery, latestLog, shouldLog };
   });
 
-  const [updatedDelivery] = await db
-    .update(schema.deliveryTable)
-    .set({ ...updates, updatedAt: new Date() })
-    .where(eq(schema.deliveryTable.id, deliveryId))
-    .returning();
+  if (!result) return null;
 
-  if (!updatedDelivery) return null;
+  const newDeliveryDetails = await getDeliveryById(result.updatedDelivery.id);
+  return {
+    delivery: newDeliveryDetails,
+    notificationContext: result.shouldLog
+      ? {
+          lastStatus: result.latestLog?.status,
+          update: {
+            status: updates.status,
+            RtnCode: updates.RtnCode,
+            RtnMsg: updates.RtnMsg,
+          },
+        }
+      : undefined,
+  };
+}
 
-  const shouldLog =
-    (updates.status !== undefined && updates.status !== latestLog?.status) ||
-    (updates.RtnCode !== undefined && updates.RtnCode !== latestLog?.RtnCode) ||
-    (updates.RtnMsg !== undefined && updates.RtnMsg !== latestLog?.RtnMsg);
+export async function updateDelivery(
+  deliveryId: string,
+  updates: Parameters<typeof updateDeliveryWithNotificationContext>[1],
+) {
+  const result = await updateDeliveryWithNotificationContext(
+    deliveryId,
+    updates,
+  );
 
-  if (shouldLog) {
-    await db.insert(schema.deliveryLogTable).values({
-      deliveryId: updatedDelivery.id,
-      status:
-        updates.status !== undefined
-          ? updates.status
-          : (latestLog?.status ?? updatedDelivery.status),
-      RtnCode:
-        updates.RtnCode !== undefined
-          ? updates.RtnCode
-          : (latestLog?.RtnCode ?? updatedDelivery.RtnCode),
-      RtnMsg:
-        updates.RtnMsg !== undefined
-          ? updates.RtnMsg
-          : (latestLog?.RtnMsg ?? updatedDelivery.RtnMsg),
-    });
-  }
-
-  console.log("Delivery updated:", updatedDelivery.id);
-  const newDeliveryDetails = await getDeliveryById(updatedDelivery.id);
-  if (shouldLog) {
-    await sendDeliveryNotification({
-      lastStatus: latestLog?.status,
-      update: {
-        status: updates.status,
-        RtnCode: updates.RtnCode,
-        RtnMsg: updates.RtnMsg,
-      },
-      delivery: newDeliveryDetails,
-    });
-  }
-  return newDeliveryDetails;
+  return result?.delivery ?? null;
 }
 
 type RefundableDelivery = Pick<schema.Delivery, "status"> & {
@@ -258,9 +297,7 @@ export async function getDeliveriesByMerchantTradeNo(
   });
 }
 
-export interface ListAdminDeliveriesParams {
-  page?: number;
-  limit?: number;
+export interface ListAdminDeliveriesParams extends PaginationParams {
   accountId: string;
   merchantTradeNo?: string;
   logisticsType?: schema.Delivery["LogisticsType"];
@@ -279,7 +316,7 @@ export async function listAdminDeliveries({
   startDate,
   endDate,
 }: ListAdminDeliveriesParams) {
-  const offset = (page - 1) * limit;
+  const pagination = getPagination(page, limit);
   const conditions: (SQL | undefined)[] = [];
 
   const isAdmin = await isAccountAdmin(accountId);
@@ -334,15 +371,15 @@ export async function listAdminDeliveries({
   const totalResult = await db
     .select({ total: count() })
     .from(schema.deliveryTable)
-    .where(and(...conditions));
+    .where(compactConditions(conditions));
 
   const total = totalResult[0].total;
-  const totalPages = Math.ceil(total / limit);
+  const totalPages = getTotalPages(total, pagination.limit);
 
   const deliveries = await db.query.deliveryTable.findMany({
-    where: and(...conditions),
-    limit,
-    offset,
+    where: compactConditions(conditions),
+    limit: pagination.limit,
+    offset: pagination.offset,
     with: {
       items: true,
       order: {
@@ -360,7 +397,13 @@ export async function listAdminDeliveries({
     orderBy: (deliveries, { desc }) => [desc(deliveries.createdAt)],
   });
 
-  return { deliveries, total, page, limit, totalPages };
+  return {
+    deliveries,
+    total,
+    page: pagination.page,
+    limit: pagination.limit,
+    totalPages,
+  };
 }
 
 export async function upsertShippingFee(
@@ -424,7 +467,6 @@ export async function upsertShippingFee(
       .set({ ...existing, ...data })
       .where(eq(schema.shippingFeeTable.id, existing.id))
       .returning();
-    console.log("Shipping fee updated:", updated.id);
     return updated;
   }
 
@@ -432,7 +474,6 @@ export async function upsertShippingFee(
     .insert(schema.shippingFeeTable)
     .values({ accountId, ...data })
     .returning();
-  console.log("Shipping fee created:", created.id);
   return created;
 }
 

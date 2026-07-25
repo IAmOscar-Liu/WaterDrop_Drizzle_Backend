@@ -28,7 +28,6 @@ export async function upsertCartItem(
           eq(schema.cartItemTable.productId, productId),
         ),
       );
-    console.log(`Removed product ${productId} from cart for user ${userId}.`);
     return;
   }
 
@@ -42,9 +41,6 @@ export async function upsertCartItem(
     })
     .returning();
 
-  console.log(
-    `Upserted product ${productId} with quantity ${quantity} for user ${userId}.`,
-  );
   return upsertedItem;
 }
 
@@ -101,6 +97,5 @@ export async function listCartItems(userId: string) {
     orderBy: (cartItems, { desc }) => [desc(cartItems.createdAt)],
   });
 
-  console.log(`Found ${cartItems.length} items in cart for user ${userId}.`);
   return cartItems;
 }

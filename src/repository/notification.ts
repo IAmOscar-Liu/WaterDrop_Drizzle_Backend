@@ -1,22 +1,27 @@
-import { and, count, eq, ilike, inArray, or, SQL } from "drizzle-orm";
+import { and, count, eq, ilike, inArray, or } from "drizzle-orm";
 import * as schema from "../db/schema";
 import db from "../lib/initDB";
+import {
+  compactConditions,
+  getPagination,
+  getTotalPages,
+  PaginationParams,
+} from "./utils/query";
 
 export async function createNotification(
-  notificationData: schema.NewUserNotification
+  notificationData: schema.NewUserNotification,
 ) {
   const [newNotification] = await db
     .insert(schema.userNotificationTable)
     .values(notificationData)
     .returning();
 
-  console.log("New Notification Created:", newNotification.id);
   return newNotification;
 }
 
 export async function markNotificationsAsRead(
   userId: string,
-  notificationIds: string[]
+  notificationIds: string[],
 ) {
   const updatedNotifications = await db
     .update(schema.userNotificationTable)
@@ -24,14 +29,11 @@ export async function markNotificationsAsRead(
     .where(
       and(
         eq(schema.userNotificationTable.userId, userId),
-        inArray(schema.userNotificationTable.id, notificationIds)
-      )
+        inArray(schema.userNotificationTable.id, notificationIds),
+      ),
     )
     .returning();
 
-  console.log(
-    `Marked ${updatedNotifications.length} notifications as read for user ${userId}.`
-  );
   return updatedNotifications;
 }
 
@@ -41,10 +43,8 @@ export async function getNotificationById(notificationId: string) {
   });
 }
 
-export interface ListNotificationsParams {
+export interface ListNotificationsParams extends PaginationParams {
   userId: string;
-  page?: number;
-  limit?: number;
   search?: string;
   types?: schema.UserNotification["type"][];
   onlyUnread?: boolean;
@@ -58,9 +58,9 @@ export async function listNotifications({
   types,
   onlyUnread = false,
 }: ListNotificationsParams) {
-  const offset = (page - 1) * limit;
+  const pagination = getPagination(page, limit);
 
-  const conditions: (SQL | undefined)[] = [
+  const whereClause = compactConditions([
     eq(schema.userNotificationTable.userId, userId),
     onlyUnread ? eq(schema.userNotificationTable.isRead, false) : undefined,
     types && types.length > 0
@@ -69,12 +69,10 @@ export async function listNotifications({
     search
       ? or(
           ilike(schema.userNotificationTable.title, `%${search}%`),
-          ilike(schema.userNotificationTable.body, `%${search}%`)
+          ilike(schema.userNotificationTable.body, `%${search}%`),
         )
       : undefined,
-  ];
-
-  const whereClause = and(...conditions.filter((c): c is SQL => !!c));
+  ]);
 
   // Query for total count
   const totalResult = await db
@@ -83,19 +81,22 @@ export async function listNotifications({
     .where(whereClause);
 
   const total = totalResult[0].total;
-  const totalPages = Math.ceil(total / limit);
+  const totalPages = getTotalPages(total, pagination.limit);
 
   const notifications = await db.query.userNotificationTable.findMany({
     where: whereClause,
-    limit,
-    offset,
+    limit: pagination.limit,
+    offset: pagination.offset,
     orderBy: (notif, { desc }) => [desc(notif.createdAt)],
   });
 
-  console.log(
-    `Fetched ${notifications.length} notifications for user ${userId}.`
-  );
-  return { notifications, total, page, limit, totalPages };
+  return {
+    notifications,
+    total,
+    page: pagination.page,
+    limit: pagination.limit,
+    totalPages,
+  };
 }
 
 /**
@@ -113,8 +114,8 @@ export async function getNotificationStats(userId: string) {
     .where(
       and(
         eq(schema.userNotificationTable.userId, userId),
-        eq(schema.userNotificationTable.isRead, false)
-      )
+        eq(schema.userNotificationTable.isRead, false),
+      ),
     )
     .groupBy(schema.userNotificationTable.type);
 
@@ -126,7 +127,6 @@ export async function getNotificationStats(userId: string) {
     return acc;
   }, initialStats as Record<schema.UserNotification["type"] | "total", number>);
 
-  console.log(`Fetched notification stats for user ${userId}.`);
   return statsMap;
 }
 
@@ -137,6 +137,5 @@ export async function deleteNotifications(notificationIds: string[]) {
     .returning()
     .then((rows) => rows.length);
 
-  console.log(`Deleted ${deletedCount} notifications.`);
   return deletedCount;
 }

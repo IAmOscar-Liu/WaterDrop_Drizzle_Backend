@@ -1,7 +1,10 @@
 import { and, eq, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
 import * as schema from "../db/schema";
 import { Delivery } from "../db/schema";
-import { getDeliveryById, updateDelivery } from "../repository/delivery";
+import {
+  getDeliveryById,
+  updateDeliveryWithNotificationContext,
+} from "../repository/delivery";
 import { createNotification } from "../repository/notification";
 import { getFcmTokensInUserIds } from "../repository/user";
 import ecpayService from "../services/ecpay";
@@ -201,12 +204,19 @@ export async function pollEcPayLogisticsTradeInfo() {
       )
         return;
 
-      await updateDelivery(delivery.id, {
+      const result = await updateDeliveryWithNotificationContext(delivery.id, {
         status: logisticsTradeInfo.DeliveryStatus as Delivery["status"],
         RtnCode: String(logisticsTradeInfo.LogisticsStatus),
         RtnMsg: String(logisticsTradeInfo.LogisticsStatusText),
         lastPolledAt: new Date(),
       });
+
+      if (result?.delivery && result.notificationContext) {
+        await sendDeliveryNotification({
+          ...result.notificationContext,
+          delivery: result.delivery,
+        });
+      }
     } catch (_) {}
   };
 

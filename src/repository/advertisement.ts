@@ -1,11 +1,19 @@
-import { and, count, eq, gt, gte, lte, not, sql } from "drizzle-orm";
+import { SQL, and, count, eq, gt, gte, lte, not, sql } from "drizzle-orm";
 
 import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
 import db from "../lib/initDB";
 import { isAccountAdmin } from "./account";
+import {
+  compactConditions,
+  getPagination,
+  getTotalPages,
+  PaginationParams,
+} from "./utils/query";
 
 // --- Advertisement Functions ---
+
+type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /**
  * Creates a new advertisement for a product.
@@ -25,7 +33,6 @@ export async function createAdvertisement(
       advertisementId: newAd.id,
     });
 
-    console.log("New advertisement created:", newAd.id);
     return newAd;
   });
 }
@@ -50,9 +57,7 @@ export async function getAdvertisement(advertisementId: string) {
   return advertisement;
 }
 
-export interface ListAdvertisementsParams {
-  page?: number;
-  limit?: number;
+export interface ListAdvertisementsParams extends PaginationParams {
   userId?: string;
 }
 
@@ -66,9 +71,9 @@ export async function listAdvertisements({
   limit = 10,
   userId,
 }: ListAdvertisementsParams) {
-  const offset = (page - 1) * limit;
+  const pagination = getPagination(page, limit);
 
-  const whereClause = and(
+  const whereClause = compactConditions([
     eq(schema.productTable.status, "active"),
     gt(schema.productTable.stock, schema.productTable.reserve),
     eq(schema.advertisementStatsTable.status, "active"),
@@ -78,7 +83,7 @@ export async function listAdvertisements({
           sql`${schema.advertisementTable.id}::text = ANY (select unnest(viewed_ads) from user_daily_stats where user_id = ${userId})`,
         )
       : undefined,
-  );
+  ]);
 
   // Query for total count
   const totalResult = await db
@@ -98,7 +103,7 @@ export async function listAdvertisements({
     .where(whereClause);
 
   const total = totalResult[0].total;
-  const totalPages = Math.ceil(total / limit);
+  const totalPages = getTotalPages(total, pagination.limit);
 
   // Query for the paginated advertisements with their related product
   const results = await db
@@ -116,8 +121,8 @@ export async function listAdvertisements({
       ),
     )
     .where(whereClause)
-    .limit(limit)
-    .offset(offset)
+    .limit(pagination.limit)
+    .offset(pagination.offset)
     .orderBy(() => sql`random()`);
 
   const advertisements = results.map((r) => ({
@@ -128,15 +133,13 @@ export async function listAdvertisements({
   return {
     advertisements,
     total,
-    page,
-    limit,
+    page: pagination.page,
+    limit: pagination.limit,
     totalPages,
   };
 }
 
-export interface ListAdminAdvertisementsParams {
-  page?: number;
-  limit?: number;
+export interface ListAdminAdvertisementsParams extends PaginationParams {
   sellerId: string;
 }
 
@@ -150,7 +153,7 @@ export async function listAdminAdvertisements({
   limit = 10,
   sellerId,
 }: ListAdminAdvertisementsParams) {
-  const offset = (page - 1) * limit;
+  const pagination = getPagination(page, limit);
 
   const isAdmin = await isAccountAdmin(sellerId);
   const whereClause = isAdmin
@@ -175,7 +178,7 @@ export async function listAdminAdvertisements({
     .where(whereClause);
 
   const total = totalResult[0].total;
-  const totalPages = Math.ceil(total / limit);
+  const totalPages = getTotalPages(total, pagination.limit);
 
   // Query for the paginated advertisements with their related product
   const results = await db
@@ -193,8 +196,8 @@ export async function listAdminAdvertisements({
       ),
     )
     .where(whereClause)
-    .limit(limit)
-    .offset(offset)
+    .limit(pagination.limit)
+    .offset(pagination.offset)
     .orderBy(() => [sql`${schema.advertisementTable.createdAt} desc`]);
 
   const advertisements = results.map((r) => ({
@@ -206,8 +209,8 @@ export async function listAdminAdvertisements({
   return {
     advertisements,
     total,
-    page,
-    limit,
+    page: pagination.page,
+    limit: pagination.limit,
     totalPages,
   };
 }
@@ -221,7 +224,6 @@ export async function updateAdvertisementById(
     .set(updates)
     .where(eq(schema.advertisementTable.id, advertisementId))
     .returning();
-  console.log("Advertisement updated:", updatedAd.id);
   return updatedAd;
 }
 
@@ -270,9 +272,7 @@ export async function getAdViewCount({
   };
 }
 
-export interface ListAdViewCountParams {
-  page?: number;
-  limit?: number;
+export interface ListAdViewCountParams extends PaginationParams {
   sellerId: string;
   startAt?: Date;
   endAt?: Date;
@@ -291,8 +291,8 @@ export async function listAdViewCount({
   startAt,
   endAt,
 }: ListAdViewCountParams) {
-  const conditions = [];
-  const offset = (page - 1) * limit;
+  const conditions: SQL[] = [];
+  const pagination = getPagination(page, limit);
   if (startAt) conditions.push(gte(schema.adViewCountTable.createdAt, startAt));
   if (endAt) conditions.push(lte(schema.adViewCountTable.createdAt, endAt));
 
@@ -305,7 +305,7 @@ export async function listAdViewCount({
         .as("view_count"),
     })
     .from(schema.adViewCountTable)
-    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .where(compactConditions(conditions))
     .groupBy(schema.adViewCountTable.advertisementId)
     .as("view_counts");
 
@@ -322,7 +322,7 @@ export async function listAdViewCount({
     .where(whereClause);
 
   const total = totalResult[0].total;
-  const totalPages = Math.ceil(total / limit);
+  const totalPages = getTotalPages(total, pagination.limit);
 
   const results = await db
     .select({
@@ -341,8 +341,8 @@ export async function listAdViewCount({
       eq(schema.advertisementTable.productId, schema.productTable.id),
     )
     .where(whereClause)
-    .limit(limit)
-    .offset(offset);
+    .limit(pagination.limit)
+    .offset(pagination.offset);
 
   const advertisements = results.map((r) => ({
     ...r.advertisement,
@@ -354,8 +354,8 @@ export async function listAdViewCount({
     endAt: endAt ?? null,
     advertisements,
     total,
-    page,
-    limit,
+    page: pagination.page,
+    limit: pagination.limit,
     totalPages,
   };
 }
@@ -403,11 +403,50 @@ export async function depositAdBalance({
       metadata,
     });
 
-    console.log(
-      `Increased balance for ad ${advertisementId} by ${amount}. New balance: ${updatedStats.balance}`,
-    );
     return updatedStats;
   });
+}
+
+export async function spendAdBalanceWithTx(
+  tx: DbTransaction,
+  {
+    advertisementId,
+    amount,
+  }: {
+    advertisementId: string;
+    amount: number;
+  },
+) {
+  // 1. Check current status
+  const [currentStats] = await tx
+    .select({ status: schema.advertisementStatsTable.status })
+    .from(schema.advertisementStatsTable)
+    .where(eq(schema.advertisementStatsTable.advertisementId, advertisementId))
+    .for("update");
+
+  if (!currentStats) {
+    throw new CustomError("Advertisement not found.", 404);
+  }
+
+  if (currentStats.status !== "active" && currentStats.status !== "depleted") {
+    throw new CustomError(
+      `Cannot spend balance for ad with status: ${currentStats.status}`,
+      400,
+    );
+  }
+
+  // 2. Decrease balance and update status if necessary
+  const [updatedStats] = await tx
+    .update(schema.advertisementStatsTable)
+    .set({
+      balance: sql`${schema.advertisementStatsTable.balance} - ${amount}`,
+      totalSpent: sql`${schema.advertisementStatsTable.totalSpent} + ${amount}`,
+      status: sql`case when ${schema.advertisementStatsTable.balance} - ${amount} < 100 then 'depleted' else ${schema.advertisementStatsTable.status} end`,
+    })
+    .where(eq(schema.advertisementStatsTable.advertisementId, advertisementId))
+    .returning();
+
+  return updatedStats;
 }
 
 export async function spendAdBalance({
@@ -418,42 +457,7 @@ export async function spendAdBalance({
   amount: number;
 }) {
   return await db.transaction(async (tx) => {
-    // 1. Check current status
-    const [currentStats] = await tx
-      .select({ status: schema.advertisementStatsTable.status })
-      .from(schema.advertisementStatsTable)
-      .where(
-        eq(schema.advertisementStatsTable.advertisementId, advertisementId),
-      );
-
-    if (!currentStats) {
-      throw new CustomError("Advertisement not found.", 404);
-    }
-
-    if (
-      currentStats.status !== "active" &&
-      currentStats.status !== "depleted"
-    ) {
-      throw new CustomError(
-        `Cannot spend balance for ad with status: ${currentStats.status}`,
-        400,
-      );
-    }
-
-    // 2. Decrease balance and update status if necessary
-    const [updatedStats] = await tx
-      .update(schema.advertisementStatsTable)
-      .set({
-        balance: sql`${schema.advertisementStatsTable.balance} - ${amount}`,
-        totalSpent: sql`${schema.advertisementStatsTable.totalSpent} + ${amount}`,
-        status: sql`case when ${schema.advertisementStatsTable.balance} - ${amount} < 100 then 'depleted' else ${schema.advertisementStatsTable.status} end`,
-      })
-      .where(
-        eq(schema.advertisementStatsTable.advertisementId, advertisementId),
-      )
-      .returning();
-
-    return updatedStats;
+    return spendAdBalanceWithTx(tx, { advertisementId, amount });
   });
 }
 
@@ -494,6 +498,5 @@ export async function setAdStatus(
 
   if (!updatedStats) throw new CustomError("Advertisement not found.", 404);
 
-  console.log(`Set status for ad ${advertisementId} to ${status}`);
   return updatedStats;
 }

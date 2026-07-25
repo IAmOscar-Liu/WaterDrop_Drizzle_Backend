@@ -47,18 +47,16 @@ export async function createUser(
     }
   } while (!isCodeUnique);
 
-  const [newUser] = await db
-    .insert(schema.userTable)
-    .values({ ...user, referralCode })
-    .returning();
-  console.log("New user created with id:", newUser.id);
+  return db.transaction(async (tx) => {
+    const [newUser] = await tx
+      .insert(schema.userTable)
+      .values({ ...user, referralCode })
+      .returning();
 
-  await db
-    .insert(schema.userDailyStatTable)
-    .values({ userId: newUser.id })
-    .returning();
+    await tx.insert(schema.userDailyStatTable).values({ userId: newUser.id });
 
-  return newUser;
+    return newUser;
+  });
 }
 
 export async function getUsers() {
@@ -86,7 +84,6 @@ export async function getUsers() {
     )
     .leftJoin(groupCounts, eq(schema.groupTable.id, groupCounts.groupId));
 
-  console.log("No. of users: ", users.length);
   return users;
 }
 
@@ -153,7 +150,6 @@ export async function updateUserTimezone(userId: string, timezone: string) {
     throw new CustomError(`User with id "${userId}" not found.`, 404);
   }
 
-  console.log(`User ${userId} timezone updated to ${timezone}`);
   return updatedUser;
 }
 
@@ -351,7 +347,6 @@ export async function updateUser(
     throw new CustomError(`User with id "${userId}" not found.`, 404);
   }
 
-  console.log(`User ${userId} updated`);
   return updatedUser;
 }
 
@@ -365,7 +360,6 @@ export async function validateReferralCode(referralCode: string) {
     throw new CustomError(`Referral code "${referralCode}" not found.`, 404);
   }
 
-  console.log(`Referral code "${referralCode}" is valid for user:`, user.id);
   return user;
 }
 
@@ -373,54 +367,60 @@ export async function joinGroupByReferralCode(
   referralCode: string,
   userId: string,
 ) {
-  const [referrer] = await db
-    .select()
-    .from(schema.userTable)
-    .where(eq(schema.userTable.referralCode, referralCode));
+  return db.transaction(async (tx) => {
+    const [referrer] = await tx
+      .select()
+      .from(schema.userTable)
+      .where(eq(schema.userTable.referralCode, referralCode))
+      .for("update");
 
-  if (!referrer) {
-    throw new CustomError(`Referral code "${referralCode}" not found.`, 404);
-  }
+    if (!referrer) {
+      throw new CustomError(`Referral code "${referralCode}" not found.`, 404);
+    }
 
-  // Prevent a user from using their own referral code
-  if (referrer.id === userId) {
-    throw new CustomError("You cannot use your own referral code.", 400);
-  }
+    // Prevent a user from using their own referral code
+    if (referrer.id === userId) {
+      throw new CustomError("You cannot use your own referral code.", 400);
+    }
 
-  // 2. Find the group owned by the referrer
-  let [group] = await db
-    .select()
-    .from(schema.groupTable)
-    .where(eq(schema.groupTable.ownerId, referrer.id));
+    const [user] = await tx
+      .select({ id: schema.userTable.id })
+      .from(schema.userTable)
+      .where(eq(schema.userTable.id, userId))
+      .for("update");
 
-  // 3. If the group doesn't exist, create it
-  if (!group) {
-    console.log(
-      `Referrer ${referrer.name} does not have a group. Creating one...`,
-    );
-    [group] = await db
-      .insert(schema.groupTable)
-      .values({ ownerId: referrer.id })
+    if (!user) {
+      throw new CustomError(`User with id "${userId}" not found.`, 404);
+    }
+
+    // 2. Find the group owned by the referrer
+    let [group] = await tx
+      .select()
+      .from(schema.groupTable)
+      .where(eq(schema.groupTable.ownerId, referrer.id))
+      .for("update");
+
+    // 3. If the group doesn't exist, create it
+    if (!group) {
+      [group] = await tx
+        .insert(schema.groupTable)
+        .values({ ownerId: referrer.id })
+        .returning();
+    }
+
+    // 4. Make the current user join the group
+    const [updatedUser] = await tx
+      .update(schema.userTable)
+      .set({ groupId: group.id })
+      .where(eq(schema.userTable.id, userId))
       .returning();
-    console.log(`New group created with id: ${group.id}`);
-  }
 
-  // 4. Make the current user join the group
-  const [updatedUser] = await db
-    .update(schema.userTable)
-    .set({ groupId: group.id })
-    .where(eq(schema.userTable.id, userId))
-    .returning();
+    if (!updatedUser) {
+      throw new CustomError(`User with id "${userId}" not found.`, 404);
+    }
 
-  if (!updatedUser) {
-    throw new CustomError(`User with id "${userId}" not found.`, 404);
-  }
-
-  console.log(
-    `User "${updatedUser.name}" has joined group ${group.id}, owned by "${referrer.name}".`,
-  );
-
-  return updatedUser;
+    return updatedUser;
+  });
 }
 
 export async function getSimpleUserById(id: string) {
@@ -434,7 +434,6 @@ export async function getSimpleUserById(id: string) {
     .where(eq(schema.userTable.id, id));
 
   if (!user) return null;
-  console.log("Simple user by id:", user.id);
   return user;
 }
 
@@ -464,7 +463,6 @@ export async function getUserById(id: string) {
     .where(eq(schema.userTable.id, id));
 
   if (!user) return null;
-  console.log("User by id:", user.id);
   return {
     ...user,
     ...getMemberInfo(user.referralCount),
@@ -507,7 +505,6 @@ export async function getUserByOauthProviderAndOauthId(
     );
 
   if (!user) return null;
-  console.log("User by oAuth:", user.id);
   return {
     ...user,
     ...getMemberInfo(user.referralCount),
@@ -519,33 +516,32 @@ export async function getUserByOauthProviderAndOauthId(
 export async function getDailyStatByUserId(
   userId: string,
 ): Promise<schema.UserDailyStat> {
-  // Find the user and their daily stat in one query
-  const userWithStat = await db.query.userTable.findFirst({
-    where: eq(schema.userTable.id, userId),
-    with: {
-      dailyStat: true,
-    },
+  return db.transaction(async (tx) => {
+    const [user] = await tx
+      .select({ id: schema.userTable.id })
+      .from(schema.userTable)
+      .where(eq(schema.userTable.id, userId))
+      .for("update");
+
+    if (!user) {
+      throw new CustomError(`User with id "${userId}" not found.`, 404);
+    }
+
+    const [dailyStat] = await tx
+      .select()
+      .from(schema.userDailyStatTable)
+      .where(eq(schema.userDailyStatTable.userId, userId))
+      .for("update");
+
+    if (dailyStat) return dailyStat;
+
+    const [newStat] = await tx
+      .insert(schema.userDailyStatTable)
+      .values({ userId: userId })
+      .returning();
+
+    return newStat;
   });
-
-  if (!userWithStat) {
-    throw new CustomError(`User with id "${userId}" not found.`, 404);
-  }
-
-  // If the daily stat already exists, return it
-  if (userWithStat.dailyStat) {
-    console.log("Found existing daily stat:", userWithStat.dailyStat.id);
-    return userWithStat.dailyStat;
-  }
-
-  // If it doesn't exist, create it with default values
-  console.log(`No daily stat found for user ${userId}. Creating one...`);
-  const [newStat] = await db
-    .insert(schema.userDailyStatTable)
-    .values({ userId: userId })
-    .returning();
-
-  console.log("New daily stat created:", newStat.id);
-  return newStat;
 }
 
 export async function updateGroupAdViewsCountYesterday(userId: string) {
@@ -568,9 +564,7 @@ export async function updateGroupAdViewsCountYesterday(userId: string) {
       userIdsInGroup = usersInGroup.map((u) => u.id);
     }
 
-    // Also include the owner
     const allUserIds = [...userIdsInGroup, userId];
-    // console.log("allUserIds", allUserIds);
 
     const results = await tx
       .select({
@@ -584,10 +578,6 @@ export async function updateGroupAdViewsCountYesterday(userId: string) {
       (total, result) => total + result.totalViews,
       0,
     );
-    console.log(
-      `Daily stats reset for user ${userId}, groupResult: ${JSON.stringify(results)}, groupAdViewsCountYesterday: ${groupAdViewsCountYesterday}`,
-    );
-
     const [updatedStat] = await tx
       .update(schema.userDailyStatTable)
       .set({ groupAdViewsCountYesterday })

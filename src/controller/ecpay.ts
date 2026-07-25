@@ -15,7 +15,6 @@ import { validateToken } from "../lib/token";
 import {
   createDelivery,
   getDeliveryByMerchantTradeNo,
-  updateDelivery,
 } from "../repository/delivery";
 import {
   createMerchantTrade,
@@ -25,6 +24,7 @@ import {
   updateOrderStatus,
 } from "../repository/order";
 import ecpayService from "../services/ecpay";
+import deliveryService from "../services/delivery";
 import orderService from "../services/order";
 
 const TEST_ORDER_ID = "test_order_12345";
@@ -591,7 +591,7 @@ class EcPayController {
         const RtnMsg = getLogisticsStatusText(type, RtnCode);
         const status = getLogisticsStatus(type, RtnCode);
 
-        await updateDelivery(existingDelivery.id, {
+        await deliveryService.updateDelivery(existingDelivery.id, {
           status,
           RtnCode,
           RtnMsg,

@@ -8,6 +8,11 @@ import {
   ECPAY_LOGISTIC_BASE_URL,
   ECPAY_QUERY_LOGISTICS_TRADE_INFO_URL,
 } from "../constants/ecpay";
+import {
+  getEcpayLength as getEcpayStringLength,
+  hasEmoji as containsEmoji,
+  hasSpecialChars as containsSpecialChars,
+} from "../lib/ecpayValidation";
 import { generateRandomString } from "../lib/general";
 import axios from "axios";
 import {
@@ -185,27 +190,15 @@ class EcPayService {
    * @returns {number} 綠界規範下的長度。
    */
   getEcpayLength(str: string) {
-    let length = 0;
-    for (let i = 0; i < str.length; i++) {
-      // 檢查是否為中文字符或全形字符 (Unicode 編碼 > 255 的字符視為佔用 2 字元)
-      if (str.charCodeAt(i) > 255) {
-        length += 2;
-      } else {
-        length += 1;
-      }
-    }
-    return length;
+    return getEcpayStringLength(str);
   }
 
   hasSpecialChars(str: string) {
-    const specialCharRegex = /[\^'`!@#%&*+\\"<>|_\[\]‘”]/;
-    return specialCharRegex.test(str);
+    return containsSpecialChars(str);
   }
 
   hasEmoji(str: string) {
-    // 檢查是否包含表情符號 (emoji)
-    const emojiRegex = /\p{Emoji}/u;
-    return emojiRegex.test(str);
+    return containsEmoji(str);
   }
 
   /**

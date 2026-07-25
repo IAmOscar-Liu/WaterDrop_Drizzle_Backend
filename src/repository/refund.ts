@@ -21,11 +21,14 @@ import {
 } from "../lib/general";
 import db from "../lib/initDB";
 import { isAccountAdmin } from "./account";
-import { findOrCreateChatRoom, sendChatMessage } from "./chatroom";
+import {
+  compactConditions,
+  getPagination,
+  getTotalPages,
+  PaginationParams,
+} from "./utils/query";
 
-export interface GetRefundListParams {
-  page?: number;
-  limit?: number;
+export interface GetRefundListParams extends PaginationParams {
   accountId?: string;
   userId?: string;
   productId?: string;
@@ -34,6 +37,15 @@ export interface GetRefundListParams {
   endAt?: Date;
   status?: schema.RefundItem["status"];
 }
+
+export type RefundCreatedChatMessageInput = {
+  accountId: string;
+  userId: string;
+  productId: string;
+  orderId: string;
+  senderType?: schema.ChatMessage["senderType"];
+  content: string;
+};
 
 function formatRefundRow(
   row: {
@@ -108,7 +120,7 @@ function getRefundFilters({
     conditions.push(eq(schema.refundItemTable.status, status));
   }
 
-  return conditions.length > 0 ? and(...conditions) : undefined;
+  return compactConditions(conditions);
 }
 
 function getRefundBaseQuery() {
@@ -269,43 +281,6 @@ function formatRefundChatMessage({
   ].join("\n");
 }
 
-async function sendRefundCreatedChatMessage({
-  accountId,
-  userId,
-  productId,
-  orderId,
-  senderType,
-  content,
-}: {
-  accountId: string;
-  userId: string;
-  productId: string;
-  orderId: string;
-  senderType?: schema.ChatMessage["senderType"];
-  content: string;
-}) {
-  const chatRoomResult = await findOrCreateChatRoom({
-    userId,
-    accountId,
-    productId,
-    orderId,
-  });
-  const chatRoom = Array.isArray(chatRoomResult)
-    ? chatRoomResult[0]
-    : chatRoomResult;
-
-  if (!chatRoom) {
-    throw new CustomError("Chat room could not be created", 500);
-  }
-
-  await sendChatMessage({
-    chatRoomId: chatRoom.id,
-    senderType:
-      senderType ?? ((await isAccountAdmin(accountId)) ? "admin" : "seller"),
-    content,
-  });
-}
-
 export async function getRefundList({
   page = 1,
   limit = 10,
@@ -317,7 +292,7 @@ export async function getRefundList({
   endAt,
   status,
 }: GetRefundListParams = {}) {
-  const offset = (page - 1) * limit;
+  const pagination = getPagination(page, limit);
   const whereClause = getRefundFilters({
     userId,
     productId,
@@ -340,7 +315,11 @@ export async function getRefundList({
           ),
         )
       : undefined;
-  const scopedWhereClause = and(whereClause, sellerScope, merchantTradeNoScope);
+  const scopedWhereClause = compactConditions([
+    whereClause,
+    sellerScope,
+    merchantTradeNoScope,
+  ]);
 
   const [totalResult] = await db
     .select({ total: count() })
@@ -366,19 +345,19 @@ export async function getRefundList({
   const rows = await getRefundBaseQuery()
     .where(scopedWhereClause)
     .orderBy(desc(schema.refundItemTable.createdAt))
-    .limit(limit)
-    .offset(offset);
+    .limit(pagination.limit)
+    .offset(pagination.offset);
 
   const total = totalResult.total;
-  const totalPages = Math.ceil(total / limit);
+  const totalPages = getTotalPages(total, pagination.limit);
 
   const bankNameByCode = getBankNameByCodeMap();
 
   return {
     refunds: rows.map((row) => formatRefundRow(row, bankNameByCode)),
     total,
-    page,
-    limit,
+    page: pagination.page,
+    limit: pagination.limit,
     totalPages,
   };
 }
@@ -391,7 +370,7 @@ export async function getRefundById(refundItemId: string) {
   return row ? formatRefundRow(row) : undefined;
 }
 
-export async function createRefund(
+export async function createRefundWithChatContext(
   item: schema.NewRefundItem & {
     accountId?: string;
     userId?: string;
@@ -573,14 +552,13 @@ export async function createRefund(
     };
   });
 
-  if (result.chatMessageInput) {
-    void sendRefundCreatedChatMessage(result.chatMessageInput).catch(
-      (error) => {
-        console.error("Failed to send refund chat message:", error);
-      },
-    );
-  }
+  return result;
+}
 
+export async function createRefund(
+  item: Parameters<typeof createRefundWithChatContext>[0],
+) {
+  const result = await createRefundWithChatContext(item);
   return result.refundItem;
 }
 
