@@ -30,21 +30,32 @@ type OrderItemWithProductVariant = {
   variantOptionValuesAtSale?: unknown;
 };
 
-function withVariantNestedInProduct<T extends OrderItemWithProductVariant>(
-  item: T,
-) {
+function withVariantAtSaleDisplay<T extends OrderItemWithProductVariant>(item: T) {
+  const {
+    product,
+    variant: _variant,
+    variantNameAtSale,
+    variantSkuAtSale,
+    variantOptionValuesAtSale,
+    ...rest
+  } = item;
+  const productWithoutVariant = product
+    ? (() => {
+        const {
+          variant: _productVariant,
+          ...productRest
+        } = product as typeof product & { variant?: unknown };
+        return productRest;
+      })()
+    : product;
+
   return {
-    ...item,
-    product: item.product
-      ? {
-          ...item.product,
-          variant: item.variant ?? null,
-        }
-      : item.product,
+    ...rest,
+    product: productWithoutVariant,
     variantAtSale: {
-      name: item.variantNameAtSale,
-      sku: item.variantSkuAtSale,
-      optionValues: item.variantOptionValuesAtSale,
+      name: variantNameAtSale ?? null,
+      sku: variantSkuAtSale ?? null,
+      optionValues: variantOptionValuesAtSale ?? null,
     },
   };
 }
@@ -222,7 +233,7 @@ export async function createOrder({
       order
         ? {
             ...order,
-            items: order.items.map(withVariantNestedInProduct),
+            items: order.items.map(withVariantAtSaleDisplay),
           }
         : order,
     );
@@ -592,7 +603,7 @@ export async function updateOrderStatus({
       order
         ? {
             ...order,
-            items: order.items.map(withVariantNestedInProduct),
+            items: order.items.map(withVariantAtSaleDisplay),
           }
         : order,
     );
@@ -682,21 +693,40 @@ export async function listOrders({
     limit: pagination.limit,
     offset: pagination.offset,
     where: whereClause,
-    // with: {
-    //   items: {
-    //     with: {
-    //       product: true,
-    //     },
-    //   },
-    //   delivery: true,
-    // },
+    with: {
+      items: {
+        columns: {
+          id: true,
+          productId: true,
+          productVariantId: true,
+          productNameAtSale: true,
+          variantNameAtSale: true,
+          variantSkuAtSale: true,
+          variantOptionValuesAtSale: true,
+        },
+      },
+      deliveries: {
+        columns: {
+          id: true,
+          merchantTradeNo: true,
+          status: true,
+          LogisticsType: true,
+          LogisticsSubType: true,
+          RtnCode: true,
+          RtnMsg: true,
+        },
+      },
+    },
     orderBy: (orders, { desc, asc }) => [
       order === "asc" ? asc(orders.createdAt) : desc(orders.createdAt),
     ],
   });
 
   return {
-    orders,
+    orders: orders.map((order) => ({
+      ...order,
+      items: order.items.map(withVariantAtSaleDisplay),
+    })),
     total,
     page: pagination.page,
     limit: pagination.limit,
@@ -820,7 +850,7 @@ export async function listAdminOrders({
   return {
     orders: orders.map((order) => ({
       ...order,
-      items: order.items.map(withVariantNestedInProduct),
+      items: order.items.map(withVariantAtSaleDisplay),
     })),
     total,
     page: pagination.page,
@@ -893,9 +923,16 @@ function canRefundOrderItem(
   return getRemainingRefundQuantity(order, delivery, item) > 0;
 }
 
-export async function getOrderById(orderId: string) {
+export async function getOrderById(
+  orderId: string,
+  options?: { userId?: string; includeUser?: boolean },
+) {
+  const { userId, includeUser = true } = options ?? {};
   const order = await db.query.orderTable.findFirst({
-    where: eq(schema.orderTable.id, orderId),
+    where: compactConditions([
+      eq(schema.orderTable.id, orderId),
+      userId ? eq(schema.orderTable.userId, userId) : undefined,
+    ]),
     with: {
       items: {
         with: {
@@ -924,14 +961,27 @@ export async function getOrderById(orderId: string) {
           },
         },
       },
-      user: {
-        columns: {
-          id: true,
-          name: true,
-          email: true,
-        },
-      },
+      ...(includeUser
+        ? {
+            user: {
+              columns: {
+                id: true,
+                name: true,
+                email: true,
+              },
+            },
+          }
+        : {}),
     },
+  }).then((order) => {
+    if (!order || includeUser) {
+      return order;
+    }
+
+    const { user: _user, ...orderWithoutUser } = order as typeof order & {
+      user?: unknown;
+    };
+    return orderWithoutUser;
   });
 
   if (!order) {
@@ -950,10 +1000,10 @@ export async function getOrderById(orderId: string) {
       const delivery = item.deliveryId
         ? deliveryById.get(item.deliveryId)
         : undefined;
-      const itemWithNestedVariant = withVariantNestedInProduct(item);
+      const itemWithVariantAtSale = withVariantAtSaleDisplay(item);
 
       return {
-        ...itemWithNestedVariant,
+        ...itemWithVariantAtSale,
         canRefund: canRefundOrderItem(order, delivery, item),
         remainingRefundQuantity: getRemainingRefundQuantity(
           order,
@@ -962,6 +1012,10 @@ export async function getOrderById(orderId: string) {
         ),
       };
     }),
+    deliveries: order.deliveries.map((delivery) => ({
+      ...delivery,
+      items: delivery.items.map(withVariantAtSaleDisplay),
+    })),
   };
 }
 
@@ -1017,7 +1071,11 @@ export async function getOrdersByMerchantTradeNo(
   }).then((orders) =>
     orders.map((order) => ({
       ...order,
-      items: order.items.map(withVariantNestedInProduct),
+      items: order.items.map(withVariantAtSaleDisplay),
+      deliveries: order.deliveries.map((delivery) => ({
+        ...delivery,
+        items: delivery.items.map(withVariantAtSaleDisplay),
+      })),
     })),
   );
 }

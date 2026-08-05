@@ -44,18 +44,24 @@ const router = Router();
  *           type: string
  *           enum: [active, inactive]
  *         product:
- *           allOf:
- *             - $ref: '#/components/schemas/Product'
- *             - type: object
- *               properties:
- *                 variantName:
- *                   type: string
- *                   nullable: true
- *                   description: Display name for the selected variant, derived from variant.name or option values.
+ *           type: object
  *           nullable: true
- *         variant:
- *           $ref: '#/components/schemas/ProductVariant'
- *           nullable: true
+ *           description: Compact product summary for chatroom list display.
+ *           properties:
+ *             id:
+ *               type: string
+ *               format: uuid
+ *             name:
+ *               type: string
+ *             images:
+ *               type: array
+ *               items:
+ *                 type: string
+ *               nullable: true
+ *             variantName:
+ *               type: string
+ *               nullable: true
+ *               description: Display name for the selected variant, derived from variant.name or option values.
  *         createdAt:
  *           type: string
  *           format: date-time

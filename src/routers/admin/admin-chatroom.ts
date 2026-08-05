@@ -180,10 +180,6 @@ const router = Router();
  *                   type: string
  *                   nullable: true
  *                   description: Display name for the selected variant, derived from variant.name or option values.
- *             variant:
- *               $ref: '#/components/schemas/ProductVariant'
- *               nullable: true
- *               description: Live variant row for product-specific rooms.
  *             totalUnread:
  *               type: integer
  *             lastMessage:

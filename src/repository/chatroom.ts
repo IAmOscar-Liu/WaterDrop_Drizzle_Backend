@@ -429,8 +429,19 @@ export async function listChatRooms({
     limit: pagination.limit,
     offset: pagination.offset,
     with: {
-      product: true,
-      variant: true,
+      product: {
+        columns: {
+          id: true,
+          name: true,
+          images: true,
+        },
+      },
+      variant: {
+        columns: {
+          name: true,
+          optionValues: true,
+        },
+      },
       order: {
         with: {
           items: true,
@@ -475,7 +486,14 @@ export async function listChatRooms({
   }
 
   const rooms = roomsData.map((room) => {
-    const { unreadCount, lastMessageId, order, ...rest } = room;
+    const {
+      unreadCount,
+      lastMessageId,
+      order,
+      product: roomProduct,
+      variant,
+      ...rest
+    } = room;
 
     let delivery = null;
     if (order && room.productId && room.productVariantId) {
@@ -492,12 +510,12 @@ export async function listChatRooms({
     const lastMessage = lastMessageId
       ? lastMessagesMap.get(lastMessageId)
       : null;
-    const product = rest.product
+    const product = roomProduct
       ? {
-          ...rest.product,
-          variantName: getVariantDisplayName(rest.variant),
+          ...roomProduct,
+          variantName: getVariantDisplayName(variant),
         }
-      : rest.product;
+      : roomProduct;
 
     return {
       ...rest,
@@ -513,6 +531,8 @@ export async function listChatRooms({
             discountCoin: order.discountCoin,
             delivery: delivery
               ? {
+                  id: delivery.id,
+                  merchantTradeNo: delivery.merchantTradeNo,
                   LogisticsType: delivery.LogisticsType,
                   LogisticsSubType: delivery.LogisticsSubType,
                   status: delivery.status,
@@ -605,7 +625,12 @@ export async function listAdminChatRooms({
           images: true,
         },
       },
-      variant: true,
+      variant: {
+        columns: {
+          name: true,
+          optionValues: true,
+        },
+      },
       user: {
         columns: {
           id: true,
@@ -657,7 +682,14 @@ export async function listAdminChatRooms({
   }
 
   const rooms = roomsData.map((room) => {
-    const { unreadCount, lastMessageId, order, ...rest } = room;
+    const {
+      unreadCount,
+      lastMessageId,
+      order,
+      product: roomProduct,
+      variant,
+      ...rest
+    } = room;
 
     let delivery = null;
     if (order && room.productId && room.productVariantId) {
@@ -674,12 +706,12 @@ export async function listAdminChatRooms({
     const lastMessage = lastMessageId
       ? lastMessagesMap.get(lastMessageId)
       : null;
-    const product = rest.product
+    const product = roomProduct
       ? {
-          ...rest.product,
-          variantName: getVariantDisplayName(rest.variant),
+          ...roomProduct,
+          variantName: getVariantDisplayName(variant),
         }
-      : rest.product;
+      : roomProduct;
 
     return {
       ...rest,

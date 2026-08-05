@@ -53,7 +53,6 @@ function formatRefundRow(
     refundItem: schema.RefundItem;
     orderItem: schema.OrderItem;
     product: schema.Product;
-    variant: schema.ProductVariant | null;
     delivery: {
       id: string;
       merchantTradeNo: string | null;
@@ -85,10 +84,7 @@ function formatRefundRow(
         sku: row.orderItem.variantSkuAtSale,
         optionValues: row.orderItem.variantOptionValuesAtSale,
       },
-      product: {
-        ...row.product,
-        variant: row.variant,
-      },
+      product: row.product,
       delivery: row.delivery,
       order: {
         ...row.order,
@@ -139,7 +135,6 @@ function getRefundBaseQuery() {
       refundItem: schema.refundItemTable,
       orderItem: schema.orderItemTable,
       product: schema.productTable,
-      variant: schema.productVariantTable,
       delivery: {
         id: schema.deliveryTable.id,
         merchantTradeNo: schema.deliveryTable.merchantTradeNo,
@@ -166,10 +161,6 @@ function getRefundBaseQuery() {
     .innerJoin(
       schema.productTable,
       eq(schema.orderItemTable.productId, schema.productTable.id),
-    )
-    .leftJoin(
-      schema.productVariantTable,
-      eq(schema.orderItemTable.productVariantId, schema.productVariantTable.id),
     )
     .leftJoin(
       schema.deliveryTable,

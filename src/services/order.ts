@@ -42,9 +42,10 @@ class OrderService {
 
   async getOrderById(
     id: string,
+    options?: { userId?: string; includeUser?: boolean },
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof getOrderById>>>> {
     try {
-      const order = await getOrderById(id);
+      const order = await getOrderById(id, options);
       if (order) {
         return { success: true, data: order };
       } else {

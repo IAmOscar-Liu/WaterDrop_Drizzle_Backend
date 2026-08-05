@@ -81,7 +81,6 @@ const router = Router();
  *                   properties:
  *                     variantAtSale:
  *                       type: object
- *                       nullable: true
  *                       description: Convenience snapshot object for frontend display.
  *                       properties:
  *                         name:
@@ -94,14 +93,7 @@ const router = Router();
  *                           type: object
  *                           nullable: true
  *                     product:
- *                       allOf:
- *                         - $ref: '#/components/schemas/Product'
- *                         - type: object
- *                           properties:
- *                             variant:
- *                               $ref: '#/components/schemas/ProductVariant'
- *                               nullable: true
- *                               description: Live variant row linked by the refunded order item. Use variant snapshot fields on orderItem for historical display.
+ *                       $ref: '#/components/schemas/Product'
  *                     delivery:
  *                       type: object
  *                       nullable: true
