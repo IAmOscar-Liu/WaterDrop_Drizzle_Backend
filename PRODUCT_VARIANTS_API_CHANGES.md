@@ -4,7 +4,7 @@
 
 This document lists API contract changes for product variants. It is a frontend handoff for both admin web and the Flutter app.
 
-Phase 3 and Phase 4 code support has been implemented. Phase 5 schema constraints are implemented on the constraints branch; generated database migrations still need to be run per environment.
+Phase 3 and Phase 4 code support has been implemented. Phase 5 schema constraints are implemented on the constraints branch, and the constraint migration has been run locally. Run each phase migration separately per target environment before merging the next branch.
 
 ## Shared Response Schemas
 
@@ -785,5 +785,5 @@ product: {
 - Public product UI should disable or hide variants where `stock - reserve <= 0`.
 - Admin product UI should show inactive variants and use status changes instead of delete actions.
 - Order/refund history UI should prefer `variant*AtSale` snapshots over live variant values.
-- Phase 5 database constraints are still pending in deployed databases until migrations are generated and run. Until the old cart/order unique constraints are replaced, adding two different variants of the same product to one cart/order may still be blocked by the database.
+- Phase 5 database constraints have been run locally. For development/staging/production rollout, merge `feat/migration/backfill` and run its migration/backfill first, then merge `feat/constraints` and run the constraint migration, then merge `feat/cleanup` and run the cleanup migration.
 - Chatroom migration note: after adding nullable `chat_rooms.productVariantId`, rerun `src/back-fill.ts`. It fills product-specific chat rooms from the matching order item variant when possible, otherwise from the product default variant. General support rooms remain null.
