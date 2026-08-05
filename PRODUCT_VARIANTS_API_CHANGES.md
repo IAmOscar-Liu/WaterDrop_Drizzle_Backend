@@ -266,6 +266,7 @@ Response body:
 Request query:
 
 - No required variant query changes.
+- `merchantTradeNo?: string` filters by either order or delivery merchant trade number prefix when at least 4 characters are provided.
 - Optional future filter:
   - `variantId?: string`
 
