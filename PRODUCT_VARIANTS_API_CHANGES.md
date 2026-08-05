@@ -270,6 +270,7 @@ Response body:
 Request query:
 
 - No required variant query changes.
+- `merchantTradeNo?: string` filters by either order or delivery merchant trade number prefix when at least 4 characters are provided.
 - Optional future filter:
   - `variantId?: string`
 
@@ -326,9 +327,6 @@ Response body change:
 refunds: Array<RefundItem & {
   orderItem: OrderItem & {
     product: PurchasedProductSummary;
-    variantNameAtSale: string | null;
-    variantSkuAtSale: string | null;
-    variantOptionValuesAtSale: Record<string, unknown> | null;
     variantAtSale: {
       name: string | null;
       sku: string | null;
@@ -431,6 +429,8 @@ productIds: Array<{
 
 Response body change:
 
+- `GET /api/admin/delivery/list?merchantTradeNo=xxxx` replaces `GET /api/admin/delivery/merchant-trade-no/:merchantTradeNo`.
+- `merchantTradeNo` on delivery list matches delivery `merchantTradeNo` only. It does not match order `merchantTradeNo`.
 - Delivery list `items` include `variantAtSale`.
 - Delivery detail `items` include `variantAtSale` for historical display and do not include `product.variant`.
 

@@ -7,7 +7,6 @@ import { createNotification } from "../repository/notification";
 import {
   createOrder,
   getOrderById,
-  getOrdersByMerchantTradeNo,
   listAdminOrders,
   ListAdminOrdersParams,
   listOrders,
@@ -55,20 +54,6 @@ class OrderService {
           message: "order not found",
         };
       }
-    } catch (error) {
-      return handleServiceError(error);
-    }
-  }
-
-  async getOrdersByMerchantTradeNo(
-    merchantTradeNo: string,
-    options?: { matchPrefix: boolean },
-  ): Promise<
-    ServiceResponse<Awaited<ReturnType<typeof getOrdersByMerchantTradeNo>>>
-  > {
-    try {
-      const orders = await getOrdersByMerchantTradeNo(merchantTradeNo, options);
-      return { success: true, data: orders };
     } catch (error) {
       return handleServiceError(error);
     }

@@ -32,9 +32,6 @@ export const deliveryValidation = {
   deliveryIdParams: z.object({
     deliveryId: uuid,
   }),
-  merchantTradeNoParams: z.object({
-    merchantTradeNo: z.string().min(4),
-  }),
   updateBody: requireAtLeastOneField(
     z.object({
       status: deliveryStatus.optional(),
