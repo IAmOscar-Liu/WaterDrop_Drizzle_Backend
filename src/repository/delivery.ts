@@ -38,6 +38,9 @@ function withVariantAtSaleDisplay<T extends DeliveryItemWithProductVariant>(
   const {
     product,
     variant: _variant,
+    variantNameAtSale,
+    variantSkuAtSale,
+    variantOptionValuesAtSale,
     ...rest
   } = item;
   const productWithoutVariant = product
@@ -54,9 +57,9 @@ function withVariantAtSaleDisplay<T extends DeliveryItemWithProductVariant>(
     ...rest,
     product: productWithoutVariant,
     variantAtSale: {
-      name: item.variantNameAtSale,
-      sku: item.variantSkuAtSale,
-      optionValues: item.variantOptionValuesAtSale,
+      name: variantNameAtSale,
+      sku: variantSkuAtSale,
+      optionValues: variantOptionValuesAtSale,
     },
   };
 }
@@ -313,47 +316,6 @@ export async function getDeliveryByMerchantTradeNo(merchantTradeNo: string) {
   });
 }
 
-export async function getDeliveriesByMerchantTradeNo(
-  merchantTradeNo: string,
-  options?: { matchPrefix: boolean },
-) {
-  const { matchPrefix = false } = options ?? {};
-
-  if (matchPrefix && merchantTradeNo.length < 4) {
-    throw new CustomError(
-      "Merchant trade no must be at least 4 characters for prefix match",
-      400,
-    );
-  }
-
-  const whereClause = matchPrefix
-    ? like(schema.deliveryTable.merchantTradeNo, `${merchantTradeNo}%`)
-    : eq(schema.deliveryTable.merchantTradeNo, merchantTradeNo);
-
-  return db.query.deliveryTable.findMany({
-    where: whereClause,
-    with: {
-      order: {
-        with: {
-          user: {
-            columns: {
-              id: true,
-              name: true,
-              email: true,
-            },
-          },
-        },
-      },
-      items: true,
-    },
-  }).then((deliveries) =>
-    deliveries.map((delivery) => ({
-      ...delivery,
-      items: delivery.items.map(withVariantAtSaleDisplay),
-    })),
-  );
-}
-
 export interface ListAdminDeliveriesParams extends PaginationParams {
   accountId: string;
   merchantTradeNo?: string;
@@ -398,17 +360,8 @@ export async function listAdminDeliveries({
 
   const merchantTradeNoPrefix = merchantTradeNo?.trim();
   if (merchantTradeNoPrefix && merchantTradeNoPrefix.length >= 4) {
-    const orderIdsSubquery = db
-      .select({ id: schema.orderTable.id })
-      .from(schema.orderTable)
-      .where(
-        like(schema.orderTable.merchantTradeNo, `${merchantTradeNoPrefix}%`),
-      );
     conditions.push(
-      or(
-        like(schema.deliveryTable.merchantTradeNo, `${merchantTradeNoPrefix}%`),
-        inArray(schema.deliveryTable.orderId, orderIdsSubquery),
-      ),
+      like(schema.deliveryTable.merchantTradeNo, `${merchantTradeNoPrefix}%`),
     );
   }
 

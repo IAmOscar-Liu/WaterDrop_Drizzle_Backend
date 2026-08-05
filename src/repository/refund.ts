@@ -74,15 +74,21 @@ function formatRefundRow(
   bankNameByCode = getBankNameByCodeMap(),
 ) {
   const bankCode = row.user.bankCode?.trim().padStart(3, "0");
+  const {
+    variantNameAtSale,
+    variantSkuAtSale,
+    variantOptionValuesAtSale,
+    ...orderItem
+  } = row.orderItem;
 
   return {
     ...row.refundItem,
     orderItem: {
-      ...row.orderItem,
+      ...orderItem,
       variantAtSale: {
-        name: row.orderItem.variantNameAtSale,
-        sku: row.orderItem.variantSkuAtSale,
-        optionValues: row.orderItem.variantOptionValuesAtSale,
+        name: variantNameAtSale,
+        sku: variantSkuAtSale,
+        optionValues: variantOptionValuesAtSale,
       },
       product: row.product,
       delivery: row.delivery,

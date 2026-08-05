@@ -9,7 +9,6 @@ import { sendDeliveryNotification } from "../lib/polling";
 import {
   ListAdminDeliveriesParams,
   createDelivery,
-  getDeliveriesByMerchantTradeNo,
   getDeliveryById,
   listAdminDeliveries,
   updateDelivery,
@@ -46,23 +45,6 @@ class DeliveryService {
           message: "delivery not found",
         };
       }
-    } catch (error) {
-      return handleServiceError(error);
-    }
-  }
-
-  async getDeliveriesByMerchantTradeNo(
-    merchantTradeNo: string,
-    options?: { matchPrefix: boolean },
-  ): Promise<
-    ServiceResponse<Awaited<ReturnType<typeof getDeliveriesByMerchantTradeNo>>>
-  > {
-    try {
-      const deliveries = await getDeliveriesByMerchantTradeNo(
-        merchantTradeNo,
-        options,
-      );
-      return { success: true, data: deliveries };
     } catch (error) {
       return handleServiceError(error);
     }

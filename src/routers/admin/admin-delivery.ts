@@ -145,9 +145,24 @@ const router = Router();
  *                           format: email
  *             items:
  *               type: array
- *               description: Delivery list includes order item rows. Each item includes productVariantId and variant snapshot fields from the shared OrderItem schema when present.
+ *               description: Delivery list includes order item rows. Each item includes variantAtSale for historical variant display. Raw variant snapshot fields are omitted.
  *               items:
- *                 $ref: '#/components/schemas/OrderItem'
+ *                 allOf:
+ *                   - $ref: '#/components/schemas/OrderItem'
+ *                   - type: object
+ *                     properties:
+ *                       variantAtSale:
+ *                         type: object
+ *                         properties:
+ *                           name:
+ *                             type: string
+ *                             nullable: true
+ *                           sku:
+ *                             type: string
+ *                             nullable: true
+ *                           optionValues:
+ *                             type: object
+ *                             nullable: true
  *
  *     ListDeliveriesResponse:
  *       type: object
@@ -218,7 +233,7 @@ const router = Router();
  *           default: 10
  *       - in: query
  *         name: merchantTradeNo
- *         description: Filters by delivery or order merchant trade number prefix when at least 4 characters are provided. Shorter values are ignored.
+ *         description: Filters by delivery merchant trade number prefix only when at least 4 characters are provided. Shorter values are ignored.
  *         schema:
  *           type: string
  *       - in: query
@@ -298,43 +313,6 @@ router.get(
   isAuth,
   validateZod({ params: adminValidation.delivery.deliveryIdParams }),
   DeliveryController.getDelivery,
-);
-
-/**
- * @swagger
- * /api/admin/delivery/merchant-trade-no/{merchantTradeNo}:
- *   get:
- *     tags: [Delivery]
- *     summary: Get deliveries by merchant trade number
- *     description: Search by merchant trade number prefix. Requires at least 4 characters. Matches from the beginning and returns a list.
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: merchantTradeNo
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       '200':
- *         description: The requested deliveries.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 data:
- *                   type: array
- *                   items:
- *                     $ref: '#/components/schemas/DeliveryWithItems'
- */
-router.get(
-  "/merchant-trade-no/:merchantTradeNo",
-  isAuth,
-  validateZod({ params: adminValidation.delivery.merchantTradeNoParams }),
-  DeliveryController.getDeliveriesByMerchantTradeNo,
 );
 
 /**
