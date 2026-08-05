@@ -379,6 +379,27 @@
       "when": 1782283168453,
       "tag": "0053_lonely_monster_badoon",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1785945740867,
+      "tag": "0054_foamy_vance_astro",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1785946185865,
+      "tag": "0055_dry_iron_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1785946482455,
+      "tag": "0056_dazzling_jackal",
+      "breakpoints": true
     }
   ]
 }
