@@ -407,7 +407,7 @@ class EcPayService {
       shippingCost,
       shippingCostDeduction,
     }: {
-      products: Array<{ productIds: string; variantIds: string }>;
+      products: Array<{ productId: string; variantId: string }>;
       [key: string]: any;
     },
     options?: { throwError?: boolean },
@@ -436,8 +436,8 @@ class EcPayService {
     const merchantTradeNo = this.generateTradeNo();
 
     // let pIds: string[] = [];
-    const productIds = products.map((p) => p.productIds);
-    const variantIds = products.map((p) => p.variantIds);
+    const productIds = products.map((p) => p.productId);
+    const variantIds = products.map((p) => p.variantId);
 
     if (
       productIds.length !== variantIds.length ||
@@ -446,7 +446,9 @@ class EcPayService {
     ) {
       console.error("products must include paired productIds and variantIds");
       if (options?.throwError)
-        throw new Error("products must include paired productIds and variantIds");
+        throw new Error(
+          "products must include paired productIds and variantIds",
+        );
       return null;
     }
 
