@@ -42,6 +42,7 @@ export type RefundCreatedChatMessageInput = {
   accountId: string;
   userId: string;
   productId: string;
+  productVariantId: string;
   orderId: string;
   senderType?: schema.ChatMessage["senderType"];
   content: string;
@@ -52,6 +53,7 @@ function formatRefundRow(
     refundItem: schema.RefundItem;
     orderItem: schema.OrderItem;
     product: schema.Product;
+    variant: schema.ProductVariant | null;
     delivery: {
       id: string;
       merchantTradeNo: string | null;
@@ -78,7 +80,15 @@ function formatRefundRow(
     ...row.refundItem,
     orderItem: {
       ...row.orderItem,
-      product: row.product,
+      variantAtSale: {
+        name: row.orderItem.variantNameAtSale,
+        sku: row.orderItem.variantSkuAtSale,
+        optionValues: row.orderItem.variantOptionValuesAtSale,
+      },
+      product: {
+        ...row.product,
+        variant: row.variant,
+      },
       delivery: row.delivery,
       order: {
         ...row.order,
@@ -129,6 +139,7 @@ function getRefundBaseQuery() {
       refundItem: schema.refundItemTable,
       orderItem: schema.orderItemTable,
       product: schema.productTable,
+      variant: schema.productVariantTable,
       delivery: {
         id: schema.deliveryTable.id,
         merchantTradeNo: schema.deliveryTable.merchantTradeNo,
@@ -155,6 +166,10 @@ function getRefundBaseQuery() {
     .innerJoin(
       schema.productTable,
       eq(schema.orderItemTable.productId, schema.productTable.id),
+    )
+    .leftJoin(
+      schema.productVariantTable,
+      eq(schema.orderItemTable.productVariantId, schema.productVariantTable.id),
     )
     .leftJoin(
       schema.deliveryTable,
@@ -529,6 +544,12 @@ export async function createRefundWithChatContext(
       .values(refundItem)
       .returning();
 
+    if (item.accountId && !orderItem.productVariantId) {
+      throw new CustomError("Order item productVariantId is required", 400);
+    }
+
+    const productVariantId = orderItem.productVariantId;
+
     return {
       refundItem: newRefundItem,
       chatMessageInput: item.accountId
@@ -536,6 +557,7 @@ export async function createRefundWithChatContext(
             accountId: item.accountId,
             userId: item.userId ?? order.userId,
             productId: orderItem.productId,
+            productVariantId: productVariantId!,
             orderId: orderItem.orderId,
             senderType: item.chatSenderType,
             content: formatRefundChatMessage({
@@ -787,6 +809,37 @@ export async function updateRefundItemStatus(
         financialUpdates?.quantity ?? refundItem.quantity;
       const effectiveRefundAmount =
         financialUpdates?.refundAmount ?? refundItem.refundAmount ?? 0;
+
+      if (!context.orderItem.productVariantId) {
+        throw new CustomError("Order item productVariantId is required", 400);
+      }
+
+      const [variant] = await tx
+        .select()
+        .from(schema.productVariantTable)
+        .where(eq(schema.productVariantTable.id, context.orderItem.productVariantId))
+        .for("update");
+
+      if (!variant || variant.productId !== context.orderItem.productId) {
+        throw new CustomError("Product variant not found", 404);
+      }
+
+      await Promise.all([
+        tx
+          .update(schema.productVariantTable)
+          .set({
+            stock: sql`${schema.productVariantTable.stock} + ${effectiveQuantity}`,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.productVariantTable.id, variant.id)),
+        tx
+          .update(schema.productTable)
+          .set({
+            stock: sql`${schema.productTable.stock} + ${effectiveQuantity}`,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.productTable.id, context.orderItem.productId)),
+      ]);
 
       // 4.3 Calculate what percentage of the order subtotal is being refunded.
       const refundTotal = effectiveQuantity * effectiveRefundAmount;

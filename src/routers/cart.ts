@@ -7,5 +7,10 @@ const router = Router();
 router.get("/list", isAuth, CartController.listCartItems);
 router.post("/item", isAuth, CartController.addToCart);
 router.put("/item/toggle", isAuth, CartController.toggleCartItem);
+router.put(
+  "/item/:cartItemId/variant",
+  isAuth,
+  CartController.updateCartItemVariant,
+);
 
 export default router;

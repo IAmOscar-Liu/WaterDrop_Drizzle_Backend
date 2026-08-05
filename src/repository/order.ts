@@ -22,6 +22,33 @@ import {
   PaginationParams,
 } from "./utils/query";
 
+type OrderItemWithProductVariant = {
+  product?: schema.Product | null;
+  variant?: schema.ProductVariant | null;
+  variantNameAtSale?: string | null;
+  variantSkuAtSale?: string | null;
+  variantOptionValuesAtSale?: unknown;
+};
+
+function withVariantNestedInProduct<T extends OrderItemWithProductVariant>(
+  item: T,
+) {
+  return {
+    ...item,
+    product: item.product
+      ? {
+          ...item.product,
+          variant: item.variant ?? null,
+        }
+      : item.product,
+    variantAtSale: {
+      name: item.variantNameAtSale,
+      sku: item.variantSkuAtSale,
+      optionValues: item.variantOptionValuesAtSale,
+    },
+  };
+}
+
 /**
  * Creates a new order, inserts order items, and updates product reserves.
  * @param orderData The data for the new order.
@@ -46,40 +73,74 @@ export async function createOrder({
   }
 
   return db.transaction(async (tx) => {
-    // check if each item's quantity less or equal to (product.stock - product.reserve)
-    if (items.length > 0) {
-      // 1. Sort product IDs to prevent deadlocks when locking multiple rows
-      const productIds = items.map((item) => item.productId).sort();
+    const variantIds = items.map((item) => item.productVariantId);
 
-      // 2. Fetch products with "FOR UPDATE" lock
-      // This ensures no other transaction can modify these rows until this transaction commits/rollbacks
-      const products = await tx
+    if (variantIds.some((variantId) => !variantId)) {
+      throw new CustomError("productVariantId is required for every item", 400);
+    }
+
+    const requestedQuantityByVariantId = new Map<string, number>();
+    for (const item of items) {
+      requestedQuantityByVariantId.set(
+        item.productVariantId!,
+        (requestedQuantityByVariantId.get(item.productVariantId!) ?? 0) +
+          item.quantity,
+      );
+    }
+
+    const variantMap = new Map<string, schema.ProductVariant>();
+
+    if (items.length > 0) {
+      const sortedVariantIds = [
+        ...new Set(items.map((item) => item.productVariantId!)),
+      ].sort();
+
+      const variants = await tx
         .select()
-        .from(schema.productTable)
-        .where(inArray(schema.productTable.id, productIds))
+        .from(schema.productVariantTable)
+        .where(inArray(schema.productVariantTable.id, sortedVariantIds))
         .for("update");
 
-      const productMap = new Map(products.map((p) => [p.id, p]));
+      variants.forEach((variant) => {
+        variantMap.set(variant.id, variant);
+      });
 
       const errors = [];
       for (const item of items) {
-        const product = productMap.get(item.productId);
-        if (!product) {
+        const variant = variantMap.get(item.productVariantId!);
+        if (!variant || variant.productId !== item.productId) {
           errors.push({
             productId: item.productId,
+            productVariantId: item.productVariantId,
             productName: item.productNameAtSale,
-            reason: "Not found",
+            reason: "Variant not found",
           });
-        } else {
-          if (item.quantity > product.stock - product.reserve) {
-            errors.push({
-              productId: item.productId,
-              productName: item.productNameAtSale,
-              reason: "Insufficient stock",
-              quantity: item.quantity,
-              remaining: product.stock - product.reserve,
-            });
-          }
+          continue;
+        }
+
+        if (variant.status !== "active") {
+          errors.push({
+            productId: item.productId,
+            productVariantId: item.productVariantId,
+            productName: item.productNameAtSale,
+            reason: "Variant inactive",
+          });
+          continue;
+        }
+
+        const requestedQuantity = requestedQuantityByVariantId.get(
+          item.productVariantId!,
+        )!;
+        const remaining = variant.stock - variant.reserve;
+        if (requestedQuantity > remaining) {
+          errors.push({
+            productId: item.productId,
+            productVariantId: item.productVariantId,
+            productName: item.productNameAtSale,
+            reason: "Insufficient stock",
+            quantity: requestedQuantity,
+            remaining,
+          });
         }
       }
 
@@ -97,13 +158,31 @@ export async function createOrder({
       tx.insert(schema.orderItemTable).values(
         items.map((item) => ({
           ...item,
+          variantNameAtSale:
+            item.variantNameAtSale ?? variantMap.get(item.productVariantId!)?.name,
+          variantSkuAtSale:
+            item.variantSkuAtSale ?? variantMap.get(item.productVariantId!)?.sku,
+          variantOptionValuesAtSale:
+            item.variantOptionValuesAtSale ??
+            variantMap.get(item.productVariantId!)?.optionValues,
           pendingQuantity: item.quantity,
           orderId: newOrder.id,
           lineTotal: item.unitPriceAtSale * item.quantity,
         })),
       ),
 
-      // Update each product's reserve
+      // Update each variant's reserve; product reserve is kept in sync during
+      // the transition while product-level stock fields still exist.
+      ...items.map((item) =>
+        tx
+          .update(schema.productVariantTable)
+          .set({
+            reserve: sql`COALESCE(${schema.productVariantTable.reserve}, 0) + ${item.quantity}`,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.productVariantTable.id, item.productVariantId!)),
+      ),
+
       ...items.map((item) =>
         tx
           .update(schema.productTable)
@@ -131,10 +210,18 @@ export async function createOrder({
         items: {
           with: {
             product: true,
+            variant: true,
           },
         },
       },
-    });
+    }).then((order) =>
+      order
+        ? {
+            ...order,
+            items: order.items.map(withVariantNestedInProduct),
+          }
+        : order,
+    );
   });
 }
 
@@ -208,6 +295,10 @@ export async function updateOrderStatus({
       const promises: Promise<any>[] = [];
       if (order.items.length > 0) {
         for (let item of order.items) {
+          if (!item.productVariantId) {
+            throw new CustomError("Order item productVariantId is required", 400);
+          }
+
           if (order.orderStatus === "pending") {
             promises.push(
               tx
@@ -215,11 +306,24 @@ export async function updateOrderStatus({
                 .where(
                   and(
                     eq(schema.cartItemTable.userId, order.userId),
-                    eq(schema.cartItemTable.productId, item.productId),
+                    eq(
+                      schema.cartItemTable.productVariantId,
+                      item.productVariantId,
+                    ),
                   ),
                 ),
             );
           }
+          promises.push(
+            tx
+              .update(schema.productVariantTable)
+              .set({
+                reserve: sql`COALESCE(${schema.productVariantTable.reserve}, 0) - ${item.pendingQuantity}`,
+                stock: sql`COALESCE(${schema.productVariantTable.stock}, 0) - ${item.pendingQuantity}`,
+                updatedAt: new Date(),
+              })
+              .where(eq(schema.productVariantTable.id, item.productVariantId)),
+          );
           promises.push(
             tx
               .update(schema.productTable)
@@ -302,13 +406,20 @@ export async function updateOrderStatus({
       const promises: Promise<any>[] = [];
       if (order.items.length > 0) {
         for (let item of order.items) {
+          if (!item.productVariantId) {
+            throw new CustomError("Order item productVariantId is required", 400);
+          }
+
           promises.push(
             tx
               .delete(schema.cartItemTable)
               .where(
                 and(
                   eq(schema.cartItemTable.userId, order.userId),
-                  eq(schema.cartItemTable.productId, item.productId),
+                  eq(
+                    schema.cartItemTable.productVariantId,
+                    item.productVariantId,
+                  ),
                 ),
               ),
           );
@@ -375,6 +486,19 @@ export async function updateOrderStatus({
       const promises: Promise<any>[] = [];
       if (order.items.length > 0) {
         for (let item of order.items) {
+          if (!item.productVariantId) {
+            throw new CustomError("Order item productVariantId is required", 400);
+          }
+
+          promises.push(
+            tx
+              .update(schema.productVariantTable)
+              .set({
+                reserve: sql`COALESCE(${schema.productVariantTable.reserve}, 0) - ${item.pendingQuantity}`,
+                updatedAt: new Date(),
+              })
+              .where(eq(schema.productVariantTable.id, item.productVariantId)),
+          );
           promises.push(
             tx
               .update(schema.productTable)
@@ -455,11 +579,19 @@ export async function updateOrderStatus({
         items: {
           with: {
             product: true,
+            variant: true,
           },
         },
         deliveries: true,
       },
-    });
+    }).then((order) =>
+      order
+        ? {
+            ...order,
+            items: order.items.map(withVariantNestedInProduct),
+          }
+        : order,
+    );
   });
 }
 
@@ -650,7 +782,11 @@ export async function listAdminOrders({
         columns: {
           id: true,
           productId: true,
+          productVariantId: true,
           productNameAtSale: true,
+          variantNameAtSale: true,
+          variantSkuAtSale: true,
+          variantOptionValuesAtSale: true,
         },
       },
       user: {
@@ -678,7 +814,10 @@ export async function listAdminOrders({
   });
 
   return {
-    orders,
+    orders: orders.map((order) => ({
+      ...order,
+      items: order.items.map(withVariantNestedInProduct),
+    })),
     total,
     page: pagination.page,
     limit: pagination.limit,
@@ -757,6 +896,7 @@ export async function getOrderById(orderId: string) {
       items: {
         with: {
           product: true,
+          variant: true,
           refundItems: {
             orderBy: (refundItems, { desc }) => [desc(refundItems.createdAt)],
           },
@@ -768,7 +908,11 @@ export async function getOrderById(orderId: string) {
             columns: {
               id: true,
               productId: true,
+              productVariantId: true,
               productNameAtSale: true,
+              variantNameAtSale: true,
+              variantSkuAtSale: true,
+              variantOptionValuesAtSale: true,
             },
           },
           logs: {
@@ -802,9 +946,10 @@ export async function getOrderById(orderId: string) {
       const delivery = item.deliveryId
         ? deliveryById.get(item.deliveryId)
         : undefined;
+      const itemWithNestedVariant = withVariantNestedInProduct(item);
 
       return {
-        ...item,
+        ...itemWithNestedVariant,
         canRefund: canRefundOrderItem(order, delivery, item),
         remainingRefundQuantity: getRemainingRefundQuantity(
           order,
@@ -839,6 +984,7 @@ export async function getOrdersByMerchantTradeNo(
       items: {
         with: {
           product: true,
+          variant: true,
         },
       },
       deliveries: {
@@ -847,7 +993,11 @@ export async function getOrdersByMerchantTradeNo(
             columns: {
               id: true,
               productId: true,
+              productVariantId: true,
               productNameAtSale: true,
+              variantNameAtSale: true,
+              variantSkuAtSale: true,
+              variantOptionValuesAtSale: true,
             },
           },
         },
@@ -860,13 +1010,19 @@ export async function getOrdersByMerchantTradeNo(
         },
       },
     },
-  });
+  }).then((orders) =>
+    orders.map((order) => ({
+      ...order,
+      items: order.items.map(withVariantNestedInProduct),
+    })),
+  );
 }
 
 export async function createMerchantTrade({
   merchantTradeNo,
   orderId,
   productIds,
+  variantIds,
   cvsStoreInfo,
   shippingCost,
   shippingCostDeduction,
@@ -874,6 +1030,7 @@ export async function createMerchantTrade({
   merchantTradeNo: string;
   orderId: string;
   productIds: string[];
+  variantIds: string[];
   cvsStoreInfo: Record<string, string>;
   shippingCost?: number;
   shippingCostDeduction?: number;
@@ -884,6 +1041,7 @@ export async function createMerchantTrade({
       merchantTradeNo,
       orderId,
       productIds,
+      variantIds,
       cvsStoreInfo,
       shippingCost,
       shippingCostDeduction,

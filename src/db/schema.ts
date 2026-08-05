@@ -152,6 +152,9 @@ export const chatRoomTable = pgTable(
       .references(() => userTable.id),
     accountId: uuid("account_id").references(() => accountTable.id),
     productId: uuid("product_id").references(() => productTable.id),
+    productVariantId: uuid("product_variant_id").references(
+      () => productVariantTable.id,
+    ),
     orderId: uuid("order_id").references(() => orderTable.id),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
@@ -167,6 +170,7 @@ export const chatRoomTable = pgTable(
       t.userId,
       t.accountId,
       t.productId,
+      t.productVariantId,
       t.orderId,
     ),
   }),
@@ -377,6 +381,38 @@ export const productTable = pgTable("products", {
     .notNull(),
 });
 
+export const productVariantTable = pgTable(
+  "product_variants",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => productTable.id, { onDelete: "cascade" }),
+    name: text("name"),
+    sku: text("sku"),
+    optionValues: jsonb("option_values").notNull().default({}),
+    stock: integer("stock").notNull(),
+    reserve: integer("reserve").notNull().default(0),
+    sortOrder: integer("sort_order").notNull().default(0),
+    status: productStatusEnum("status").default("active").notNull(),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (t) => ({
+    productIdIdx: index("product_variants_product_id_idx").on(t.productId),
+    productSkuUnique: uniqueIndex("product_variants_product_sku_uk").on(
+      t.productId,
+      t.sku,
+    ),
+  }),
+);
+
 export const advertisementTable = pgTable("advertisements", {
   id: uuid("id").defaultRandom().primaryKey(),
   productId: uuid("product_id")
@@ -446,6 +482,9 @@ export const cartItemTable = pgTable(
     productId: uuid("product_id")
       .notNull()
       .references(() => productTable.id),
+    productVariantId: uuid("product_variant_id").references(
+      () => productVariantTable.id,
+    ),
     checked: boolean("checked").default(true).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
@@ -456,9 +495,9 @@ export const cartItemTable = pgTable(
       .notNull(),
   },
   (t) => ({
-    userProductUnique: uniqueIndex("cart_items_user_product_uk").on(
+    userProductVariantUnique: uniqueIndex("cart_items_user_product_variant_uk").on(
       t.userId,
-      t.productId,
+      t.productVariantId,
     ),
   }),
 );
@@ -560,6 +599,9 @@ export const orderItemTable = pgTable(
     productId: uuid("product_id")
       .notNull()
       .references(() => productTable.id),
+    productVariantId: uuid("product_variant_id").references(
+      () => productVariantTable.id,
+    ),
     deliveryId: uuid("delivery_id").references(() => deliveryTable.id),
 
     quantity: integer("quantity").notNull(),
@@ -571,6 +613,9 @@ export const orderItemTable = pgTable(
 
     // 2. Store other static product details for historical accuracy (optional but recommended):
     productNameAtSale: text("product_name_at_sale").notNull(),
+    variantNameAtSale: text("variant_name_at_sale"),
+    variantSkuAtSale: text("variant_sku_at_sale"),
+    variantOptionValuesAtSale: jsonb("variant_option_values_at_sale"),
 
     // 3. Calculated total for the line item:
     lineTotal: doublePrecision("line_total").notNull(),
@@ -674,6 +719,7 @@ export const merchantTradeTable = pgTable("merchant_trades", {
     .references(() => orderTable.id, { onDelete: "cascade" }),
   merchantTradeNo: text("merchant_trade_no").notNull(),
   productIds: uuid("product_ids").array().notNull(),
+  variantIds: uuid("variant_ids").array().default([]).notNull(),
   cvsStoreInfo: jsonb("cvs_store_info"),
   shippingCost: doublePrecision("shipping_cost").default(0),
   shippingCostDeduction: doublePrecision("shipping_cost_deduction").default(0),
@@ -904,6 +950,10 @@ export const cartItemRelations = relations(cartItemTable, ({ one }) => ({
     fields: [cartItemTable.productId],
     references: [productTable.id],
   }),
+  variant: one(productVariantTable, {
+    fields: [cartItemTable.productVariantId],
+    references: [productVariantTable.id],
+  }),
 }));
 
 export const chatRoomRelations = relations(chatRoomTable, ({ one, many }) => ({
@@ -918,6 +968,10 @@ export const chatRoomRelations = relations(chatRoomTable, ({ one, many }) => ({
   product: one(productTable, {
     fields: [chatRoomTable.productId],
     references: [productTable.id],
+  }),
+  variant: one(productVariantTable, {
+    fields: [chatRoomTable.productVariantId],
+    references: [productVariantTable.id],
   }),
   order: one(orderTable, {
     fields: [chatRoomTable.orderId],
@@ -961,7 +1015,20 @@ export const productRelations = relations(productTable, ({ one, many }) => ({
   chatRooms: many(chatRoomTable),
   collections: many(collectionTable),
   orderItems: many(orderItemTable),
+  variants: many(productVariantTable),
 }));
+
+export const productVariantRelations = relations(
+  productVariantTable,
+  ({ one, many }) => ({
+    product: one(productTable, {
+      fields: [productVariantTable.productId],
+      references: [productTable.id],
+    }),
+    cartItems: many(cartItemTable),
+    orderItems: many(orderItemTable),
+  }),
+);
 
 export const advertisementRelations = relations(
   advertisementTable,
@@ -1076,6 +1143,10 @@ export const orderItemRelations = relations(
       fields: [orderItemTable.productId],
       references: [productTable.id],
     }),
+    variant: one(productVariantTable, {
+      fields: [orderItemTable.productVariantId],
+      references: [productVariantTable.id],
+    }),
     refundItems: many(refundItemTable),
   }),
 );
@@ -1155,6 +1226,9 @@ export type NewCategory = typeof categoryTable.$inferInsert;
 
 export type Product = typeof productTable.$inferSelect;
 export type NewProduct = typeof productTable.$inferInsert;
+
+export type ProductVariant = typeof productVariantTable.$inferSelect;
+export type NewProductVariant = typeof productVariantTable.$inferInsert;
 
 export type Advertisement = typeof advertisementTable.$inferSelect;
 export type NewAdvertisement = typeof advertisementTable.$inferInsert;

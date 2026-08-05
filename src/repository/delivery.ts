@@ -27,9 +27,33 @@ import {
   PaginationParams,
 } from "./utils/query";
 
+type DeliveryItemWithProductVariant = schema.OrderItem & {
+  product?: schema.Product | null;
+  variant?: schema.ProductVariant | null;
+};
+
+function withVariantNestedInProduct<T extends DeliveryItemWithProductVariant>(
+  item: T,
+) {
+  return {
+    ...item,
+    product: item.product
+      ? {
+          ...item.product,
+          variant: item.variant ?? null,
+        }
+      : item.product,
+    variantAtSale: {
+      name: item.variantNameAtSale,
+      sku: item.variantSkuAtSale,
+      optionValues: item.variantOptionValuesAtSale,
+    },
+  };
+}
+
 export async function createDelivery(
   deliveryData: schema.NewDelivery,
-  productIds?: string[],
+  products?: { productId: string; variantId: string }[],
 ) {
   return db.transaction(async (tx) => {
     const [newDelivery] = await tx
@@ -46,7 +70,20 @@ export async function createDelivery(
       });
     }
 
-    if (productIds && productIds.length > 0) {
+    if (products && products.length > 0) {
+      if (
+        products.some((product) => !product.productId || !product.variantId)
+      ) {
+        throw new CustomError("productId and variantId are required", 400);
+      }
+
+      const productVariantConditions = products.map((product) =>
+        and(
+          eq(schema.orderItemTable.productId, product.productId),
+          eq(schema.orderItemTable.productVariantId, product.variantId),
+        ),
+      );
+
       await tx
         .update(schema.orderItemTable)
         .set({
@@ -56,7 +93,7 @@ export async function createDelivery(
         .where(
           and(
             eq(schema.orderItemTable.orderId, newDelivery.orderId),
-            inArray(schema.orderItemTable.productId, productIds),
+            or(...productVariantConditions),
           ),
         );
     }
@@ -228,6 +265,7 @@ export async function getDeliveryById(deliveryId: string) {
       items: {
         with: {
           product: true,
+          variant: true,
           refundItems: {
             orderBy: (refundItems, { desc }) => [desc(refundItems.createdAt)],
           },
@@ -247,11 +285,15 @@ export async function getDeliveryById(deliveryId: string) {
   // refund.canRefund for each item and triggering duplicate queries.
   return {
     ...delivery,
-    items: delivery.items.map((item) => ({
-      ...item,
-      canRefund: canRefundDeliveryItem(delivery, item),
-      remainingRefundQuantity: getRemainingRefundQuantity(delivery, item),
-    })),
+    items: delivery.items.map((item) => {
+      const itemWithNestedVariant = withVariantNestedInProduct(item);
+
+      return {
+        ...itemWithNestedVariant,
+        canRefund: canRefundDeliveryItem(delivery, item),
+        remainingRefundQuantity: getRemainingRefundQuantity(delivery, item),
+      };
+    }),
   };
 }
 
@@ -294,7 +336,12 @@ export async function getDeliveriesByMerchantTradeNo(
       },
       items: true,
     },
-  });
+  }).then((deliveries) =>
+    deliveries.map((delivery) => ({
+      ...delivery,
+      items: delivery.items.map(withVariantNestedInProduct),
+    })),
+  );
 }
 
 export interface ListAdminDeliveriesParams extends PaginationParams {
@@ -376,7 +423,7 @@ export async function listAdminDeliveries({
   const total = totalResult[0].total;
   const totalPages = getTotalPages(total, pagination.limit);
 
-  const deliveries = await db.query.deliveryTable.findMany({
+  const deliveriesData = await db.query.deliveryTable.findMany({
     where: compactConditions(conditions),
     limit: pagination.limit,
     offset: pagination.offset,
@@ -396,6 +443,10 @@ export async function listAdminDeliveries({
     },
     orderBy: (deliveries, { desc }) => [desc(deliveries.createdAt)],
   });
+  const deliveries = deliveriesData.map((delivery) => ({
+    ...delivery,
+    items: delivery.items.map(withVariantNestedInProduct),
+  }));
 
   return {
     deliveries,

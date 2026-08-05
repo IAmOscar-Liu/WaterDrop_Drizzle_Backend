@@ -32,7 +32,7 @@ router.post(
   EcPayController.handleTestExpressClientReply,
 );
 
-router.get("/express/create", EcPayController.createExpress);
+// router.get("/express/create", EcPayController.createExpress);
 router.post("/express/server-reply", EcPayController.handleExpressServerReply);
 router.post("/express/client-reply", EcPayController.handleExpressClientReply);
 

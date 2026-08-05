@@ -2,7 +2,6 @@ import {
   and,
   count,
   eq,
-  gt,
   gte,
   ilike,
   inArray,
@@ -24,6 +23,122 @@ import {
   getTotalPages,
   PaginationParams,
 } from "./utils/query";
+
+export type ProductVariantWriteInput = {
+  id?: string;
+  name?: string | null;
+  sku?: string | null;
+  optionValues?: Record<string, unknown>;
+  stock?: number;
+  sortOrder?: number;
+  status?: schema.NewProductVariant["status"];
+  metadata?: Record<string, unknown> | null;
+};
+
+type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+const activeVariantAvailabilityCondition = sql<boolean>`exists (
+  select 1 from ${schema.productVariantTable}
+  where ${schema.productVariantTable.productId} = ${schema.productTable.id}
+    and ${schema.productVariantTable.status} = 'active'
+    and ${schema.productVariantTable.stock} > ${schema.productVariantTable.reserve}
+)`;
+
+function withAggregateProductInventory<
+  T extends schema.Product & { variants?: schema.ProductVariant[] },
+>(product: T) {
+  const activeVariants = product.variants?.filter(
+    (variant) => variant.status === "active",
+  );
+  const variantsForAggregate = activeVariants?.length
+    ? activeVariants
+    : (product.variants ?? []);
+  const stock = variantsForAggregate.reduce(
+    (total, variant) => total + variant.stock,
+    0,
+  );
+  const reserve = variantsForAggregate.reduce(
+    (total, variant) => total + variant.reserve,
+    0,
+  );
+
+  return {
+    ...product,
+    stock,
+    reserve,
+    availableStock: stock - reserve,
+    variants: product.variants?.map((variant) => ({
+      ...variant,
+      availableStock: variant.stock - variant.reserve,
+    })),
+  };
+}
+
+async function syncProductInventoryWithVariants(
+  tx: DbTransaction,
+  productId: string,
+) {
+  await tx
+    .update(schema.productTable)
+    .set({
+      stock: sql`(
+        select coalesce(sum(${schema.productVariantTable.stock}), 0)::int
+        from ${schema.productVariantTable}
+        where ${schema.productVariantTable.productId} = ${productId}
+          and ${schema.productVariantTable.status} = 'active'
+      )`,
+      reserve: sql`(
+        select coalesce(sum(${schema.productVariantTable.reserve}), 0)::int
+        from ${schema.productVariantTable}
+        where ${schema.productVariantTable.productId} = ${productId}
+          and ${schema.productVariantTable.status} = 'active'
+      )`,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.productTable.id, productId));
+}
+
+function buildCreateVariantValues(
+  productId: string,
+  variant: ProductVariantWriteInput,
+): schema.NewProductVariant {
+  if (variant.stock === undefined) {
+    throw new CustomError("Variant stock is required", 400);
+  }
+
+  return {
+    productId,
+    name: variant.name ?? null,
+    sku: variant.sku ?? null,
+    optionValues: variant.optionValues ?? {},
+    stock: variant.stock,
+    reserve: 0,
+    sortOrder: variant.sortOrder ?? 0,
+    status: variant.status ?? "active",
+    metadata: variant.metadata ?? null,
+  };
+}
+
+function hasVariantName(variant: Pick<ProductVariantWriteInput, "name">) {
+  return typeof variant.name === "string" && variant.name.trim().length > 0;
+}
+
+function validateProductVariantMode(
+  variants: Pick<ProductVariantWriteInput, "name">[],
+) {
+  const isCustomVariantMode =
+    variants.length > 1 || variants.some((variant) => hasVariantName(variant));
+
+  if (
+    isCustomVariantMode &&
+    variants.some((variant) => !hasVariantName(variant))
+  ) {
+    throw new CustomError(
+      "Custom variants require every variant to have a name",
+      400,
+    );
+  }
+}
 
 // --- Category Functions ---
 
@@ -53,10 +168,13 @@ export async function listCategory() {
 // --- Product Functions ---
 
 export async function getProductById(productId: string) {
-  return db.query.productTable.findFirst({
+  const product = await db.query.productTable.findFirst({
     where: eq(schema.productTable.id, productId),
     with: {
       advertisement: true,
+      variants: {
+        orderBy: (variants, { asc }) => [asc(variants.sortOrder)],
+      },
       productsToCategories: {
         with: {
           category: true,
@@ -64,13 +182,19 @@ export async function getProductById(productId: string) {
       },
     },
   });
+
+  return product ? withAggregateProductInventory(product) : product;
 }
 
 export async function getProductWithSellerById(productId: string) {
-  return db.query.productTable.findFirst({
+  const product = await db.query.productTable.findFirst({
     where: eq(schema.productTable.id, productId),
     with: {
       advertisement: true,
+      variants: {
+        where: eq(schema.productVariantTable.status, "active"),
+        orderBy: (variants, { asc }) => [asc(variants.sortOrder)],
+      },
       seller: {
         columns: {
           role: true,
@@ -88,6 +212,8 @@ export async function getProductWithSellerById(productId: string) {
       },
     },
   });
+
+  return product ? withAggregateProductInventory(product) : product;
 }
 
 /**
@@ -99,6 +225,7 @@ export async function getProductWithSellerById(productId: string) {
 export async function createProduct(
   productData: schema.NewProduct,
   categoryIds?: string[],
+  variants?: ProductVariantWriteInput[],
 ) {
   // 0. Check product name before creating the product
   if (hasSpecialChars(productData.name)) {
@@ -116,11 +243,36 @@ export async function createProduct(
   }
 
   return db.transaction(async (tx) => {
+    const variantInputs = variants?.length
+      ? variants
+      : [
+          {
+            name: null,
+            sku: productData.sku,
+            optionValues: {},
+            stock: productData.stock,
+            status: productData.status ?? "active",
+          },
+        ];
+    validateProductVariantMode(variantInputs);
+
+    const aggregateStock = variantInputs
+      .filter((variant) => (variant.status ?? "active") === "active")
+      .reduce((total, variant) => total + (variant.stock ?? 0), 0);
+
     // 1. Create the product
     const [newProduct] = await tx
       .insert(schema.productTable)
-      .values(productData)
+      .values({ ...productData, stock: aggregateStock, reserve: 0 })
       .returning();
+
+    await tx
+      .insert(schema.productVariantTable)
+      .values(
+        variantInputs.map((variant) =>
+          buildCreateVariantValues(newProduct.id, variant),
+        ),
+      );
 
     // 2. If category IDs are provided, create the associations
     if (categoryIds && categoryIds.length > 0) {
@@ -143,8 +295,13 @@ export async function createProduct(
             category: true,
           },
         },
+        variants: {
+          orderBy: (variants, { asc }) => [asc(variants.sortOrder)],
+        },
       },
-    });
+    }).then((product) =>
+      product ? withAggregateProductInventory(product) : product,
+    );
   });
 }
 
@@ -159,6 +316,7 @@ export async function updateProduct(
   productId: string,
   productData: Partial<Omit<schema.NewProduct, "id">>,
   categoryIds?: string[],
+  variants?: ProductVariantWriteInput[],
 ) {
   // 0. Check product name before updating the product
   if (productData.name) {
@@ -178,12 +336,20 @@ export async function updateProduct(
   }
 
   return db.transaction(async (tx) => {
+    const stockForDefaultVariant = productData.stock;
+    const { stock: _stock, reserve: _reserve, ...safeProductData } =
+      productData;
+
     // 1. Update the product itself
     const [updatedProduct] = await tx
       .update(schema.productTable)
-      .set({ ...productData, updatedAt: new Date() })
+      .set({ ...safeProductData, updatedAt: new Date() })
       .where(eq(schema.productTable.id, productId))
       .returning();
+
+    if (!updatedProduct) {
+      throw new CustomError("Product not found", 404);
+    }
 
     // 2. If category IDs are provided, update the associations
     if (categoryIds) {
@@ -204,6 +370,82 @@ export async function updateProduct(
       }
     }
 
+    if (variants) {
+      for (const variant of variants) {
+        if (variant.id) {
+          const [existingVariant] = await tx
+            .select()
+            .from(schema.productVariantTable)
+            .where(eq(schema.productVariantTable.id, variant.id))
+            .for("update");
+
+          if (!existingVariant || existingVariant.productId !== productId) {
+            throw new CustomError("Product variant not found", 404);
+          }
+
+          if (
+            variant.stock !== undefined &&
+            variant.stock < existingVariant.reserve
+          ) {
+            throw new CustomError(
+              "Variant stock cannot be lower than reserved quantity",
+              400,
+            );
+          }
+
+          await tx
+            .update(schema.productVariantTable)
+            .set({
+              ...(variant.name !== undefined ? { name: variant.name } : {}),
+              ...(variant.sku !== undefined ? { sku: variant.sku } : {}),
+              ...(variant.optionValues !== undefined
+                ? { optionValues: variant.optionValues }
+                : {}),
+              ...(variant.stock !== undefined ? { stock: variant.stock } : {}),
+              ...(variant.sortOrder !== undefined
+                ? { sortOrder: variant.sortOrder }
+                : {}),
+              ...(variant.status !== undefined ? { status: variant.status } : {}),
+              ...(variant.metadata !== undefined
+                ? { metadata: variant.metadata }
+                : {}),
+              updatedAt: new Date(),
+            })
+            .where(eq(schema.productVariantTable.id, variant.id));
+        } else {
+          await tx
+            .insert(schema.productVariantTable)
+            .values(buildCreateVariantValues(productId, variant));
+        }
+      }
+
+      const persistedVariants = await tx.query.productVariantTable.findMany({
+        where: eq(schema.productVariantTable.productId, productId),
+      });
+      validateProductVariantMode(persistedVariants);
+    } else if (stockForDefaultVariant !== undefined) {
+      const defaultVariant = await tx.query.productVariantTable.findFirst({
+        where: eq(schema.productVariantTable.productId, productId),
+        orderBy: (variants, { asc }) => [asc(variants.sortOrder)],
+      });
+
+      if (defaultVariant) {
+        if (stockForDefaultVariant < defaultVariant.reserve) {
+          throw new CustomError(
+            "Variant stock cannot be lower than reserved quantity",
+            400,
+          );
+        }
+
+        await tx
+          .update(schema.productVariantTable)
+          .set({ stock: stockForDefaultVariant, updatedAt: new Date() })
+          .where(eq(schema.productVariantTable.id, defaultVariant.id));
+      }
+    }
+
+    await syncProductInventoryWithVariants(tx, productId);
+
     // 3. Return the fully updated product with its relations
     // We re-fetch it to get the latest state including the new category relations.
     return tx.query.productTable.findFirst({
@@ -215,8 +457,13 @@ export async function updateProduct(
             category: true,
           },
         },
+        variants: {
+          orderBy: (variants, { asc }) => [asc(variants.sortOrder)],
+        },
       },
-    });
+    }).then((product) =>
+      product ? withAggregateProductInventory(product) : product,
+    );
   });
 }
 
@@ -333,6 +580,9 @@ export async function listAdminProducts({
     where: whereClause,
     with: {
       advertisement: true,
+      variants: {
+        orderBy: (variants, { asc }) => [asc(variants.sortOrder)],
+      },
       productsToCategories: {
         with: {
           category: true,
@@ -345,7 +595,7 @@ export async function listAdminProducts({
   });
 
   return {
-    products,
+    products: products.map(withAggregateProductInventory),
     total,
     page: pagination.page,
     limit: pagination.limit,
@@ -412,7 +662,7 @@ export async function listProducts({
     conditions.push(lte(schema.productTable.price, maxPrice));
   }
 
-  conditions.push(gt(schema.productTable.stock, schema.productTable.reserve));
+  conditions.push(activeVariantAvailabilityCondition);
 
   const whereClause = compactConditions(conditions);
 
@@ -430,6 +680,10 @@ export async function listProducts({
     where: whereClause,
     with: {
       advertisement: true,
+      variants: {
+        where: eq(schema.productVariantTable.status, "active"),
+        orderBy: (variants, { asc }) => [asc(variants.sortOrder)],
+      },
       seller: {
         columns: {
           role: true,
@@ -452,7 +706,7 @@ export async function listProducts({
   });
 
   return {
-    products,
+    products: products.map(withAggregateProductInventory),
     total,
     page: pagination.page,
     limit: pagination.limit,

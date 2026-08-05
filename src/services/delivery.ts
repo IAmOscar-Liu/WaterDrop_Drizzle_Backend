@@ -70,10 +70,10 @@ class DeliveryService {
 
   async createDelivery(
     data: Parameters<typeof createDelivery>[0],
-    productIds?: string[],
+    products?: { productId: string; variantId: string }[],
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof createDelivery>>>> {
     try {
-      const delivery = await createDelivery(data, productIds);
+      const delivery = await createDelivery(data, products);
       return { success: true, data: delivery };
     } catch (error) {
       return handleServiceError(error);

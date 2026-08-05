@@ -1,4 +1,4 @@
-import { SQL, and, count, eq, gt, gte, lte, not, sql } from "drizzle-orm";
+import { SQL, and, count, eq, gte, inArray, lte, not, sql } from "drizzle-orm";
 
 import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
@@ -14,6 +14,13 @@ import {
 // --- Advertisement Functions ---
 
 type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+const activeVariantAvailabilityCondition = sql<boolean>`exists (
+  select 1 from ${schema.productVariantTable}
+  where ${schema.productVariantTable.productId} = ${schema.productTable.id}
+    and ${schema.productVariantTable.status} = 'active'
+    and ${schema.productVariantTable.stock} > ${schema.productVariantTable.reserve}
+)`;
 
 /**
  * Creates a new advertisement for a product.
@@ -46,7 +53,14 @@ export async function getAdvertisement(advertisementId: string) {
   const advertisement = await db.query.advertisementTable.findFirst({
     where: eq(schema.advertisementTable.id, advertisementId),
     with: {
-      product: true,
+      product: {
+        with: {
+          variants: {
+            where: eq(schema.productVariantTable.status, "active"),
+            orderBy: (variants, { asc }) => [asc(variants.sortOrder)],
+          },
+        },
+      },
       stats: true,
       transactions: {
         orderBy: (transactions, { desc }) => [desc(transactions.createdAt)],
@@ -75,7 +89,7 @@ export async function listAdvertisements({
 
   const whereClause = compactConditions([
     eq(schema.productTable.status, "active"),
-    gt(schema.productTable.stock, schema.productTable.reserve),
+    activeVariantAvailabilityCondition,
     eq(schema.advertisementStatsTable.status, "active"),
     gte(schema.advertisementStatsTable.balance, 100),
     userId
@@ -125,9 +139,33 @@ export async function listAdvertisements({
     .offset(pagination.offset)
     .orderBy(() => sql`random()`);
 
+  const productIds = results
+    .map((result) => result.products?.id)
+    .filter((productId): productId is string => Boolean(productId));
+  const variants = productIds.length
+    ? await db.query.productVariantTable.findMany({
+        where: and(
+          inArray(schema.productVariantTable.productId, productIds),
+          eq(schema.productVariantTable.status, "active"),
+        ),
+        orderBy: (variants, { asc }) => [asc(variants.sortOrder)],
+      })
+    : [];
+  const variantsByProductId = new Map<string, typeof variants>();
+  variants.forEach((variant) => {
+    const productVariants = variantsByProductId.get(variant.productId) ?? [];
+    productVariants.push(variant);
+    variantsByProductId.set(variant.productId, productVariants);
+  });
+
   const advertisements = results.map((r) => ({
     ...r.advertisements,
-    product: r.products,
+    product: r.products
+      ? {
+          ...r.products,
+          variants: variantsByProductId.get(r.products.id) ?? [],
+        }
+      : r.products,
   }));
 
   return {
@@ -200,9 +238,33 @@ export async function listAdminAdvertisements({
     .offset(pagination.offset)
     .orderBy(() => [sql`${schema.advertisementTable.createdAt} desc`]);
 
+  const productIds = results
+    .map((result) => result.products?.id)
+    .filter((productId): productId is string => Boolean(productId));
+  const variants = productIds.length
+    ? await db.query.productVariantTable.findMany({
+        where: and(
+          inArray(schema.productVariantTable.productId, productIds),
+          eq(schema.productVariantTable.status, "active"),
+        ),
+        orderBy: (variants, { asc }) => [asc(variants.sortOrder)],
+      })
+    : [];
+  const variantsByProductId = new Map<string, typeof variants>();
+  variants.forEach((variant) => {
+    const productVariants = variantsByProductId.get(variant.productId) ?? [];
+    productVariants.push(variant);
+    variantsByProductId.set(variant.productId, productVariants);
+  });
+
   const advertisements = results.map((r) => ({
     ...r.advertisements,
-    product: r.products,
+    product: r.products
+      ? {
+          ...r.products,
+          variants: variantsByProductId.get(r.products.id) ?? [],
+        }
+      : r.products,
     stats: r.advertisement_stats,
   }));
 

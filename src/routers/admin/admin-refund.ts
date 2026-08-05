@@ -79,8 +79,29 @@ const router = Router();
  *                 - $ref: '#/components/schemas/OrderItem'
  *                 - type: object
  *                   properties:
+ *                     variantAtSale:
+ *                       type: object
+ *                       nullable: true
+ *                       description: Convenience snapshot object for frontend display.
+ *                       properties:
+ *                         name:
+ *                           type: string
+ *                           nullable: true
+ *                         sku:
+ *                           type: string
+ *                           nullable: true
+ *                         optionValues:
+ *                           type: object
+ *                           nullable: true
  *                     product:
- *                       $ref: '#/components/schemas/Product'
+ *                       allOf:
+ *                         - $ref: '#/components/schemas/Product'
+ *                         - type: object
+ *                           properties:
+ *                             variant:
+ *                               $ref: '#/components/schemas/ProductVariant'
+ *                               nullable: true
+ *                               description: Live variant row linked by the refunded order item. Use variant snapshot fields on orderItem for historical display.
  *                     delivery:
  *                       type: object
  *                       nullable: true
@@ -328,6 +349,7 @@ router.post(
  *               status:
  *                 type: string
  *                 enum: [pending, processing, completed, cancelled]
+ *                 description: When status changes to completed, backend restocks the linked orderItem.productVariantId.
  *               quantity:
  *                 type: integer
  *                 description: Refund quantity. Must not exceed the remaining refundable quantity for the order item.

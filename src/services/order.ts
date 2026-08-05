@@ -105,6 +105,10 @@ class OrderService {
     orderPayment?: schema.Order["orderPayment"];
   }): Promise<ServiceResponse<Awaited<ReturnType<typeof createOrder>>>> {
     try {
+      if (items.some((item) => !item.productVariantId)) {
+        throw new CustomError("productVariantId is required for every item", 400);
+      }
+
       const order = await createOrder({
         orderData: {
           userId,

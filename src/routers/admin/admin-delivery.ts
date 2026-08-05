@@ -11,7 +11,7 @@ const router = Router();
  * @swagger
  * tags:
  *   name: Delivery
- *   description: Delivery management for administrators
+ *   description: Delivery management for administrators. Delivery creation is handled by the ECPay/payment success webhook flow, not by an admin create route in this router.
  *
  * components:
  *   schemas:
@@ -45,7 +45,27 @@ const router = Router();
  *                   - type: object
  *                     properties:
  *                       product:
- *                         $ref: '#/components/schemas/Product'
+ *                         allOf:
+ *                           - $ref: '#/components/schemas/Product'
+ *                           - type: object
+ *                             properties:
+ *                               variant:
+ *                                 $ref: '#/components/schemas/ProductVariant'
+ *                                 nullable: true
+ *                         description: Product relation for detail view. The linked live variant is nested under product.variant; historical display data is available on variantAtSale.
+ *                       variantAtSale:
+ *                         type: object
+ *                         nullable: true
+ *                         properties:
+ *                           name:
+ *                             type: string
+ *                             nullable: true
+ *                           sku:
+ *                             type: string
+ *                             nullable: true
+ *                           optionValues:
+ *                             type: object
+ *                             nullable: true
  *                       refundItems:
  *                         type: array
  *                         items:
@@ -132,6 +152,7 @@ const router = Router();
  *                           format: email
  *             items:
  *               type: array
+ *               description: Delivery list includes order item rows. Each item includes productVariantId and variant snapshot fields from the shared OrderItem schema when present.
  *               items:
  *                 $ref: '#/components/schemas/OrderItem'
  *

@@ -17,6 +17,7 @@ async function sendRefundCreatedChatMessage({
   accountId,
   userId,
   productId,
+  productVariantId,
   orderId,
   senderType,
   content,
@@ -25,6 +26,7 @@ async function sendRefundCreatedChatMessage({
     userId,
     accountId,
     productId,
+    productVariantId,
     orderId,
   });
   const chatRoom = Array.isArray(chatRoomResult)

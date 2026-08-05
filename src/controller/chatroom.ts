@@ -6,11 +6,12 @@ import { ListAdminChatRoomsParams } from "../repository/chatroom";
 
 class ChatroomController {
   async findOrCreateChatRoom(req: RequestWithId, res: Response): Promise<any> {
-    const { accountId, productId, orderId } = req.body;
+    const { accountId, productId, productVariantId, orderId } = req.body;
     const result = await chatroomService.findOrCreateChatRoom({
       userId: req.userId ?? "",
       accountId: accountId ? String(accountId) : undefined,
       productId: productId ? String(productId) : undefined,
+      productVariantId: productVariantId ? String(productVariantId) : undefined,
       orderId: orderId ? String(orderId) : undefined,
     });
     sendJsonResponse(res, result);
@@ -74,10 +75,14 @@ class ChatroomController {
   }
 
   async listAdminChatRooms(req: RequestWithId, res: Response): Promise<any> {
-    const { productId, status, page, limit, supportOnly } = req.query;
+    const { productId, productVariantId, status, page, limit, supportOnly } =
+      req.query;
     const result = await chatroomService.listAdminChatRooms({
       accountId: req.userId ?? "",
       productId: productId ? String(productId) : undefined,
+      productVariantId: productVariantId
+        ? String(productVariantId)
+        : undefined,
       status: status
         ? (String(status) as ListAdminChatRoomsParams["status"])
         : undefined,

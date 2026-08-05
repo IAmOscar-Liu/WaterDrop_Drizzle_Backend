@@ -391,7 +391,7 @@ class EcPayService {
     {
       type = "B2C",
       orderId,
-      productIds,
+      products = [],
       LogisticsSubType,
       GoodsName,
       GoodsAmount,
@@ -406,7 +406,10 @@ class EcPayService {
       SenderCellPhone,
       shippingCost,
       shippingCostDeduction,
-    }: Record<string, any>,
+    }: {
+      products: Array<{ productIds: string; variantIds: string }>;
+      [key: string]: any;
+    },
     options?: { throwError?: boolean },
   ) {
     if (
@@ -432,14 +435,22 @@ class EcPayService {
 
     const merchantTradeNo = this.generateTradeNo();
 
-    let pIds: string[] = [];
-    if (Array.isArray(productIds)) {
-      pIds = productIds.filter((p) => typeof p === "string") as string[];
-    } else if (typeof productIds === "string") {
-      pIds = [productIds];
+    // let pIds: string[] = [];
+    const productIds = products.map((p) => p.productIds);
+    const variantIds = products.map((p) => p.variantIds);
+
+    if (
+      productIds.length !== variantIds.length ||
+      productIds.some((productId) => !productId) ||
+      variantIds.some((variantId) => !variantId)
+    ) {
+      console.error("products must include paired productIds and variantIds");
+      if (options?.throwError)
+        throw new Error("products must include paired productIds and variantIds");
+      return null;
     }
 
-    if (pIds.length > 0) {
+    if (products.length > 0) {
       const cvsStoreInfo: Record<string, string> = {};
       cvsStoreInfo["storeID"] = String(ReceiverStoreID);
       if (ReceiverStoreName)
@@ -452,7 +463,8 @@ class EcPayService {
       await createMerchantTrade({
         merchantTradeNo,
         orderId: String(orderId),
-        productIds: pIds,
+        productIds,
+        variantIds,
         cvsStoreInfo,
         shippingCost: shippingCost ? Number(shippingCost) : 0,
         shippingCostDeduction: shippingCostDeduction

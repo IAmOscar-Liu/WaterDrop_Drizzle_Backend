@@ -12,6 +12,35 @@ import {
 
 const productStatus = z.enum(["active", "inactive"]);
 const productType = z.enum(["normal", "refrigeration", "virtual"]);
+const variantName = z.string().trim().min(1).optional().nullable();
+
+const productVariantCreateBody = z.object({
+  name: variantName,
+  sku: z.string().optional().nullable(),
+  optionValues: jsonObject.default({}),
+  stock: z.coerce.number().int().min(0),
+  sortOrder: z.coerce.number().int().min(0).optional(),
+  status: productStatus.optional(),
+  metadata: jsonObject.optional().nullable(),
+});
+
+const productVariantUpdateBody = z
+  .object({
+    id: uuid.optional(),
+    name: variantName,
+    sku: z.string().optional().nullable(),
+    optionValues: jsonObject.optional(),
+    stock: z.coerce.number().int().min(0).optional(),
+    sortOrder: z.coerce.number().int().min(0).optional(),
+    status: productStatus.optional(),
+    metadata: jsonObject.optional().nullable(),
+  })
+  .refine(
+    (variant) =>
+      variant.id ||
+      (variant.optionValues !== undefined && variant.stock !== undefined),
+    "New variants require optionValues and stock",
+  );
 
 const productWriteBody = z.object({
   sellerId: uuid.optional(),
@@ -27,6 +56,7 @@ const productWriteBody = z.object({
   status: productStatus.optional(),
   sku: z.string().optional().nullable(),
   metadata: jsonObject.optional().nullable(),
+  variants: z.array(productVariantUpdateBody).optional(),
 });
 
 export const productValidation = {
@@ -46,8 +76,23 @@ export const productValidation = {
     name: nonEmptyString,
     description: nonEmptyString,
     price: nonNegativeNumber,
-    stock: z.coerce.number().int().min(0),
-  }),
+    variants: z.array(productVariantCreateBody).optional(),
+  })
+    .refine(
+      (body) => body.stock !== undefined || (body.variants?.length ?? 0) > 0,
+      "Either stock or variants is required",
+    )
+    .refine((body) => {
+      const variants = body.variants ?? [];
+      const hasCustomVariant =
+        variants.length > 1 ||
+        variants.some((variant) => !!variant.name?.trim());
+
+      return (
+        !hasCustomVariant ||
+        variants.every((variant) => !!variant.name?.trim())
+      );
+    }, "Custom variants require every variant to have a name"),
   updateBody: requireAtLeastOneField(productWriteBody),
   salesSummaryQuery: dateRangeQuery,
 };

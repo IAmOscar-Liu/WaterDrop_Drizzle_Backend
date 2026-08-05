@@ -56,8 +56,10 @@ const router = Router();
  *           type: string
  *         stock:
  *           type: integer
+ *           description: Transition aggregate field. Variant stock is authoritative.
  *         reserve:
  *           type: integer
+ *           description: Transition aggregate field. Variant reserve is authoritative.
  *         type:
  *           type: string
  *           enum: [normal, refrigeration, virtual]
@@ -80,12 +82,59 @@ const router = Router();
  *         updatedAt:
  *           type: string
  *           format: date-time
+ *         availableStock:
+ *           type: integer
+ *           description: Calculated as active variant stock minus reserve.
+ *
+ *     ProductVariant:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: string
+ *           format: uuid
+ *         productId:
+ *           type: string
+ *           format: uuid
+ *         name:
+ *           type: string
+ *           nullable: true
+ *         sku:
+ *           type: string
+ *           nullable: true
+ *         optionValues:
+ *           type: object
+ *           description: Free-form option map, for example color and size.
+ *         stock:
+ *           type: integer
+ *         reserve:
+ *           type: integer
+ *         availableStock:
+ *           type: integer
+ *         sortOrder:
+ *           type: integer
+ *         status:
+ *           type: string
+ *           enum: [active, inactive]
+ *         metadata:
+ *           type: object
+ *           nullable: true
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *         updatedAt:
+ *           type: string
+ *           format: date-time
  *
  *     ProductWithRelations:
  *       allOf:
  *         - $ref: '#/components/schemas/Product'
  *         - type: object
  *           properties:
+ *             variants:
+ *               type: array
+ *               description: Admin responses include all variants, including inactive variants, so order/refund history can still resolve old variants.
+ *               items:
+ *                 $ref: '#/components/schemas/ProductVariant'
  *             advertisement:
  *               $ref: '#/components/schemas/Advertisement'
  *               nullable: true
@@ -298,8 +347,8 @@ router.get(
  *               - name
  *               - description
  *               - price
- *               - stock
  *             type: object
+ *             description: Either stock or variants is required. If only stock is provided, a single default variant with name null is created. Custom variants require every variant to have a non-empty name.
  *             properties:
  *               name:
  *                 type: string
@@ -316,6 +365,41 @@ router.get(
  *               stock:
  *                 type: integer
  *                 example: 100
+ *               variants:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required:
+ *                     - optionValues
+ *                     - stock
+ *                   properties:
+ *                     name:
+ *                       type: string
+ *                       nullable: true
+ *                       description: Leave null only for the single default variant. Custom variants all require a non-empty name.
+ *                       example: "Black / M"
+ *                     sku:
+ *                       type: string
+ *                       nullable: true
+ *                       example: "TS-BLK-M"
+ *                     optionValues:
+ *                       type: object
+ *                       example:
+ *                         color: "Black"
+ *                         size: "M"
+ *                     stock:
+ *                       type: integer
+ *                       example: 20
+ *                     sortOrder:
+ *                       type: integer
+ *                       example: 0
+ *                     status:
+ *                       type: string
+ *                       enum: [active, inactive]
+ *                       default: active
+ *                     metadata:
+ *                       type: object
+ *                       nullable: true
  *               type:
  *                 type: string
  *                 enum: [normal, refrigeration, virtual]
@@ -405,6 +489,36 @@ router.post(
  *                 type: number
  *               stock:
  *                 type: integer
+ *                 description: Transition field. If variants is omitted, updates the first/default variant stock.
+ *               variants:
+ *                 type: array
+ *                 description: Create or update variants. Variants are not deleted; set status to inactive. A product may keep one unnamed default variant; once it uses custom variants, every persisted variant must have a non-empty name.
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       format: uuid
+ *                       description: Existing variant id. Omit to create a new variant.
+ *                     name:
+ *                       type: string
+ *                       nullable: true
+ *                       description: Leave null only when the product has one default variant. Custom variants all require a non-empty name.
+ *                     sku:
+ *                       type: string
+ *                       nullable: true
+ *                     optionValues:
+ *                       type: object
+ *                     stock:
+ *                       type: integer
+ *                     sortOrder:
+ *                       type: integer
+ *                     status:
+ *                       type: string
+ *                       enum: [active, inactive]
+ *                     metadata:
+ *                       type: object
+ *                       nullable: true
  *               type:
  *                 type: string
  *                 enum: [normal, refrigeration, virtual]

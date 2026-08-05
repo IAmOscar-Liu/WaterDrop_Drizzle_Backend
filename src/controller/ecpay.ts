@@ -17,14 +17,13 @@ import {
   getDeliveryByMerchantTradeNo,
 } from "../repository/delivery";
 import {
-  createMerchantTrade,
   getMerchantTradeByMerchantTradeNo,
   getOrderStatusById,
   updateIdempotencyKey,
   updateOrderStatus,
 } from "../repository/order";
-import ecpayService from "../services/ecpay";
 import deliveryService from "../services/delivery";
+import ecpayService from "../services/ecpay";
 import orderService from "../services/order";
 
 const TEST_ORDER_ID = "test_order_12345";
@@ -193,7 +192,7 @@ class EcPayController {
           if (Array.isArray(nonCvsPickupGroup)) {
             Promise.allSettled(
               nonCvsPickupGroup.map((info: any) => {
-                const { merchantTradeNo, productIds, ...rest } = info;
+                const { merchantTradeNo, products, ...rest } = info;
                 createDelivery(
                   {
                     ...rest,
@@ -203,7 +202,7 @@ class EcPayController {
                         ? merchantTradeNo
                         : ecpayService.generateTradeNo(),
                   },
-                  productIds,
+                  products,
                 );
               }),
             );
@@ -436,115 +435,117 @@ class EcPayController {
     `);
   }
 
-  async createExpress(req: Request, res: Response): Promise<any> {
-    const {
-      token,
-      type = "B2C",
-      orderId,
-      productIds,
-      LogisticsSubType,
-      GoodsName,
-      GoodsAmount,
-      ReceiverName,
-      ReceiverCellPhone,
-      ReceiverEmail,
-      ReceiverStoreID,
-      ReceiverStoreName,
-      ReceiverStoreAddress,
-      ReceiverStoreTelephone,
-      SenderName,
-      SenderCellPhone,
-      shippingCost,
-      shippingCostDeduction,
-    } = req.query;
+  /** deprecated, no longer called from api */
+  // async createExpress(req: Request, res: Response): Promise<any> {
+  //   const {
+  //     token,
+  //     type = "B2C",
+  //     orderId,
+  //     productIds,
+  //     LogisticsSubType,
+  //     GoodsName,
+  //     GoodsAmount,
+  //     ReceiverName,
+  //     ReceiverCellPhone,
+  //     ReceiverEmail,
+  //     ReceiverStoreID,
+  //     ReceiverStoreName,
+  //     ReceiverStoreAddress,
+  //     ReceiverStoreTelephone,
+  //     SenderName,
+  //     SenderCellPhone,
+  //     shippingCost,
+  //     shippingCostDeduction,
+  //   } = req.query;
 
-    if (
-      !token ||
-      !orderId ||
-      !LogisticsSubType ||
-      !GoodsName ||
-      !GoodsAmount ||
-      !ReceiverName ||
-      !ReceiverCellPhone ||
-      !ReceiverEmail ||
-      !ReceiverStoreID
-    )
-      return res.send("Missing required parameters");
-    if (type !== "B2C" && !SenderCellPhone) {
-      return res.send("SenderCellPhone is required when type is C2C");
-    }
+  //   if (
+  //     !token ||
+  //     !orderId ||
+  //     !LogisticsSubType ||
+  //     !GoodsName ||
+  //     !GoodsAmount ||
+  //     !ReceiverName ||
+  //     !ReceiverCellPhone ||
+  //     !ReceiverEmail ||
+  //     !ReceiverStoreID
+  //   )
+  //     return res.send("Missing required parameters");
+  //   if (type !== "B2C" && !SenderCellPhone) {
+  //     return res.send("SenderCellPhone is required when type is C2C");
+  //   }
 
-    const payload = validateToken(String(token));
-    if (!payload || typeof payload === "string" || !payload.data?.id)
-      return res.send("Invalid token");
+  //   const payload = validateToken(String(token));
+  //   if (!payload || typeof payload === "string" || !payload.data?.id)
+  //     return res.send("Invalid token");
 
-    const merchantTradeNo = ecpayService.generateTradeNo();
+  //   const merchantTradeNo = ecpayService.generateTradeNo();
 
-    let pIds: string[] = [];
-    if (Array.isArray(productIds)) {
-      pIds = productIds.filter((p) => typeof p === "string") as string[];
-    } else if (typeof productIds === "string") {
-      pIds = [productIds];
-    }
+  //   let pIds: string[] = [];
+  //   if (Array.isArray(productIds)) {
+  //     pIds = productIds.filter((p) => typeof p === "string") as string[];
+  //   } else if (typeof productIds === "string") {
+  //     pIds = [productIds];
+  //   }
 
-    if (pIds.length > 0) {
-      const cvsStoreInfo: Record<string, string> = {};
-      cvsStoreInfo["storeID"] = String(ReceiverStoreID);
-      if (ReceiverStoreName)
-        cvsStoreInfo["storeName"] = String(ReceiverStoreName);
-      if (ReceiverStoreAddress)
-        cvsStoreInfo["storeAddress"] = String(ReceiverStoreAddress);
-      if (ReceiverStoreTelephone)
-        cvsStoreInfo["storeTelephone"] = String(ReceiverStoreTelephone);
+  //   if (pIds.length > 0) {
+  //     const cvsStoreInfo: Record<string, string> = {};
+  //     cvsStoreInfo["storeID"] = String(ReceiverStoreID);
+  //     if (ReceiverStoreName)
+  //       cvsStoreInfo["storeName"] = String(ReceiverStoreName);
+  //     if (ReceiverStoreAddress)
+  //       cvsStoreInfo["storeAddress"] = String(ReceiverStoreAddress);
+  //     if (ReceiverStoreTelephone)
+  //       cvsStoreInfo["storeTelephone"] = String(ReceiverStoreTelephone);
 
-      await createMerchantTrade({
-        merchantTradeNo,
-        orderId: String(orderId),
-        productIds: pIds,
-        cvsStoreInfo,
-        shippingCost: shippingCost ? Number(shippingCost) : 0,
-        shippingCostDeduction: shippingCostDeduction
-          ? Number(shippingCostDeduction)
-          : 0,
-      });
-    }
+  //     await createMerchantTrade({
+  //       merchantTradeNo,
+  //       orderId: String(orderId),
+  //       productIds: pIds,
+  //       variantIds: [],
+  //       cvsStoreInfo,
+  //       shippingCost: shippingCost ? Number(shippingCost) : 0,
+  //       shippingCostDeduction: shippingCostDeduction
+  //         ? Number(shippingCostDeduction)
+  //         : 0,
+  //     });
+  //   }
 
-    const maxGoodsAmount = Math.min(20000, Math.floor(Number(GoodsAmount)));
+  //   const maxGoodsAmount = Math.min(20000, Math.floor(Number(GoodsAmount)));
 
-    const base_param = {
-      MerchantID: process.env.LOGISTICS_MERCHANTID,
-      MerchantTradeNo: merchantTradeNo,
-      MerchantTradeDate: ecpayService.generateMerchantTradeDate(),
-      LogisticsType: "CVS",
-      LogisticsSubType, // 範例：7-ELEVEN
-      GoodsName: String(GoodsName),
-      GoodsAmount: String(maxGoodsAmount),
-      CollectionAmount: String(maxGoodsAmount),
-      SenderName: SenderName || "水滴賣家",
-      IsCollection: "N", // 是否代收貨款
-      ServerReplyURL: `${process.env.HOST}/api/ecpay/express/server-reply`, // 接收門市資訊的後端網址
-      ClientReplyURL: `${process.env.HOST}/api/ecpay/express/client-reply`, // 接收門市資訊的後端網址
-      ReceiverName: String(ReceiverName),
-      ReceiverCellPhone: String(ReceiverCellPhone),
-      ReceiverEmail: String(ReceiverEmail),
-      ReceiverStoreID: String(ReceiverStoreID),
-      ...(type === "B2C" ? {} : { SenderCellPhone: String(SenderCellPhone) }),
-    };
+  //   const base_param = {
+  //     MerchantID: process.env.LOGISTICS_MERCHANTID,
+  //     MerchantTradeNo: merchantTradeNo,
+  //     MerchantTradeDate: ecpayService.generateMerchantTradeDate(),
+  //     LogisticsType: "CVS",
+  //     LogisticsSubType, // 範例：7-ELEVEN
+  //     GoodsName: String(GoodsName),
+  //     GoodsAmount: String(maxGoodsAmount),
+  //     CollectionAmount: String(maxGoodsAmount),
+  //     SenderName: SenderName || "水滴賣家",
+  //     IsCollection: "N", // 是否代收貨款
+  //     ServerReplyURL: `${process.env.HOST}/api/ecpay/express/server-reply`, // 接收門市資訊的後端網址
+  //     ClientReplyURL: `${process.env.HOST}/api/ecpay/express/client-reply`, // 接收門市資訊的後端網址
+  //     ReceiverName: String(ReceiverName),
+  //     ReceiverCellPhone: String(ReceiverCellPhone),
+  //     ReceiverEmail: String(ReceiverEmail),
+  //     ReceiverStoreID: String(ReceiverStoreID),
+  //     ...(type === "B2C" ? {} : { SenderCellPhone: String(SenderCellPhone) }),
+  //   };
 
-    console.log("base_param: ", base_param);
+  //   console.log("base_param: ", base_param);
 
-    const formHtml = ecpayService.generateFormHtml({
-      actionUrl: `${ECPAY_LOGISTIC_BASE_URL}/Express/Create`,
-      parameters: base_param,
-      checkMacValueOptions: {
-        hashKey: process.env.LOGISTICS_HASH_KEY!,
-        hashIV: process.env.LOGISTICS_HASH_IV!,
-        algorithm: "md5",
-      },
-    });
+  //   const formHtml = ecpayService.generateFormHtml({
+  //     actionUrl: `${ECPAY_LOGISTIC_BASE_URL}/Express/Create`,
+  //     parameters: base_param,
+  //     checkMacValueOptions: {
+  //       hashKey: process.env.LOGISTICS_HASH_KEY!,
+  //       hashIV: process.env.LOGISTICS_HASH_IV!,
+  //       algorithm: "md5",
+  //     },
+  //   });
 
-    return res.send(formHtml);
-  }
+  //   return res.send(formHtml);
+  // }
 
   async handleExpressClientReply(req: Request, res: Response): Promise<any> {
     res.send(`
@@ -597,6 +598,15 @@ class EcPayController {
           RtnMsg,
         });
       } else {
+        if (
+          merchantTrade.productIds.length !== merchantTrade.variantIds.length ||
+          merchantTrade.variantIds.some((variantId) => !variantId)
+        ) {
+          throw new Error(
+            "Merchant trade productIds and variantIds must be paired",
+          );
+        }
+
         await createDelivery(
           {
             orderId: merchantTrade.orderId,
@@ -614,7 +624,10 @@ class EcPayController {
             fee: merchantTrade.shippingCost,
             feeDeduction: merchantTrade.shippingCostDeduction,
           },
-          merchantTrade?.productIds,
+          merchantTrade?.productIds.map((productId, i) => ({
+            productId,
+            variantId: merchantTrade?.variantIds[i] || "",
+          })),
         );
       }
     } catch (error) {

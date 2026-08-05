@@ -24,15 +24,48 @@ function chatRoomHasMessagesCondition() {
   )`;
 }
 
+function getVariantDisplayName(
+  variant:
+    | Pick<schema.ProductVariant, "name" | "optionValues">
+    | null
+    | undefined,
+) {
+  if (!variant) {
+    return null;
+  }
+
+  const name = variant.name?.trim();
+  if (name) {
+    return name;
+  }
+
+  const optionValues = variant.optionValues;
+  if (
+    optionValues &&
+    typeof optionValues === "object" &&
+    !Array.isArray(optionValues)
+  ) {
+    const values = Object.values(optionValues as Record<string, unknown>)
+      .map((value) => (value == null ? "" : String(value).trim()))
+      .filter(Boolean);
+
+    return values.length > 0 ? values.join(" / ") : null;
+  }
+
+  return null;
+}
+
 function getChatRoomLookupCondition({
   userId,
   accountId,
   productId,
+  productVariantId,
   orderId,
 }: {
   userId: string;
   accountId: string | null;
   productId: string | null;
+  productVariantId: string | null;
   orderId: string | null;
 }) {
   return and(
@@ -43,6 +76,9 @@ function getChatRoomLookupCondition({
     productId === null
       ? isNull(schema.chatRoomTable.productId)
       : eq(schema.chatRoomTable.productId, productId),
+    productVariantId === null
+      ? isNull(schema.chatRoomTable.productVariantId)
+      : eq(schema.chatRoomTable.productVariantId, productVariantId),
     orderId === null
       ? isNull(schema.chatRoomTable.orderId)
       : eq(schema.chatRoomTable.orderId, orderId),
@@ -62,19 +98,30 @@ export async function findOrCreateChatRoom({
   userId,
   accountId,
   productId,
+  productVariantId,
   orderId,
 }: {
   userId: string;
   accountId?: string | null;
   productId?: string | null;
+  productVariantId?: string | null;
   orderId?: string | null;
 }) {
   const lookup = {
     userId,
     accountId: accountId ?? null,
     productId: productId ?? null,
+    productVariantId: productVariantId ?? null,
     orderId: orderId ?? null,
   };
+
+  if (lookup.productId && !lookup.productVariantId) {
+    throw new CustomError("productVariantId is required for product chat rooms", 400);
+  }
+
+  if (!lookup.productId && lookup.productVariantId) {
+    throw new CustomError("productId is required when productVariantId is provided", 400);
+  }
 
   return db.transaction(async (tx) => {
     const [user] = await tx
@@ -85,6 +132,21 @@ export async function findOrCreateChatRoom({
 
     if (!user) {
       throw new CustomError("User not found", 404);
+    }
+
+    if (lookup.productId && lookup.productVariantId) {
+      const [variant] = await tx
+        .select({
+          id: schema.productVariantTable.id,
+          productId: schema.productVariantTable.productId,
+        })
+        .from(schema.productVariantTable)
+        .where(eq(schema.productVariantTable.id, lookup.productVariantId))
+        .for("update");
+
+      if (!variant || variant.productId !== lookup.productId) {
+        throw new CustomError("Product variant not found", 404);
+      }
     }
 
     const activateChatRoom = async (room: schema.ChatRoom) => {
@@ -140,6 +202,7 @@ export async function getChatRoomById(chatRoomId: string) {
   return db.query.chatRoomTable.findFirst({
     with: {
       product: true,
+      variant: true,
     },
     where: eq(schema.chatRoomTable.id, chatRoomId),
   });
@@ -367,6 +430,7 @@ export async function listChatRooms({
     offset: pagination.offset,
     with: {
       product: true,
+      variant: true,
       order: {
         with: {
           items: true,
@@ -414,8 +478,12 @@ export async function listChatRooms({
     const { unreadCount, lastMessageId, order, ...rest } = room;
 
     let delivery = null;
-    if (order && room.productId) {
-      const item = order.items.find((i) => i.productId === room.productId);
+    if (order && room.productId && room.productVariantId) {
+      const item = order.items.find(
+        (i) =>
+          i.productId === room.productId &&
+          i.productVariantId === room.productVariantId,
+      );
       if (item?.deliveryId) {
         delivery = order.deliveries.find((d) => d.id === item.deliveryId);
       }
@@ -424,9 +492,16 @@ export async function listChatRooms({
     const lastMessage = lastMessageId
       ? lastMessagesMap.get(lastMessageId)
       : null;
+    const product = rest.product
+      ? {
+          ...rest.product,
+          variantName: getVariantDisplayName(rest.variant),
+        }
+      : rest.product;
 
     return {
       ...rest,
+      product,
       totalUnread: Number(unreadCount),
       lastMessage: lastMessage || null,
       order: order
@@ -462,6 +537,7 @@ export async function listChatRooms({
 export type ListAdminChatRoomsParams = {
   accountId: string;
   productId?: string;
+  productVariantId?: string;
   status?: schema.ChatRoom["status"];
   page?: number;
   limit?: number;
@@ -471,6 +547,7 @@ export type ListAdminChatRoomsParams = {
 export async function listAdminChatRooms({
   accountId,
   productId,
+  productVariantId,
   status,
   page = 1,
   limit = 20,
@@ -490,6 +567,9 @@ export async function listAdminChatRooms({
   }
   if (productId && !supportOnly) {
     conditions.push(eq(schema.chatRoomTable.productId, productId));
+  }
+  if (productVariantId && !supportOnly) {
+    conditions.push(eq(schema.chatRoomTable.productVariantId, productVariantId));
   }
   if (status) {
     conditions.push(eq(schema.chatRoomTable.status, status));
@@ -525,6 +605,7 @@ export async function listAdminChatRooms({
           images: true,
         },
       },
+      variant: true,
       user: {
         columns: {
           id: true,
@@ -579,8 +660,12 @@ export async function listAdminChatRooms({
     const { unreadCount, lastMessageId, order, ...rest } = room;
 
     let delivery = null;
-    if (order && room.productId) {
-      const item = order.items.find((i) => i.productId === room.productId);
+    if (order && room.productId && room.productVariantId) {
+      const item = order.items.find(
+        (i) =>
+          i.productId === room.productId &&
+          i.productVariantId === room.productVariantId,
+      );
       if (item?.deliveryId) {
         delivery = order.deliveries.find((d) => d.id === item.deliveryId);
       }
@@ -589,9 +674,16 @@ export async function listAdminChatRooms({
     const lastMessage = lastMessageId
       ? lastMessagesMap.get(lastMessageId)
       : null;
+    const product = rest.product
+      ? {
+          ...rest.product,
+          variantName: getVariantDisplayName(rest.variant),
+        }
+      : rest.product;
 
     return {
       ...rest,
+      product,
       totalUnread: Number(unreadCount),
       lastMessage: lastMessage || null,
       order: order
