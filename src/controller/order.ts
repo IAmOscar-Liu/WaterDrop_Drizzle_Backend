@@ -110,17 +110,6 @@ class OrderController {
     sendJsonResponse(res, result);
   }
 
-  async getOrdersByMerchantTradeNo(req: Request, res: Response): Promise<any> {
-    const { merchantTradeNo } = req.params;
-    const result = await orderService.getOrdersByMerchantTradeNo(
-      merchantTradeNo,
-      {
-        matchPrefix: true,
-      },
-    );
-    sendJsonResponse(res, result);
-  }
-
   async updateOrderStatus(req: Request, res: Response): Promise<any> {
     const { orderId } = req.params;
     const { status, metadata } = req.body;

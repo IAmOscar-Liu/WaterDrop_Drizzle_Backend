@@ -74,15 +74,21 @@ function formatRefundRow(
   bankNameByCode = getBankNameByCodeMap(),
 ) {
   const bankCode = row.user.bankCode?.trim().padStart(3, "0");
+  const {
+    variantNameAtSale,
+    variantSkuAtSale,
+    variantOptionValuesAtSale,
+    ...orderItem
+  } = row.orderItem;
 
   return {
     ...row.refundItem,
     orderItem: {
-      ...row.orderItem,
+      ...orderItem,
       variantAtSale: {
-        name: row.orderItem.variantNameAtSale,
-        sku: row.orderItem.variantSkuAtSale,
-        optionValues: row.orderItem.variantOptionValuesAtSale,
+        name: variantNameAtSale,
+        sku: variantSkuAtSale,
+        optionValues: variantOptionValuesAtSale,
       },
       product: row.product,
       delivery: row.delivery,
@@ -815,22 +821,13 @@ export async function updateRefundItemStatus(
         throw new CustomError("Product variant not found", 404);
       }
 
-      await Promise.all([
-        tx
-          .update(schema.productVariantTable)
-          .set({
-            stock: sql`${schema.productVariantTable.stock} + ${effectiveQuantity}`,
-            updatedAt: new Date(),
-          })
-          .where(eq(schema.productVariantTable.id, variant.id)),
-        tx
-          .update(schema.productTable)
-          .set({
-            stock: sql`${schema.productTable.stock} + ${effectiveQuantity}`,
-            updatedAt: new Date(),
-          })
-          .where(eq(schema.productTable.id, context.orderItem.productId)),
-      ]);
+      await tx
+        .update(schema.productVariantTable)
+        .set({
+          stock: sql`${schema.productVariantTable.stock} + ${effectiveQuantity}`,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.productVariantTable.id, variant.id));
 
       // 4.3 Calculate what percentage of the order subtotal is being refunded.
       const refundTotal = effectiveQuantity * effectiveRefundAmount;

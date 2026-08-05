@@ -48,13 +48,11 @@ const productWriteBody = z.object({
   description: nonEmptyString.optional(),
   avatar: z.string().optional().nullable(),
   price: nonNegativeNumber.optional(),
-  stock: z.coerce.number().int().min(0).optional(),
   type: productType.optional(),
   allowHomeDelivery: z.coerce.boolean().optional(),
   images: z.array(z.string()).optional().nullable(),
   categoryIds: z.array(uuid).optional(),
   status: productStatus.optional(),
-  sku: z.string().optional().nullable(),
   metadata: jsonObject.optional().nullable(),
   variants: z.array(productVariantUpdateBody).optional(),
 });
@@ -76,12 +74,8 @@ export const productValidation = {
     name: nonEmptyString,
     description: nonEmptyString,
     price: nonNegativeNumber,
-    variants: z.array(productVariantCreateBody).optional(),
+    variants: z.array(productVariantCreateBody).min(1),
   })
-    .refine(
-      (body) => body.stock !== undefined || (body.variants?.length ?? 0) > 0,
-      "Either stock or variants is required",
-    )
     .refine((body) => {
       const variants = body.variants ?? [];
       const hasCustomVariant =

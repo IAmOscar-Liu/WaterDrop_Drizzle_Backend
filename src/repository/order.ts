@@ -7,6 +7,7 @@ import {
   like,
   lt,
   lte,
+  or,
   SQL,
   sql,
 } from "drizzle-orm";
@@ -186,8 +187,7 @@ export async function createOrder({
         })),
       ),
 
-      // Update each variant's reserve; product reserve is kept in sync during
-      // the transition while product-level stock fields still exist.
+      // Update each variant's reserve.
       ...items.map((item) =>
         tx
           .update(schema.productVariantTable)
@@ -196,16 +196,6 @@ export async function createOrder({
             updatedAt: new Date(),
           })
           .where(eq(schema.productVariantTable.id, item.productVariantId!)),
-      ),
-
-      ...items.map((item) =>
-        tx
-          .update(schema.productTable)
-          .set({
-            reserve: sql`COALESCE(${schema.productTable.reserve}, 0) + ${item.quantity}`,
-            updatedAt: new Date(),
-          })
-          .where(eq(schema.productTable.id, item.productId)),
       ),
 
       // Insert the idempotency key after successfully creating the order and related items to prevent duplicate processing
@@ -338,16 +328,6 @@ export async function updateOrderStatus({
                 updatedAt: new Date(),
               })
               .where(eq(schema.productVariantTable.id, item.productVariantId)),
-          );
-          promises.push(
-            tx
-              .update(schema.productTable)
-              .set({
-                reserve: sql`COALESCE(${schema.productTable.reserve}, 0) - ${item.pendingQuantity}`,
-                stock: sql`COALESCE(${schema.productTable.stock}, 0) - ${item.pendingQuantity}`,
-                updatedAt: new Date(),
-              })
-              .where(eq(schema.productTable.id, item.productId)),
           );
           promises.push(
             tx
@@ -513,15 +493,6 @@ export async function updateOrderStatus({
                 updatedAt: new Date(),
               })
               .where(eq(schema.productVariantTable.id, item.productVariantId)),
-          );
-          promises.push(
-            tx
-              .update(schema.productTable)
-              .set({
-                reserve: sql`COALESCE(${schema.productTable.reserve}, 0) - ${item.pendingQuantity}`,
-                updatedAt: new Date(),
-              })
-              .where(eq(schema.productTable.id, item.productId)),
           );
           promises.push(
             tx
@@ -778,8 +749,18 @@ export async function listAdminOrders({
 
   const merchantTradeNoPrefix = merchantTradeNo?.trim();
   if (merchantTradeNoPrefix && merchantTradeNoPrefix.length >= 4) {
+    const orderIdsWithDeliveryMerchantTradeNo = db
+      .select({ orderId: schema.deliveryTable.orderId })
+      .from(schema.deliveryTable)
+      .where(
+        like(schema.deliveryTable.merchantTradeNo, `${merchantTradeNoPrefix}%`),
+      );
+
     conditions.push(
-      like(schema.orderTable.merchantTradeNo, `${merchantTradeNoPrefix}%`),
+      or(
+        like(schema.orderTable.merchantTradeNo, `${merchantTradeNoPrefix}%`),
+        inArray(schema.orderTable.id, orderIdsWithDeliveryMerchantTradeNo),
+      ),
     );
   }
 
@@ -1017,67 +998,6 @@ export async function getOrderById(
       items: delivery.items.map(withVariantAtSaleDisplay),
     })),
   };
-}
-
-export async function getOrdersByMerchantTradeNo(
-  merchantTradeNo: string,
-  options?: { matchPrefix: boolean },
-) {
-  const { matchPrefix = false } = options ?? {};
-
-  if (matchPrefix && merchantTradeNo.length < 4) {
-    throw new CustomError(
-      "Merchant trade no must be at least 4 characters for prefix match",
-      400,
-    );
-  }
-
-  const whereClause = matchPrefix
-    ? like(schema.orderTable.merchantTradeNo, `${merchantTradeNo}%`)
-    : eq(schema.orderTable.merchantTradeNo, merchantTradeNo);
-
-  return db.query.orderTable.findMany({
-    where: whereClause,
-    with: {
-      items: {
-        with: {
-          product: true,
-          variant: true,
-        },
-      },
-      deliveries: {
-        with: {
-          items: {
-            columns: {
-              id: true,
-              productId: true,
-              productVariantId: true,
-              productNameAtSale: true,
-              variantNameAtSale: true,
-              variantSkuAtSale: true,
-              variantOptionValuesAtSale: true,
-            },
-          },
-        },
-      },
-      user: {
-        columns: {
-          id: true,
-          name: true,
-          email: true,
-        },
-      },
-    },
-  }).then((orders) =>
-    orders.map((order) => ({
-      ...order,
-      items: order.items.map(withVariantAtSaleDisplay),
-      deliveries: order.deliveries.map((delivery) => ({
-        ...delivery,
-        items: delivery.items.map(withVariantAtSaleDisplay),
-      })),
-    })),
-  );
 }
 
 export async function createMerchantTrade({

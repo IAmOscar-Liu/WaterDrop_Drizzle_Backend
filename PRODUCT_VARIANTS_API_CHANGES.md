@@ -56,7 +56,7 @@ Notes:
 
 ### Product List vs Detail
 
-Existing product fields remain. Product list responses add variant summaries:
+Product identity/content fields remain. Product inventory fields live on variants, and product list responses include variant summaries:
 
 ```ts
 type ProductListItem = Product & {
@@ -74,11 +74,9 @@ type ProductDetail = Product & {
 };
 ```
 
-During transition, product-level `stock`, `reserve`, and `sku` may remain for backward compatibility:
+After Phase 6 cleanup, product-level `stock`, `reserve`, and `sku` are removed. Product responses keep `availableStock` as a computed aggregate:
 
 ```ts
-stock = sum(active variants.stock);
-reserve = sum(active variants.reserve);
 availableStock = sum(active variants.stock - variants.reserve);
 ```
 
@@ -170,9 +168,7 @@ Request body additions:
   name: string;
   description: string;
   price: number;
-  stock?: number;
-  sku?: string | null;
-  variants?: Array<{
+  variants: Array<{
     name?: string | null;
     sku?: string | null;
     optionValues: Record<string, unknown>;
@@ -186,9 +182,9 @@ Request body additions:
 
 Validation:
 
-- During transition, accept either legacy `stock` or `variants`.
-- If only legacy `stock` is provided, backend creates a default variant.
-- If `variants` is provided, every variant requires non-negative integer `stock`.
+- `variants` is required.
+- Use one variant with `name: null` for products without visible variant choices.
+- Every variant requires non-negative integer `stock`.
 - `reserve` is not writable from the API.
 - `optionValues` must be a plain object.
 - Variant `sku` is optional.
@@ -228,7 +224,7 @@ Validation/behavior:
 - Variants are never physically deleted; use `status: "inactive"`.
 - `reserve` is not writable from the API.
 - If a variant has pending reserved quantity, reducing `stock` below `reserve` fails.
-- If legacy `stock` is provided without `variants`, backend updates the first/default variant for transition compatibility.
+- Top-level product `stock`, `reserve`, and `sku` are no longer accepted.
 
 Response body:
 
@@ -326,9 +322,6 @@ Response body change:
 refunds: Array<RefundItem & {
   orderItem: OrderItem & {
     product: PurchasedProductSummary;
-    variantNameAtSale: string | null;
-    variantSkuAtSale: string | null;
-    variantOptionValuesAtSale: Record<string, unknown> | null;
     variantAtSale: {
       name: string | null;
       sku: string | null;
@@ -431,6 +424,8 @@ productIds: Array<{
 
 Response body change:
 
+- `GET /api/admin/delivery/list?merchantTradeNo=xxxx` replaces `GET /api/admin/delivery/merchant-trade-no/:merchantTradeNo`.
+- `merchantTradeNo` on delivery list matches delivery `merchantTradeNo` only. It does not match order `merchantTradeNo`.
 - Delivery list `items` include `variantAtSale`.
 - Delivery detail `items` include `variantAtSale` for historical display and do not include `product.variant`.
 
@@ -779,11 +774,15 @@ product: {
 
 ## Migration Notes For Clients
 
-- Phase 1/read phase: clients can start reading `variants` while still using legacy `stock`.
+- Phase 6 cleanup removes product-level `stock`, `reserve`, and `sku`; clients should read variant inventory and computed `availableStock`.
 - Phase 2/write phase: clients must send `productVariantId` for cart and order item creation.
 - Flutter app notification: cart add/update, cart toggle, and order create now require `productVariantId` together with `productId`.
 - Public product UI should disable or hide variants where `stock - reserve <= 0`.
 - Admin product UI should show inactive variants and use status changes instead of delete actions.
 - Order/refund history UI should prefer `variant*AtSale` snapshots over live variant values.
-- Phase 5 database constraints have been run locally. For development/staging/production rollout, merge `feat/migration/backfill` and run its migration/backfill first, then merge `feat/constraints` and run the constraint migration, then merge `feat/cleanup` and run the cleanup migration.
+- Phase 5 database constraints have been run locally.
+- Development/staging rollout order:
+  1. Merge `feat/migration/backfill`, run the additive schema migration, then run `src/back-fill.ts`.
+  2. Merge `feat/constraints`, then run the constraint migration.
+  3. Merge `feat/cleanup`, then run the cleanup migration.
 - Chatroom migration note: after adding nullable `chat_rooms.productVariantId`, rerun `src/back-fill.ts`. It fills product-specific chat rooms from the matching order item variant when possible, otherwise from the product default variant. General support rooms remain null.

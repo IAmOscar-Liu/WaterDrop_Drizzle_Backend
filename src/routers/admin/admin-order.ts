@@ -344,12 +344,6 @@ const router = Router();
  *                             type: string
  *                           price:
  *                             type: number
- *                           sku:
- *                             type: string
- *                           stock:
- *                             type: integer
- *                           reserve:
- *                             type: integer
  *                           type:
  *                             type: string
  *                             enum: [normal, refrigeration, virtual]
@@ -465,7 +459,7 @@ const router = Router();
  *           format: uuid
  *       - in: query
  *         name: merchantTradeNo
- *         description: Filters by merchant trade number prefix when at least 4 characters are provided. Shorter values are ignored.
+ *         description: Filters by order or delivery merchant trade number prefix when at least 4 characters are provided. Shorter values are ignored.
  *         schema:
  *           type: string
  *       - in: query
@@ -542,43 +536,6 @@ router.get(
   isAuth,
   validateZod({ params: adminValidation.order.idParams }),
   OrderController.getOrder,
-);
-
-/**
- * @swagger
- * /api/admin/order/merchant-trade-no/{merchantTradeNo}:
- *   get:
- *     tags: [Order]
- *     summary: Get orders by merchant trade number
- *     description: Search by merchant trade number prefix. Requires at least 4 characters. Matches from the beginning and returns a list.
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: merchantTradeNo
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       '200':
- *         description: The requested orders.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 data:
- *                   type: array
- *                   items:
- *                     $ref: '#/components/schemas/OrderWithRelations'
- */
-router.get(
-  "/merchant-trade-no/:merchantTradeNo",
-  isAuth,
-  validateZod({ params: adminValidation.order.merchantTradeNoParams }),
-  OrderController.getOrdersByMerchantTradeNo,
 );
 
 export default router;

@@ -99,13 +99,24 @@ async function seedDatabase() {
             name: product.name,
             description: product.description,
             price: product.price,
-            stock: product.stock,
             images: product.images,
             status: product.status as schema.NewProduct["status"],
             createdAt: new Date(product.created_at * 1000),
             updatedAt: new Date(product.updated_at * 1000),
           })
           .returning();
+
+        await tx.insert(schema.productVariantTable).values({
+          productId: newProduct.id,
+          name: null,
+          optionValues: {},
+          stock: product.stock,
+          reserve: 0,
+          sortOrder: 0,
+          status: product.status as schema.NewProductVariant["status"],
+          createdAt: new Date(product.created_at * 1000),
+          updatedAt: new Date(product.updated_at * 1000),
+        });
 
         if (product.ad)
           await tx.insert(schema.advertisementTable).values({
