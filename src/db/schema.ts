@@ -1,8 +1,9 @@
 // schema.ts
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import { convertIndexToString } from "drizzle-orm/mysql-core";
 import {
   boolean,
+  check,
   doublePrecision,
   index,
   integer,
@@ -166,12 +167,21 @@ export const chatRoomTable = pgTable(
     status: chatRoomStatusEnum("status").default("active").notNull(),
   },
   (t) => ({
-    chatRoomUnique: uniqueIndex("chat_rooms_user_account_product_order_uk").on(
+    chatRoomProductVariantCheck: check(
+      "chat_rooms_product_variant_pair_ck",
+      sql`(${t.productId} is null and ${t.productVariantId} is null) or (${t.productId} is not null and ${t.productVariantId} is not null)`,
+    ),
+    chatRoomUnique: uniqueIndex(
+      "chat_rooms_user_account_product_variant_order_uk",
+    ).on(
       t.userId,
-      t.accountId,
-      t.productId,
+      sql`coalesce(${t.accountId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
+      sql`coalesce(${t.productId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
+      sql`coalesce(${t.productVariantId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
+      sql`coalesce(${t.orderId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
+    ),
+    productVariantIdx: index("chat_rooms_product_variant_id_idx").on(
       t.productVariantId,
-      t.orderId,
     ),
   }),
 );
@@ -406,9 +416,25 @@ export const productVariantTable = pgTable(
   },
   (t) => ({
     productIdIdx: index("product_variants_product_id_idx").on(t.productId),
+    productStatusIdx: index("product_variants_product_status_idx").on(
+      t.productId,
+      t.status,
+    ),
     productSkuUnique: uniqueIndex("product_variants_product_sku_uk").on(
       t.productId,
       t.sku,
+    ),
+    stockNonNegativeCheck: check(
+      "product_variants_stock_non_negative_ck",
+      sql`${t.stock} >= 0`,
+    ),
+    reserveNonNegativeCheck: check(
+      "product_variants_reserve_non_negative_ck",
+      sql`${t.reserve} >= 0`,
+    ),
+    reserveNotExceedStockCheck: check(
+      "product_variants_reserve_not_exceed_stock_ck",
+      sql`${t.reserve} <= ${t.stock}`,
     ),
   }),
 );
@@ -482,9 +508,9 @@ export const cartItemTable = pgTable(
     productId: uuid("product_id")
       .notNull()
       .references(() => productTable.id),
-    productVariantId: uuid("product_variant_id").references(
-      () => productVariantTable.id,
-    ),
+    productVariantId: uuid("product_variant_id")
+      .notNull()
+      .references(() => productVariantTable.id),
     checked: boolean("checked").default(true).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
@@ -495,10 +521,9 @@ export const cartItemTable = pgTable(
       .notNull(),
   },
   (t) => ({
-    userProductVariantUnique: uniqueIndex("cart_items_user_product_variant_uk").on(
-      t.userId,
-      t.productVariantId,
-    ),
+    userProductVariantUnique: uniqueIndex(
+      "cart_items_user_product_variant_uk",
+    ).on(t.userId, t.productVariantId),
   }),
 );
 
@@ -599,9 +624,9 @@ export const orderItemTable = pgTable(
     productId: uuid("product_id")
       .notNull()
       .references(() => productTable.id),
-    productVariantId: uuid("product_variant_id").references(
-      () => productVariantTable.id,
-    ),
+    productVariantId: uuid("product_variant_id")
+      .notNull()
+      .references(() => productVariantTable.id),
     deliveryId: uuid("delivery_id").references(() => deliveryTable.id),
 
     quantity: integer("quantity").notNull(),
@@ -629,9 +654,12 @@ export const orderItemTable = pgTable(
       .notNull(),
   },
   (t) => ({
-    orderItemUnique: uniqueIndex("order_items_order_product_uk").on(
+    orderItemUnique: uniqueIndex("order_items_order_variant_uk").on(
       t.orderId,
-      t.productId,
+      t.productVariantId,
+    ),
+    productVariantIdx: index("order_items_product_variant_id_idx").on(
+      t.productVariantId,
     ),
   }),
 );
@@ -712,18 +740,27 @@ export const deliveryLogTable = pgTable("delivery_logs", {
     .notNull(),
 });
 
-export const merchantTradeTable = pgTable("merchant_trades", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  orderId: uuid("order_id")
-    .notNull()
-    .references(() => orderTable.id, { onDelete: "cascade" }),
-  merchantTradeNo: text("merchant_trade_no").notNull(),
-  productIds: uuid("product_ids").array().notNull(),
-  variantIds: uuid("variant_ids").array().default([]).notNull(),
-  cvsStoreInfo: jsonb("cvs_store_info"),
-  shippingCost: doublePrecision("shipping_cost").default(0),
-  shippingCostDeduction: doublePrecision("shipping_cost_deduction").default(0),
-});
+export const merchantTradeTable = pgTable(
+  "merchant_trades",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => orderTable.id, { onDelete: "cascade" }),
+    merchantTradeNo: text("merchant_trade_no").notNull(),
+    productIds: uuid("product_ids").array().notNull(),
+    variantIds: uuid("variant_ids").array().default([]).notNull(),
+    cvsStoreInfo: jsonb("cvs_store_info"),
+    shippingCost: doublePrecision("shipping_cost").default(0),
+    shippingCostDeduction: doublePrecision("shipping_cost_deduction").default(0),
+  },
+  (t) => ({
+    productVariantLengthCheck: check(
+      "merchant_trades_product_variant_length_ck",
+      sql`cardinality(${t.productIds}) = cardinality(${t.variantIds})`,
+    ),
+  }),
+);
 
 export const shippingFeeTable = pgTable(
   "shipping_fees",

@@ -4,7 +4,7 @@
 
 This document lists API contract changes for product variants. It is a frontend handoff for both admin web and the Flutter app.
 
-Phase 3 and Phase 4 code support has been implemented. Phase 5 database constraints are still pending.
+Phase 3 and Phase 4 code support has been implemented. Phase 5 schema constraints are implemented on the constraints branch; generated database migrations still need to be run per environment.
 
 ## Shared Response Schemas
 
@@ -670,6 +670,7 @@ Backend should derive/snapshot variant fields from the locked variant row when p
 Validation:
 
 - Every item must include `productVariantId`.
+- `productVariantId` must be unique within a single order request.
 - Variant must belong to `productId`.
 - Variant must be active.
 - Backend locks variant rows and validates total requested quantity by variant against `stock - reserve`.

@@ -531,15 +531,18 @@ Use this section to track implementation progress. Keep each phase buildable and
   - [x] Add cart variant-switch flow that merges rows when the target variant already exists.
   - [x] Build verification: `npm run build`.
 - [ ] Phase 5: Constraints
-  - [ ] Make `cart_items.productVariantId` not null.
-  - [ ] Make `order_items.productVariantId` not null.
-  - [ ] Add product-specific chat room check constraint requiring `productVariantId` when `productId` is present.
+  - [x] Make `cart_items.productVariantId` not null in schema.
+  - [x] Make `order_items.productVariantId` not null in schema.
+  - [x] Add product-specific chat room check constraint requiring `productVariantId` when `productId` is present.
   - [x] Replace cart unique constraint in schema with `(userId, productVariantId)`.
-  - [ ] Replace order item unique constraint with `(orderId, productVariantId)`.
-  - [ ] Replace chat room uniqueness with product variant-aware identity.
-  - [ ] Add merchant trade check constraint requiring `cardinality(productIds) = cardinality(variantIds)`.
-  - [ ] Add product variant inventory check constraints for non-negative stock/reserve and reserve not exceeding stock.
-  - [ ] Add required variant indexes.
+  - [x] Replace order item unique constraint with `(orderId, productVariantId)`.
+  - [x] Replace chat room uniqueness with product variant-aware identity.
+  - [x] Add merchant trade check constraint requiring `cardinality(productIds) = cardinality(variantIds)`.
+  - [x] Add product variant inventory check constraints for non-negative stock/reserve and reserve not exceeding stock.
+  - [x] Add required variant indexes.
+  - [x] Build verification: `npm run build`.
+  - [x] Generate Phase 5 constraint migration.
+  - [ ] Run Phase 5 constraint migration.
   - [ ] Verify one user can hold multiple variants of the same product in cart after constraint migration.
   - [ ] Verify one order can hold multiple variants of the same product after constraint migration.
 - [ ] Phase 6: Cleanup

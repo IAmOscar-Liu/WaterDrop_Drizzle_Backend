@@ -88,6 +88,10 @@ export async function createOrder({
       );
     }
 
+    if (requestedQuantityByVariantId.size !== items.length) {
+      throw new CustomError("Duplicate productVariantId in order items", 400);
+    }
+
     const variantMap = new Map<string, schema.ProductVariant>();
 
     if (items.length > 0) {
