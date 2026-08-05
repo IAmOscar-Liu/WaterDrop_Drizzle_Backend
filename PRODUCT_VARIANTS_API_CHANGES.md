@@ -84,22 +84,11 @@ availableStock = sum(active variants.stock - variants.reserve);
 
 ### Purchased Product Shape
 
-Order/refund/delivery item APIs format the purchased variant inside `product` when a full product relation is returned:
+Order item APIs expose purchased variant display data through `variantAtSale`:
 
 ```ts
-type PurchasedProductSummary = Product & {
-  variant: ProductVariantSummary | null;
-};
-
-type PurchasedProductDetail = Product & {
-  variant: ProductVariantDetail | null;
-};
-
 type OrderItemWithVariant = OrderItem & {
-  product: PurchasedProductSummary | PurchasedProductDetail;
-  variantNameAtSale: string | null;
-  variantSkuAtSale: string | null;
-  variantOptionValuesAtSale: Record<string, unknown> | null;
+  product: Product;
   variantAtSale: {
     name: string | null;
     sku: string | null;
@@ -108,7 +97,13 @@ type OrderItemWithVariant = OrderItem & {
 };
 ```
 
-For historical display, prefer `variantAtSale` or the raw snapshot fields (`variantNameAtSale`, `variantSkuAtSale`, and `variantOptionValuesAtSale`) when present. The nested live `product.variant` is for current admin/debug context and inventory links. List endpoints should use summary variants; detail endpoints may use detail variants.
+For order, refund, and delivery display, use `variantAtSale`. Order responses should not return the raw snapshot fields (`variantNameAtSale`, `variantSkuAtSale`, `variantOptionValuesAtSale`). Delivery/refund responses also omit the live variant under `product.variant` when `variantAtSale` is present.
+
+```ts
+type PurchasedProductSummary = Product;
+
+type PurchasedProductDetail = Product;
+```
 
 ## Admin Web APIs
 
@@ -290,9 +285,6 @@ items: Array<{
   productId: string;
   productVariantId: string;
   productNameAtSale: string;
-  variantNameAtSale: string | null;
-  variantSkuAtSale: string | null;
-  variantOptionValuesAtSale: Record<string, unknown> | null;
   variantAtSale: {
     name: string | null;
     sku: string | null;
@@ -305,14 +297,11 @@ items: Array<{
 
 Response body change:
 
-- Detail should include the richer purchased product shape:
+- Detail should use the same order item variant shape as the Flutter app:
 
 ```ts
 items: Array<OrderItem & {
-  product: PurchasedProductDetail;
-  variantNameAtSale: string | null;
-  variantSkuAtSale: string | null;
-  variantOptionValuesAtSale: Record<string, unknown> | null;
+  product: Product;
   variantAtSale: {
     name: string | null;
     sku: string | null;
@@ -321,7 +310,7 @@ items: Array<OrderItem & {
 }>
 ```
 
-- Prefer snapshot fields for historical display.
+- Use `variantAtSale` for historical display. Do not use `product.variant` or the raw snapshot columns in order responses.
 
 ### `GET /api/admin/refund/list`
 
@@ -353,7 +342,7 @@ refunds: Array<RefundItem & {
 
 Response body change:
 
-- Same nested `orderItem.product.variant` format as refund list, but detail may use `PurchasedProductDetail` and include richer order/delivery/user relations.
+- Same `variantAtSale` format as refund list, but detail may use `PurchasedProductDetail` and include richer order/delivery/user relations.
 
 ### Admin Refund Status Update
 
@@ -405,8 +394,12 @@ Response body change:
 ```ts
 chatRooms: Array<ChatRoom & {
   productVariantId: string | null;
-  product: Product | null;
-  variant: ProductVariantSummary | null;
+  product: {
+    id: string;
+    name: string;
+    images: string[] | null;
+    variantName: string | null;
+  } | null;
 }>
 ```
 
@@ -438,8 +431,8 @@ productIds: Array<{
 
 Response body change:
 
-- Delivery list `items` include snapshot fields and `variantAtSale`.
-- Delivery detail `items` include `product.variant` for the linked live variant plus `variantAtSale` for historical display.
+- Delivery list `items` include `variantAtSale`.
+- Delivery detail `items` include `variantAtSale` for historical display and do not include `product.variant`.
 
 ### ECPay / Merchant Trade Callback Related Data
 
@@ -529,6 +522,27 @@ Response body change:
 Behavior change:
 
 - Advertisement product payload keeps the active variant object list so the app can add directly when only one variant is available, or open variant selection when multiple variants are available.
+
+### `GET /api/collection/list`
+
+Response body change:
+
+```ts
+{
+  success: true;
+  data: {
+    collections: Array<Collection & {
+      product: Product & {
+        variants: ProductVariantSummary[];
+      };
+    }>;
+  };
+}
+```
+
+Behavior change:
+
+- Collection product payload includes active variant object list so the app can add directly when only one variant is available, or open variant selection when multiple variants are available.
 
 ### `GET /api/cart/list`
 
@@ -676,8 +690,8 @@ Validation:
 
 Response body change:
 
-- Order items include `product.variant` and variant snapshot fields.
-- Detail-style order responses can include `PurchasedProductDetail`; lighter list-style responses can use `PurchasedProductSummary` or snapshot fields only.
+- Order items include `variantAtSale`.
+- Order responses do not include `product.variant`, `variantNameAtSale`, `variantSkuAtSale`, or `variantOptionValuesAtSale`.
 
 ### `GET /api/order/list`
 
@@ -688,14 +702,18 @@ Request query:
 
 Response body change:
 
-- If order list includes order items, each item should include `product.variant` summary or variant snapshot fields.
-- Each order item includes variant snapshot fields.
+- Same basic shape as admin order list, except Flutter does not receive `user` because the caller is the user.
+- Each order includes compact `items` with `variantAtSale`.
+- Each order includes compact `deliveries` with `id`, `merchantTradeNo`, `status`, `LogisticsType`, `LogisticsSubType`, `RtnCode`, and `RtnMsg`.
+- Order responses do not include `product.variant`, `variantNameAtSale`, `variantSkuAtSale`, or `variantOptionValuesAtSale`.
 
 ### `GET /api/order/{id}`
 
 Response body change:
 
-- Detail may include richer `product.variant` data than order list.
+- Same basic shape as admin order detail, except Flutter does not receive `user` because the caller is the user.
+- The lookup is scoped to the caller's `req.userId`.
+- Use `variantAtSale`; no `product.variant` and no raw variant snapshot columns.
 
 ### `POST /api/refund`
 
@@ -705,7 +723,7 @@ Request body:
 
 Response/body behavior:
 
-- Refund display data comes from `orderItem.product.variant` and variant snapshot fields.
+- Refund display data comes from `orderItem.variantAtSale`.
 - Completed/accepted refunds restock the linked variant inventory on the backend.
 
 ### `POST /api/chatroom/create`
@@ -743,6 +761,19 @@ Response body change:
 Response body change:
 
 - Product-specific chat rooms include `productVariantId`.
+- Chatroom list omits the top-level live `variant` object.
+- Product is a compact display object:
+
+```ts
+product: {
+  id: string;
+  name: string;
+  images: string[] | null;
+  variantName: string | null;
+} | null;
+```
+
+- `order.delivery` matches admin chatroom list and includes `id` and `merchantTradeNo` when a delivery is linked.
 - Product inquiry/order chat rooms are unique by user, account, product, variant, and order context after Phase 5 constraints.
 
 ## Migration Notes For Clients

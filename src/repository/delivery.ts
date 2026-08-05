@@ -32,17 +32,27 @@ type DeliveryItemWithProductVariant = schema.OrderItem & {
   variant?: schema.ProductVariant | null;
 };
 
-function withVariantNestedInProduct<T extends DeliveryItemWithProductVariant>(
+function withVariantAtSaleDisplay<T extends DeliveryItemWithProductVariant>(
   item: T,
 ) {
+  const {
+    product,
+    variant: _variant,
+    ...rest
+  } = item;
+  const productWithoutVariant = product
+    ? (() => {
+        const {
+          variant: _productVariant,
+          ...productRest
+        } = product as typeof product & { variant?: unknown };
+        return productRest;
+      })()
+    : product;
+
   return {
-    ...item,
-    product: item.product
-      ? {
-          ...item.product,
-          variant: item.variant ?? null,
-        }
-      : item.product,
+    ...rest,
+    product: productWithoutVariant,
     variantAtSale: {
       name: item.variantNameAtSale,
       sku: item.variantSkuAtSale,
@@ -286,10 +296,10 @@ export async function getDeliveryById(deliveryId: string) {
   return {
     ...delivery,
     items: delivery.items.map((item) => {
-      const itemWithNestedVariant = withVariantNestedInProduct(item);
+      const itemWithVariantAtSale = withVariantAtSaleDisplay(item);
 
       return {
-        ...itemWithNestedVariant,
+        ...itemWithVariantAtSale,
         canRefund: canRefundDeliveryItem(delivery, item),
         remainingRefundQuantity: getRemainingRefundQuantity(delivery, item),
       };
@@ -339,7 +349,7 @@ export async function getDeliveriesByMerchantTradeNo(
   }).then((deliveries) =>
     deliveries.map((delivery) => ({
       ...delivery,
-      items: delivery.items.map(withVariantNestedInProduct),
+      items: delivery.items.map(withVariantAtSaleDisplay),
     })),
   );
 }
@@ -445,7 +455,7 @@ export async function listAdminDeliveries({
   });
   const deliveries = deliveriesData.map((delivery) => ({
     ...delivery,
-    items: delivery.items.map(withVariantNestedInProduct),
+    items: delivery.items.map(withVariantAtSaleDisplay),
   }));
 
   return {

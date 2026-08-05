@@ -37,12 +37,17 @@ export type ProductVariantWriteInput = {
 
 type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-const activeVariantAvailabilityCondition = sql<boolean>`exists (
-  select 1 from ${schema.productVariantTable}
-  where ${schema.productVariantTable.productId} = ${schema.productTable.id}
-    and ${schema.productVariantTable.status} = 'active'
-    and ${schema.productVariantTable.stock} > ${schema.productVariantTable.reserve}
-)`;
+function activeVariantAvailabilityCondition(
+  productIdColumn: typeof schema.productTable.id,
+) {
+  return sql<boolean>`exists (
+    select 1
+    from product_variants active_variant
+    where active_variant.product_id = ${productIdColumn}
+      and active_variant.status = 'active'
+      and active_variant.stock > active_variant.reserve
+  )`;
+}
 
 function withAggregateProductInventory<
   T extends schema.Product & { variants?: schema.ProductVariant[] },
@@ -662,7 +667,7 @@ export async function listProducts({
     conditions.push(lte(schema.productTable.price, maxPrice));
   }
 
-  conditions.push(activeVariantAvailabilityCondition);
+  conditions.push(activeVariantAvailabilityCondition(schema.productTable.id));
 
   const whereClause = compactConditions(conditions);
 

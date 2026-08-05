@@ -126,13 +126,28 @@ export async function listCollections({
               category: true,
             },
           },
+          variants: {
+            where: eq(schema.productVariantTable.status, "active"),
+            orderBy: (variants, { asc }) => [asc(variants.sortOrder)],
+          },
         },
       },
     },
   });
 
   return {
-    collections,
+    collections: collections.map((collection) => ({
+      ...collection,
+      product: collection.product
+        ? {
+            ...collection.product,
+            variants: collection.product.variants.map((variant) => ({
+              ...variant,
+              availableStock: variant.stock - variant.reserve,
+            })),
+          }
+        : collection.product,
+    })),
     total,
     page: pagination.page,
     limit: pagination.limit,

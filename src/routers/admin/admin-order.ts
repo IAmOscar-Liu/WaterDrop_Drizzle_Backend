@@ -28,7 +28,6 @@ const router = Router();
  *         productVariantId:
  *           type: string
  *           format: uuid
- *           nullable: true
  *         quantity:
  *           type: integer
  *         pendingQuantity:
@@ -38,21 +37,8 @@ const router = Router();
  *           format: double
  *         productNameAtSale:
  *           type: string
- *         variantNameAtSale:
- *           type: string
- *           nullable: true
- *           description: Snapshot of the purchased variant display name.
- *         variantSkuAtSale:
- *           type: string
- *           nullable: true
- *           description: Snapshot of the purchased variant SKU.
- *         variantOptionValuesAtSale:
- *           type: object
- *           nullable: true
- *           description: Snapshot of the purchased variant option values.
  *         variantAtSale:
  *           type: object
- *           nullable: true
  *           description: Convenience snapshot object for frontend display.
  *           properties:
  *             name:
@@ -277,21 +263,10 @@ const router = Router();
  *                   productVariantId:
  *                     type: string
  *                     format: uuid
- *                     nullable: true
  *                   productNameAtSale:
  *                     type: string
- *                   variantNameAtSale:
- *                     type: string
- *                     nullable: true
- *                   variantSkuAtSale:
- *                     type: string
- *                     nullable: true
- *                   variantOptionValuesAtSale:
- *                     type: object
- *                     nullable: true
  *                   variantAtSale:
  *                     type: object
- *                     nullable: true
  *                     properties:
  *                       name:
  *                         type: string
@@ -395,10 +370,6 @@ const router = Router();
  *                           updatedAt:
  *                             type: string
  *                             format: date-time
- *                           variant:
- *                             $ref: '#/components/schemas/ProductVariant'
- *                             nullable: true
- *                             description: Live variant row linked by productVariantId. Use variant snapshot fields for historical display.
  *             deliveries:
  *               type: array
  *               items:
@@ -425,18 +396,20 @@ const router = Router();
  *                             productVariantId:
  *                               type: string
  *                               format: uuid
- *                               nullable: true
  *                             productNameAtSale:
  *                               type: string
- *                             variantNameAtSale:
- *                               type: string
- *                               nullable: true
- *                             variantSkuAtSale:
- *                               type: string
- *                               nullable: true
- *                             variantOptionValuesAtSale:
+ *                             variantAtSale:
  *                               type: object
- *                               nullable: true
+ *                               properties:
+ *                                 name:
+ *                                   type: string
+ *                                   nullable: true
+ *                                 sku:
+ *                                   type: string
+ *                                   nullable: true
+ *                                 optionValues:
+ *                                   type: object
+ *                                   nullable: true
  *             user:
  *               type: object
  *               properties:

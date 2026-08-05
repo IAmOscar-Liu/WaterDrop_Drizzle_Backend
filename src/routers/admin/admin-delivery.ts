@@ -45,17 +45,10 @@ const router = Router();
  *                   - type: object
  *                     properties:
  *                       product:
- *                         allOf:
- *                           - $ref: '#/components/schemas/Product'
- *                           - type: object
- *                             properties:
- *                               variant:
- *                                 $ref: '#/components/schemas/ProductVariant'
- *                                 nullable: true
- *                         description: Product relation for detail view. The linked live variant is nested under product.variant; historical display data is available on variantAtSale.
+ *                         $ref: '#/components/schemas/Product'
+ *                         description: Product relation for detail view. Historical variant display data is available on variantAtSale.
  *                       variantAtSale:
  *                         type: object
- *                         nullable: true
  *                         properties:
  *                           name:
  *                             type: string
