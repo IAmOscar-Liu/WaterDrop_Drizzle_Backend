@@ -57,6 +57,22 @@ const productWriteBody = z.object({
   variants: z.array(productVariantUpdateBody).optional(),
 });
 
+function hasVariantName(variant: { name?: string | null }) {
+  return typeof variant.name === "string" && variant.name.trim().length > 0;
+}
+
+function isValidVariantMode(variants: { name?: string | null }[]) {
+  if (variants.length === 0) {
+    return false;
+  }
+
+  if (variants.length === 1) {
+    return !hasVariantName(variants[0]);
+  }
+
+  return variants.every(hasVariantName);
+}
+
 export const productValidation = {
   categoryCreateBody: z.object({
     name: nonEmptyString,
@@ -76,17 +92,10 @@ export const productValidation = {
     price: nonNegativeNumber,
     variants: z.array(productVariantCreateBody).min(1),
   })
-    .refine((body) => {
-      const variants = body.variants ?? [];
-      const hasCustomVariant =
-        variants.length > 1 ||
-        variants.some((variant) => !!variant.name?.trim());
-
-      return (
-        !hasCustomVariant ||
-        variants.every((variant) => !!variant.name?.trim())
-      );
-    }, "Custom variants require every variant to have a name"),
+    .refine(
+      (body) => isValidVariantMode(body.variants ?? []),
+      "Use exactly one unnamed default variant, or at least two variants with names",
+    ),
   updateBody: requireAtLeastOneField(productWriteBody),
   salesSummaryQuery: dateRangeQuery,
 };

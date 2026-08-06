@@ -341,7 +341,7 @@ router.get(
  *               - price
  *               - variants
  *             type: object
- *             description: Variants are required. Use one variant with name null for products without visible variant choices. Custom variants require every variant to have a non-empty name.
+ *             description: Variants are required. Use exactly one unnamed variant for products without visible variant choices. Variant products require at least two variants, and every variant must have a non-empty name.
  *             properties:
  *               name:
  *                 type: string
@@ -366,7 +366,7 @@ router.get(
  *                     name:
  *                       type: string
  *                       nullable: true
- *                       description: Leave null only for the single default variant. Custom variants all require a non-empty name.
+ *                       description: Must be null/omitted for the single default variant. Required and non-empty when the product has multiple variants.
  *                       example: "Black / M"
  *                     sku:
  *                       type: string
@@ -475,7 +475,7 @@ router.post(
  *                 type: number
  *               variants:
  *                 type: array
- *                 description: Create or update variants. Variants are not deleted; set status to inactive. A product may keep one unnamed default variant; once it uses custom variants, every persisted variant must have a non-empty name.
+ *                 description: Create or update variants. If id is provided, the existing variant is updated; otherwise a new variant is created. Variants are not deleted; set status to inactive. A product must have either exactly one unnamed default variant, or at least two named variants.
  *                 items:
  *                   type: object
  *                   properties:
@@ -486,7 +486,7 @@ router.post(
  *                     name:
  *                       type: string
  *                       nullable: true
- *                       description: Leave null only when the product has one default variant. Custom variants all require a non-empty name.
+ *                       description: Must be null/omitted when the product has one default variant. Required and non-empty when the product has multiple variants.
  *                     sku:
  *                       type: string
  *                       nullable: true

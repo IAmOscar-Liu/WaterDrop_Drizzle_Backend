@@ -103,15 +103,19 @@ function hasVariantName(variant: Pick<ProductVariantWriteInput, "name">) {
 function validateProductVariantMode(
   variants: Pick<ProductVariantWriteInput, "name">[],
 ) {
-  const isCustomVariantMode =
-    variants.length > 1 || variants.some((variant) => hasVariantName(variant));
+  if (variants.length === 1 && hasVariantName(variants[0])) {
+    throw new CustomError(
+      "Default variant must not have a name",
+      400,
+    );
+  }
 
   if (
-    isCustomVariantMode &&
+    variants.length > 1 &&
     variants.some((variant) => !hasVariantName(variant))
   ) {
     throw new CustomError(
-      "Custom variants require every variant to have a name",
+      "Custom variant products require at least two variants and every variant must have a name",
       400,
     );
   }
