@@ -4,6 +4,7 @@ import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
 import db from "../lib/initDB";
 import { isAccountAdmin } from "./account";
+import { withProductVariantAggregates } from "./product";
 import {
   compactConditions,
   getPagination,
@@ -68,7 +69,14 @@ export async function getAdvertisement(advertisementId: string) {
     },
   });
 
-  return advertisement;
+  if (!advertisement?.product) {
+    return advertisement;
+  }
+
+  return {
+    ...advertisement,
+    product: withProductVariantAggregates(advertisement.product),
+  };
 }
 
 export interface ListAdvertisementsParams extends PaginationParams {
@@ -161,10 +169,10 @@ export async function listAdvertisements({
   const advertisements = results.map((r) => ({
     ...r.advertisements,
     product: r.products
-      ? {
+      ? withProductVariantAggregates({
           ...r.products,
           variants: variantsByProductId.get(r.products.id) ?? [],
-        }
+        })
       : r.products,
   }));
 
@@ -260,10 +268,13 @@ export async function listAdminAdvertisements({
   const advertisements = results.map((r) => ({
     ...r.advertisements,
     product: r.products
-      ? {
-          ...r.products,
-          variants: variantsByProductId.get(r.products.id) ?? [],
-        }
+      ? withProductVariantAggregates(
+          {
+            ...r.products,
+            variants: variantsByProductId.get(r.products.id) ?? [],
+          },
+          "all",
+        )
       : r.products,
     stats: r.advertisement_stats,
   }));

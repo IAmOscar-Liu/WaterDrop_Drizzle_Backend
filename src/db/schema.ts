@@ -397,6 +397,8 @@ export const productVariantTable = pgTable(
       .references(() => productTable.id, { onDelete: "cascade" }),
     name: text("name"),
     sku: text("sku"),
+    price: doublePrecision("price"),
+    images: text("images").array(),
     optionValues: jsonb("option_values").notNull().default({}),
     stock: integer("stock").notNull(),
     reserve: integer("reserve").notNull().default(0),

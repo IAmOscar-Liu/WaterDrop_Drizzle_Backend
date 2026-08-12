@@ -61,6 +61,10 @@ const router = Router();
  *                       description: Active product variants available from the advertisement.
  *                       items:
  *                         $ref: '#/components/schemas/ProductVariant'
+ *                     price:
+ *                       type: number
+ *                       format: double
+ *                       description: Minimum active variant price.
  *
  *     AdvertisementWithProductAndStats:
  *       allOf:
@@ -80,6 +84,10 @@ const router = Router();
  *                       description: Active product variants available from the advertisement.
  *                       items:
  *                         $ref: '#/components/schemas/ProductVariant'
+ *                     price:
+ *                       type: number
+ *                       format: double
+ *                       description: Minimum active variant price.
  *
  *     AdvertisementWithProductAndDetails:
  *       allOf:
@@ -103,6 +111,10 @@ const router = Router();
  *                       description: Active product variants available from the advertisement.
  *                       items:
  *                         $ref: '#/components/schemas/ProductVariant'
+ *                     price:
+ *                       type: number
+ *                       format: double
+ *                       description: Minimum active variant price.
  *
  *     ListAdvertisementsResponse:
  *       type: object

@@ -722,6 +722,13 @@
       "when": 1785939226764,
       "tag": "0102_mysterious_imperial_guard",
       "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1786549836767,
+      "tag": "0103_large_talisman",
+      "breakpoints": true
     }
   ]
 }

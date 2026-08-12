@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import * as schema from "../db/schema";
 import db from "../lib/initDB";
 import { CustomError } from "../lib/error";
+import { withProductVariantAggregates } from "./product";
 
 /**
  * Adds or updates an item in the user's cart.
@@ -240,13 +241,7 @@ export async function listCartItems(userId: string) {
   return cartItems.map((item) => ({
     ...item,
     product: item.product
-      ? {
-          ...item.product,
-          variants: item.product.variants.map((variant) => ({
-            ...variant,
-            availableStock: variant.stock - variant.reserve,
-          })),
-        }
+      ? withProductVariantAggregates(item.product)
       : item.product,
     variant: item.variant
       ? {

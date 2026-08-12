@@ -20,6 +20,8 @@ type ProductVariantSummary = {
   productId: string;
   name: string | null;
   sku: string | null;
+  price: number | null;
+  images: string[] | null;
   optionValues: Record<string, unknown>;
   availableStock: number;
   status: "active" | "inactive";
@@ -34,6 +36,8 @@ type ProductVariantDetail = {
   productId: string;
   name: string | null;
   sku: string | null;
+  price: number | null;
+  images: string[] | null;
   optionValues: Record<string, unknown>;
   stock: number;
   reserve: number;
@@ -48,7 +52,8 @@ type ProductVariantDetail = {
 
 Notes:
 
-- Product price is shared across variants, so variants do not include `price`.
+- Variant price is authoritative. It is nullable only during the Phase 1 migration window and becomes required after the backfill.
+- Product responses keep a computed root `price` equal to the minimum eligible variant price.
 - `sku` is optional.
 - `optionValues` is free-form JSON, for example `{ "size": "M", "color": "Black" }`.
 - Variants are never physically deleted by product management. Removed variants become `inactive`.
@@ -91,6 +96,7 @@ type OrderItemWithVariant = OrderItem & {
     name: string | null;
     sku: string | null;
     optionValues: Record<string, unknown> | null;
+    price: number;
   };
 };
 ```
@@ -288,6 +294,7 @@ items: Array<{
     name: string | null;
     sku: string | null;
     optionValues: Record<string, unknown> | null;
+    price: number;
   };
 }>
 ```
@@ -305,6 +312,7 @@ items: Array<OrderItem & {
     name: string | null;
     sku: string | null;
     optionValues: Record<string, unknown> | null;
+    price: number;
   };
 }>
 ```
@@ -329,6 +337,7 @@ refunds: Array<RefundItem & {
       name: string | null;
       sku: string | null;
       optionValues: Record<string, unknown> | null;
+      price: number;
     };
   };
 }>

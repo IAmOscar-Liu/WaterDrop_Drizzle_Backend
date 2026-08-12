@@ -26,6 +26,7 @@ import {
 type OrderItemWithProductVariant = {
   product?: schema.Product | null;
   variant?: schema.ProductVariant | null;
+  unitPriceAtSale: number;
   variantNameAtSale?: string | null;
   variantSkuAtSale?: string | null;
   variantOptionValuesAtSale?: unknown;
@@ -57,6 +58,7 @@ function withVariantAtSaleDisplay<T extends OrderItemWithProductVariant>(item: T
       name: variantNameAtSale ?? null,
       sku: variantSkuAtSale ?? null,
       optionValues: variantOptionValuesAtSale ?? null,
+      price: rest.unitPriceAtSale,
     },
   };
 }
@@ -670,6 +672,7 @@ export async function listOrders({
           id: true,
           productId: true,
           productVariantId: true,
+          unitPriceAtSale: true,
           productNameAtSale: true,
           variantNameAtSale: true,
           variantSkuAtSale: true,
@@ -798,6 +801,7 @@ export async function listAdminOrders({
           id: true,
           productId: true,
           productVariantId: true,
+          unitPriceAtSale: true,
           productNameAtSale: true,
           variantNameAtSale: true,
           variantSkuAtSale: true,
@@ -931,6 +935,7 @@ export async function getOrderById(
               id: true,
               productId: true,
               productVariantId: true,
+              unitPriceAtSale: true,
               productNameAtSale: true,
               variantNameAtSale: true,
               variantSkuAtSale: true,

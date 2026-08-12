@@ -109,6 +109,8 @@ async function seedDatabase() {
         await tx.insert(schema.productVariantTable).values({
           productId: newProduct.id,
           name: null,
+          price: product.price,
+          images: product.images,
           optionValues: {},
           stock: product.stock,
           reserve: 0,

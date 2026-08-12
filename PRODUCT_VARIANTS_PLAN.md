@@ -31,7 +31,7 @@ Add a `product_variants` table and make stock/reserve belong to variants.
 
 Resolved model decisions:
 
-- Product price is shared across all variants. Variants do not support price overrides in this version.
+- Variant price is authoritative; product responses expose the minimum eligible variant price at the root.
 - Variant SKU is optional.
 - Variant option names and values are stored as free-form JSON in `optionValues`.
 - Inactive variants remain visible in admin order/refund history through order item snapshots and/or explicit variant relations.
@@ -468,7 +468,7 @@ For development and staging, apply the branches step by step:
 
 All initial product variant decisions are resolved:
 
-- Product price is shared across all variants.
+- Variant price is authoritative; root product price is computed from variants.
 - Variant SKU is optional.
 - Variant options use free-form JSON in `optionValues`.
 - Inactive variants remain visible in admin order/refund history.

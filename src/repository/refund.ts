@@ -89,6 +89,7 @@ function formatRefundRow(
         name: variantNameAtSale,
         sku: variantSkuAtSale,
         optionValues: variantOptionValuesAtSale,
+        price: orderItem.unitPriceAtSale,
       },
       product: row.product,
       delivery: row.delivery,
