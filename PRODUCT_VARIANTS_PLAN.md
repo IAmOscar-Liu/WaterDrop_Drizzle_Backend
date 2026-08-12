@@ -6,9 +6,9 @@ Allow one product to have multiple variants, for example size and color, where e
 
 This document tracks the product variant rollout plan and implementation status.
 
-## Current State
+## Original State
 
-`productTable` stores stock directly on the product:
+Before the variant rollout, `productTable` stored stock directly on the product:
 
 - `products.stock`
 - `products.reserve`
@@ -97,8 +97,7 @@ Recommended rollout: support both simple and variant products during migration.
 
 - A product with no explicit variants gets one default variant.
 - New stock logic uses variants.
-- Product-level `stock`, `reserve`, and `sku` are kept temporarily for backward-compatible response shape and migration safety.
-- After frontend and API consumers move to variants, remove or deprecate product-level stock fields in a later migration.
+- Product-level `stock`, `reserve`, and `sku` are removed in Phase 6. Variant rows are the authoritative inventory and SKU source.
 
 ## Schema Changes
 
@@ -182,7 +181,7 @@ Keep `productNameAtSale` and `unitPriceAtSale` unchanged.
 
 6. After application code is deployed and verified, make line item `productVariantId` not null and add conditional chat room product/variant consistency constraints.
 
-7. Later cleanup migration: remove or deprecate `products.stock`, `products.reserve`, and maybe `products.sku`.
+7. Phase 6 cleanup migration: remove `products.stock`, `products.reserve`, and `products.sku`.
 
 ## API Shape
 
@@ -208,7 +207,7 @@ Add `variants` to request body:
 
 Rules:
 
-- Create requires either `stock` for legacy/simple product or `variants` for variant product during transition.
+- Create requires `variants`. Use one variant with `name = null` for products without visible variant choices.
 - If `variants` is passed, create/update variant rows in the same transaction as product/category updates.
 - `reserve` should not be directly writable from API except internal stock workflows.
 - Updating variants should support:
@@ -243,13 +242,11 @@ product: {
 }
 ```
 
-For backward compatibility during transition, product response can keep aggregate:
+After Phase 6 cleanup, product response should not expose top-level `stock`, `reserve`, or `sku`. It can keep computed aggregate availability for list sorting/display:
 
-- `stock = sum(active variants.stock)`
-- `reserve = sum(active variants.reserve)`
 - `availableStock = sum(active variants.stock - variants.reserve)`
 
-Longer term, expose variant inventory explicitly and stop relying on product-level `stock/reserve`.
+Variant inventory is exposed through `variants`.
 
 ### Order/Refund Response Formatting
 
@@ -410,7 +407,7 @@ Service should:
 
 - preserve `ServiceResponse`
 - orchestrate side effects after repository transactions
-- keep backward compatibility rules visible, for example allowing legacy stock only during the migration period
+- keep phase-specific compatibility rules visible and remove them once the cleanup phase lands
 
 ## Deployment Phases
 
@@ -436,7 +433,7 @@ Service should:
 
 - Include variant summaries in product list responses.
 - Include full variant details in product detail responses.
-- Keep product-level stock fields in responses.
+- Keep computed `availableStock` in responses.
 - Add helper functions for aggregate availability.
 
 ### Phase 4: Code Writes
@@ -453,9 +450,17 @@ Service should:
 
 ### Phase 6: Cleanup
 
-- Deprecate product-level `stock`, `reserve`, and possibly `sku`.
+- Remove product-level `stock`, `reserve`, and `sku`.
 - Remove compatibility code after all clients use variants.
 - Update Swagger examples and frontend documentation.
+
+### Environment Rollout Order
+
+For development and staging, apply the branches step by step:
+
+1. Merge `feat/migration/backfill`, run the additive schema migration, then run `src/back-fill.ts`.
+2. Merge `feat/constraints`, then run the constraint migration.
+3. Merge `feat/cleanup`, then run the cleanup migration.
 
 ## Open Decisions
 
@@ -502,9 +507,9 @@ Use this section to track implementation progress. Keep each phase buildable and
   - [x] Include variant summaries in product list responses.
   - [x] Include full variant details in product detail responses.
   - [x] Format order list item responses with lightweight variant snapshots/summaries.
-  - [x] Format order detail item responses as `orderItem.product.variant`.
-  - [x] Format refund list responses with `refundItem.orderItem.product.variant` summary.
-  - [x] Format refund detail responses with richer `refundItem.orderItem.product.variant` detail.
+  - [x] Format order detail item responses with `variantAtSale`.
+  - [x] Format refund list responses with `refundItem.orderItem.variantAtSale`.
+  - [x] Format refund detail responses with `refundItem.orderItem.variantAtSale`.
   - [x] Update product and advertisement availability filters to use active variant availability.
   - [x] Keep backward-compatible aggregate `stock`, `reserve`, and `availableStock` fields during transition.
 - [x] Phase 4: Write support
@@ -534,10 +539,12 @@ Use this section to track implementation progress. Keep each phase buildable and
   - [x] Run Phase 5 constraint migration.
   - [x] Verify one user can hold multiple variants of the same product in cart after constraint migration.
   - [x] Verify one order can hold multiple variants of the same product after constraint migration.
-- [ ] Phase 6: Cleanup
-  - [ ] Deprecate product-level `stock`, `reserve`, and possibly `sku`.
-  - [ ] Remove compatibility code after clients use variants.
-  - [ ] Update Swagger and frontend handoff docs to final non-transition shape.
+- [x] Phase 6: Cleanup
+  - [x] Remove product-level `stock`, `reserve`, and `sku` from schema.
+  - [x] Remove compatibility code after clients use variants.
+  - [x] Update Swagger and frontend handoff docs to final non-transition shape.
+  - [x] Generate Phase 6 cleanup migration.
+  - [x] Run Phase 6 cleanup migration locally.
 
 ## Suggested First Implementation Slice
 

@@ -344,12 +344,6 @@ const router = Router();
  *                             type: string
  *                           price:
  *                             type: number
- *                           sku:
- *                             type: string
- *                           stock:
- *                             type: integer
- *                           reserve:
- *                             type: integer
  *                           type:
  *                             type: string
  *                             enum: [normal, refrigeration, virtual]

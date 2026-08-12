@@ -52,14 +52,6 @@ const router = Router();
  *         price:
  *           type: number
  *           format: double
- *         sku:
- *           type: string
- *         stock:
- *           type: integer
- *           description: Transition aggregate field. Variant stock is authoritative.
- *         reserve:
- *           type: integer
- *           description: Transition aggregate field. Variant reserve is authoritative.
  *         type:
  *           type: string
  *           enum: [normal, refrigeration, virtual]
@@ -347,8 +339,9 @@ router.get(
  *               - name
  *               - description
  *               - price
+ *               - variants
  *             type: object
- *             description: Either stock or variants is required. If only stock is provided, a single default variant with name null is created. Custom variants require every variant to have a non-empty name.
+ *             description: Variants are required. Use one variant with name null for products without visible variant choices. Custom variants require every variant to have a non-empty name.
  *             properties:
  *               name:
  *                 type: string
@@ -362,9 +355,6 @@ router.get(
  *               price:
  *                 type: number
  *                 example: 99.99
- *               stock:
- *                 type: integer
- *                 example: 100
  *               variants:
  *                 type: array
  *                 items:
@@ -427,10 +417,6 @@ router.get(
  *                 description: The status of the product.
  *                 default: "active"
  *                 example: "active"
- *               sku:
- *                 type: string
- *                 description: The stock keeping unit identifier.
- *                 example: "SKU123456"
  *               metadata:
  *                 type: object
  *                 description: Additional metadata for the product.
@@ -487,9 +473,6 @@ router.post(
  *                 example: "http://example.com/avatar.png"
  *               price:
  *                 type: number
- *               stock:
- *                 type: integer
- *                 description: Transition field. If variants is omitted, updates the first/default variant stock.
  *               variants:
  *                 type: array
  *                 description: Create or update variants. Variants are not deleted; set status to inactive. A product may keep one unnamed default variant; once it uses custom variants, every persisted variant must have a non-empty name.
@@ -537,10 +520,6 @@ router.post(
  *                 type: string
  *                 description: The status of the product.
  *                 example: "inactive"
- *               sku:
- *                 type: string
- *                 description: The stock keeping unit identifier.
- *                 example: "SKU654321"
  *               metadata:
  *                 type: object
  *                 description: Additional metadata for the product.

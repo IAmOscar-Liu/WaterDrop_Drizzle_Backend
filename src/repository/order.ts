@@ -187,8 +187,7 @@ export async function createOrder({
         })),
       ),
 
-      // Update each variant's reserve; product reserve is kept in sync during
-      // the transition while product-level stock fields still exist.
+      // Update each variant's reserve.
       ...items.map((item) =>
         tx
           .update(schema.productVariantTable)
@@ -197,16 +196,6 @@ export async function createOrder({
             updatedAt: new Date(),
           })
           .where(eq(schema.productVariantTable.id, item.productVariantId!)),
-      ),
-
-      ...items.map((item) =>
-        tx
-          .update(schema.productTable)
-          .set({
-            reserve: sql`COALESCE(${schema.productTable.reserve}, 0) + ${item.quantity}`,
-            updatedAt: new Date(),
-          })
-          .where(eq(schema.productTable.id, item.productId)),
       ),
 
       // Insert the idempotency key after successfully creating the order and related items to prevent duplicate processing
@@ -339,16 +328,6 @@ export async function updateOrderStatus({
                 updatedAt: new Date(),
               })
               .where(eq(schema.productVariantTable.id, item.productVariantId)),
-          );
-          promises.push(
-            tx
-              .update(schema.productTable)
-              .set({
-                reserve: sql`COALESCE(${schema.productTable.reserve}, 0) - ${item.pendingQuantity}`,
-                stock: sql`COALESCE(${schema.productTable.stock}, 0) - ${item.pendingQuantity}`,
-                updatedAt: new Date(),
-              })
-              .where(eq(schema.productTable.id, item.productId)),
           );
           promises.push(
             tx
@@ -514,15 +493,6 @@ export async function updateOrderStatus({
                 updatedAt: new Date(),
               })
               .where(eq(schema.productVariantTable.id, item.productVariantId)),
-          );
-          promises.push(
-            tx
-              .update(schema.productTable)
-              .set({
-                reserve: sql`COALESCE(${schema.productTable.reserve}, 0) - ${item.pendingQuantity}`,
-                updatedAt: new Date(),
-              })
-              .where(eq(schema.productTable.id, item.productId)),
           );
           promises.push(
             tx
