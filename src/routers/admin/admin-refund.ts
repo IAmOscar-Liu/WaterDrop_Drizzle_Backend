@@ -79,6 +79,19 @@ const router = Router();
  *                 - $ref: '#/components/schemas/OrderItem'
  *                 - type: object
  *                   properties:
+ *                     variantAtSale:
+ *                       type: object
+ *                       description: Convenience snapshot object for frontend display.
+ *                       properties:
+ *                         name:
+ *                           type: string
+ *                           nullable: true
+ *                         sku:
+ *                           type: string
+ *                           nullable: true
+ *                         optionValues:
+ *                           type: object
+ *                           nullable: true
  *                     product:
  *                       $ref: '#/components/schemas/Product'
  *                     delivery:
@@ -328,6 +341,7 @@ router.post(
  *               status:
  *                 type: string
  *                 enum: [pending, processing, completed, cancelled]
+ *                 description: When status changes to completed, backend restocks the linked orderItem.productVariantId.
  *               quantity:
  *                 type: integer
  *                 description: Refund quantity. Must not exceed the remaining refundable quantity for the order item.

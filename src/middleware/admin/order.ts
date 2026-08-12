@@ -21,7 +21,4 @@ export const orderValidation = {
     endDate: dateTimeString.optional(),
   }),
   idParams,
-  merchantTradeNoParams: z.object({
-    merchantTradeNo: z.string().min(4),
-  }),
 };

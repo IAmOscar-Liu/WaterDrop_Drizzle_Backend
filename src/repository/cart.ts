@@ -16,42 +16,85 @@ import { CustomError } from "../lib/error";
 export async function upsertCartItem(
   userId: string,
   productId: string,
+  productVariantId: string,
   quantity: number,
 ) {
-  // If quantity is 0 or less, remove the item from the cart.
-  if (quantity <= 0) {
-    await db
-      .delete(schema.cartItemTable)
-      .where(
-        and(
-          eq(schema.cartItemTable.userId, userId),
-          eq(schema.cartItemTable.productId, productId),
-        ),
-      );
-    console.log(`Removed product ${productId} from cart for user ${userId}.`);
-    return;
-  }
+  return db.transaction(async (tx) => {
+    const [variant] = await tx
+      .select()
+      .from(schema.productVariantTable)
+      .where(eq(schema.productVariantTable.id, productVariantId))
+      .for("update");
 
-  // Otherwise, insert a new item or update the quantity if it already exists.
-  const [upsertedItem] = await db
-    .insert(schema.cartItemTable)
-    .values({ userId, productId, quantity })
-    .onConflictDoUpdate({
-      target: [schema.cartItemTable.userId, schema.cartItemTable.productId],
-      set: { quantity: quantity, updatedAt: new Date() },
-    })
-    .returning();
+    if (!variant || variant.productId !== productId) {
+      throw new CustomError("Product variant not found", 404);
+    }
 
-  console.log(
-    `Upserted product ${productId} with quantity ${quantity} for user ${userId}.`,
-  );
-  return upsertedItem;
+    if (variant.status !== "active") {
+      throw new CustomError("Product variant is inactive", 400);
+    }
+
+    if (quantity > variant.stock - variant.reserve) {
+      throw new CustomError("Insufficient stock", 400);
+    }
+
+    // If quantity is 0 or less, remove the item from the cart.
+    if (quantity <= 0) {
+      await tx
+        .delete(schema.cartItemTable)
+        .where(
+          and(
+            eq(schema.cartItemTable.userId, userId),
+            eq(schema.cartItemTable.productVariantId, productVariantId),
+          ),
+        );
+      return;
+    }
+
+    const existingCartItem = await tx.query.cartItemTable.findFirst({
+      where: and(
+        eq(schema.cartItemTable.userId, userId),
+        eq(schema.cartItemTable.productVariantId, productVariantId),
+      ),
+    });
+
+    if (existingCartItem) {
+      const [updatedCartItem] = await tx
+        .update(schema.cartItemTable)
+        .set({ quantity, productId, updatedAt: new Date() })
+        .where(eq(schema.cartItemTable.id, existingCartItem.id))
+        .returning();
+
+      return updatedCartItem;
+    }
+
+    const [insertedCartItem] = await tx
+      .insert(schema.cartItemTable)
+      .values({ userId, productId, productVariantId, quantity })
+      .returning();
+
+    return insertedCartItem;
+  });
 }
 
-export async function toggleCartItem(productId: string, checked: boolean) {
+export async function toggleCartItem({
+  userId,
+  productId,
+  productVariantId,
+  checked,
+}: {
+  userId: string;
+  productId: string;
+  productVariantId: string;
+  checked: boolean;
+}) {
   return db.transaction(async (tx) => {
     const cartItem = await tx.query.cartItemTable.findFirst({
-      where: eq(schema.cartItemTable.productId, productId),
+      where: and(
+        eq(schema.cartItemTable.userId, userId),
+        eq(schema.cartItemTable.productId, productId),
+        eq(schema.cartItemTable.productVariantId, productVariantId),
+      ),
     });
 
     if (!cartItem) {
@@ -61,8 +104,96 @@ export async function toggleCartItem(productId: string, checked: boolean) {
     const [updatedCartItem] = await tx
       .update(schema.cartItemTable)
       .set({ checked, updatedAt: new Date() })
-      .where(eq(schema.cartItemTable.productId, productId))
+      .where(eq(schema.cartItemTable.id, cartItem.id))
       .returning();
+    return updatedCartItem;
+  });
+}
+
+export async function updateCartItemVariant({
+  userId,
+  cartItemId,
+  productVariantId,
+}: {
+  userId: string;
+  cartItemId: string;
+  productVariantId: string;
+}) {
+  return db.transaction(async (tx) => {
+    const [cartItem] = await tx
+      .select()
+      .from(schema.cartItemTable)
+      .where(
+        and(
+          eq(schema.cartItemTable.id, cartItemId),
+          eq(schema.cartItemTable.userId, userId),
+        ),
+      )
+      .for("update");
+
+    if (!cartItem) {
+      throw new CustomError("Cart item not found", 404);
+    }
+
+    if (cartItem.productVariantId === productVariantId) {
+      return cartItem;
+    }
+
+    const [variant] = await tx
+      .select()
+      .from(schema.productVariantTable)
+      .where(eq(schema.productVariantTable.id, productVariantId))
+      .for("update");
+
+    if (!variant || variant.productId !== cartItem.productId) {
+      throw new CustomError("Product variant not found", 404);
+    }
+
+    if (variant.status !== "active") {
+      throw new CustomError("Product variant is inactive", 400);
+    }
+
+    const [targetCartItem] = await tx
+      .select()
+      .from(schema.cartItemTable)
+      .where(
+        and(
+          eq(schema.cartItemTable.userId, userId),
+          eq(schema.cartItemTable.productId, cartItem.productId),
+          eq(schema.cartItemTable.productVariantId, productVariantId),
+        ),
+      )
+      .for("update");
+
+    const nextQuantity = cartItem.quantity + (targetCartItem?.quantity ?? 0);
+    if (nextQuantity > variant.stock - variant.reserve) {
+      throw new CustomError("Insufficient stock", 400);
+    }
+
+    if (targetCartItem) {
+      const [updatedCartItem] = await tx
+        .update(schema.cartItemTable)
+        .set({
+          quantity: nextQuantity,
+          checked: cartItem.checked || targetCartItem.checked,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.cartItemTable.id, targetCartItem.id))
+        .returning();
+
+      await tx
+        .delete(schema.cartItemTable)
+        .where(eq(schema.cartItemTable.id, cartItem.id));
+
+      return updatedCartItem;
+    }
+
+    const [updatedCartItem] = await tx
+      .update(schema.cartItemTable)
+      .set({ productVariantId, updatedAt: new Date() })
+      .where(eq(schema.cartItemTable.id, cartItem.id))
+      .returning();
+
     return updatedCartItem;
   });
 }
@@ -95,12 +226,33 @@ export async function listCartItems(userId: string) {
               category: true,
             },
           },
+          variants: {
+            where: eq(schema.productVariantTable.status, "active"),
+            orderBy: (variants, { asc }) => [asc(variants.sortOrder)],
+          },
         },
       }, // Include the related product data
+      variant: true,
     },
     orderBy: (cartItems, { desc }) => [desc(cartItems.createdAt)],
   });
 
-  console.log(`Found ${cartItems.length} items in cart for user ${userId}.`);
-  return cartItems;
+  return cartItems.map((item) => ({
+    ...item,
+    product: item.product
+      ? {
+          ...item.product,
+          variants: item.product.variants.map((variant) => ({
+            ...variant,
+            availableStock: variant.stock - variant.reserve,
+          })),
+        }
+      : item.product,
+    variant: item.variant
+      ? {
+          ...item.variant,
+          availableStock: item.variant.stock - item.variant.reserve,
+        }
+      : item.variant,
+  }));
 }

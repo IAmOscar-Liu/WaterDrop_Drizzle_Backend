@@ -1,4 +1,3 @@
-import { Param } from "drizzle-orm";
 import * as schema from "../db/schema";
 import { handleServiceError } from "../lib/error";
 import { sendMulticastPushNotification } from "../lib/sendNotification";
@@ -22,6 +21,7 @@ class ChatroomService {
     userId: string;
     accountId?: string;
     productId?: string | null;
+    productVariantId?: string | null;
     orderId?: string | null;
   }): Promise<
     ServiceResponse<Awaited<ReturnType<typeof findOrCreateChatRoom>>>

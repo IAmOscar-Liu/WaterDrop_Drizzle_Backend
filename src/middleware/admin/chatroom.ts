@@ -13,6 +13,7 @@ const adminMessageSender = z.enum(["admin", "seller"]);
 export const chatroomValidation = {
   listQuery: paginationQuery.extend({
     productId: uuid.optional(),
+    productVariantId: uuid.optional(),
     supportOnly: z.enum(["true", "false"]).optional(),
     status: chatRoomStatus.optional(),
   }),

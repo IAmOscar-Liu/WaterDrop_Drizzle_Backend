@@ -1,8 +1,14 @@
 import bcrypt from "bcrypt";
-import { and, count, eq, ilike, or, SQL } from "drizzle-orm";
+import { count, eq, ilike, or, SQL } from "drizzle-orm";
 import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
 import db from "../lib/initDB";
+import {
+  compactConditions,
+  getPagination,
+  getTotalPages,
+  PaginationParams,
+} from "./utils/query";
 
 // Admin account password: test1234
 
@@ -21,7 +27,6 @@ export async function createAccount(accountData: schema.NewAccount) {
     .insert(schema.accountTable)
     .values(dataToInsert)
     .returning();
-  console.log("New account created:", newAccount.id);
 
   return await getAccountById(newAccount.id);
 }
@@ -41,9 +46,6 @@ export async function getAccountByEmailAndPassword(
     .select()
     .from(schema.accountTable)
     .where(eq(schema.accountTable.email, email));
-
-  console.log("email find");
-
   if (!account) {
     throw new CustomError("Invalid email or password", 404);
   }
@@ -130,9 +132,6 @@ export async function updateAccount(
   if (!updatedAccount) {
     throw new CustomError("Account not found", 404);
   }
-
-  console.log("Account updated:", updatedAccount.id);
-
   return await getAccountById(accountId);
 }
 
@@ -154,56 +153,67 @@ export async function assignAccountParent(accountId: string, parentId: string) {
   if (accountId === parentId)
     throw new CustomError("accountId and parentId cannot be the same", 400);
 
-  const [myAccount, parentAccount] = await Promise.all([
-    getAccountById(accountId),
-    getAccountById(parentId),
-  ]);
-  if (!myAccount) throw new CustomError("Account not found", 404);
-  if (!parentAccount)
-    throw new CustomError(`Parent account "${parentId}" not found.`, 404);
-  if (myAccount.role !== "employee")
-    throw new CustomError(
-      "Only employees can be assigned to a parent account",
-      400
-    );
-  if (parentAccount.role !== "admin" && parentAccount.role !== "seller")
-    throw new CustomError(
-      `Parent account "${parentId}" is not an admin or seller.`,
-      400
-    );
+  await db.transaction(async (tx) => {
+    const lockedAccounts = new Map<string, schema.Account>();
 
-  // 2. Find the account group by parentId
-  let [accountGroup] = await db
-    .select()
-    .from(schema.accountGroupTable)
-    .where(eq(schema.accountGroupTable.id, parentId));
+    for (const id of [accountId, parentId].sort()) {
+      const [account] = await tx
+        .select()
+        .from(schema.accountTable)
+        .where(eq(schema.accountTable.id, id))
+        .for("update");
 
-  // 3. If account group doesn't exist, create it
-  if (!accountGroup) {
-    console.log(
-      `Parent account ${parentAccount.name} does not have a group, Creating one...`
-    );
-    [accountGroup] = await db
-      .insert(schema.accountGroupTable)
-      .values({ parentId: parentAccount.id })
+      if (account) {
+        lockedAccounts.set(account.id, account);
+      }
+    }
+
+    const myAccount = lockedAccounts.get(accountId);
+    const parentAccount = lockedAccounts.get(parentId);
+
+    if (!myAccount) throw new CustomError("Account not found", 404);
+    if (!parentAccount) {
+      throw new CustomError(`Parent account "${parentId}" not found.`, 404);
+    }
+    if (myAccount.role !== "employee") {
+      throw new CustomError(
+        "Only employees can be assigned to a parent account",
+        400,
+      );
+    }
+    if (parentAccount.role !== "admin" && parentAccount.role !== "seller") {
+      throw new CustomError(
+        `Parent account "${parentId}" is not an admin or seller.`,
+        400,
+      );
+    }
+
+    // 2. Find the account group by parentId.
+    let [accountGroup] = await tx
+      .select()
+      .from(schema.accountGroupTable)
+      .where(eq(schema.accountGroupTable.parentId, parentId))
+      .for("update");
+
+    // 3. If account group doesn't exist, create it.
+    if (!accountGroup) {
+      [accountGroup] = await tx
+        .insert(schema.accountGroupTable)
+        .values({ parentId: parentAccount.id })
+        .returning();
+    }
+
+    // 4. Make current account join the group.
+    const [updatedAccount] = await tx
+      .update(schema.accountTable)
+      .set({ accountGroupId: accountGroup.id })
+      .where(eq(schema.accountTable.id, accountId))
       .returning();
-    console.log(`New account group created: ${accountGroup.id}`);
-  }
 
-  // 4. Make current account join the group
-  const [updatedAccount] = await db
-    .update(schema.accountTable)
-    .set({ accountGroupId: accountGroup.id })
-    .where(eq(schema.accountTable.id, accountId))
-    .returning();
-
-  if (!updatedAccount) {
-    throw new CustomError(`Account with id "${accountId}" not found.`, 404);
-  }
-
-  console.log(
-    `Account "${updatedAccount.name}" has joined group ${accountGroup.id} where parent is "${parentAccount.name}".`
-  );
+    if (!updatedAccount) {
+      throw new CustomError(`Account with id "${accountId}" not found.`, 404);
+    }
+  });
 
   return await getAccountById(accountId);
 }
@@ -266,9 +276,7 @@ export async function changeAccountPassword(
   return await getAccountById(accountId);
 }
 
-export interface ListAccountsParams {
-  page?: number;
-  limit?: number;
+export interface ListAccountsParams extends PaginationParams {
   search?: string;
   role?: schema.NewAccount["role"];
   status?: schema.NewAccount["status"];
@@ -281,15 +289,15 @@ export async function listAccounts({
   role,
   status,
 }: ListAccountsParams) {
-  const offset = (page - 1) * limit;
-  const conditions: (SQL | undefined)[] = [];
+  const pagination = getPagination(page, limit);
+  const conditions: Array<SQL | undefined> = [];
 
   if (search) {
     conditions.push(
       or(
         ilike(schema.accountTable.email, `%${search}%`),
-        ilike(schema.accountTable.name, `%${search}%`)
-      )
+        ilike(schema.accountTable.name, `%${search}%`),
+      ),
     );
   }
 
@@ -301,7 +309,7 @@ export async function listAccounts({
     conditions.push(eq(schema.accountTable.status, status));
   }
 
-  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+  const whereClause = compactConditions(conditions);
 
   // Query for total count matching the filters
   const totalResult = await db
@@ -310,7 +318,7 @@ export async function listAccounts({
     .where(whereClause);
 
   const total = totalResult[0].total;
-  const totalPages = Math.ceil(total / limit);
+  const totalPages = getTotalPages(total, pagination.limit);
 
   // Query for the paginated accounts
   const accountsWithPassword = await db.query.accountTable.findMany({
@@ -322,8 +330,8 @@ export async function listAccounts({
         },
       },
     },
-    limit,
-    offset,
+    limit: pagination.limit,
+    offset: pagination.offset,
     orderBy: (accounts, { desc }) => [desc(accounts.createdAt)],
   });
 
@@ -337,8 +345,14 @@ export async function listAccounts({
             ? (parentInfo as Omit<schema.Account, "password">)
             : group?.parent ?? null,
       };
-    }
+    },
   );
 
-  return { accounts, total, page, limit, totalPages };
+  return {
+    accounts,
+    total,
+    page: pagination.page,
+    limit: pagination.limit,
+    totalPages,
+  };
 }

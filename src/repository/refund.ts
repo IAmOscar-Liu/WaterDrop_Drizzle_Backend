@@ -21,11 +21,14 @@ import {
 } from "../lib/general";
 import db from "../lib/initDB";
 import { isAccountAdmin } from "./account";
-import { findOrCreateChatRoom, sendChatMessage } from "./chatroom";
+import {
+  compactConditions,
+  getPagination,
+  getTotalPages,
+  PaginationParams,
+} from "./utils/query";
 
-export interface GetRefundListParams {
-  page?: number;
-  limit?: number;
+export interface GetRefundListParams extends PaginationParams {
   accountId?: string;
   userId?: string;
   productId?: string;
@@ -34,6 +37,16 @@ export interface GetRefundListParams {
   endAt?: Date;
   status?: schema.RefundItem["status"];
 }
+
+export type RefundCreatedChatMessageInput = {
+  accountId: string;
+  userId: string;
+  productId: string;
+  productVariantId: string;
+  orderId: string;
+  senderType?: schema.ChatMessage["senderType"];
+  content: string;
+};
 
 function formatRefundRow(
   row: {
@@ -61,11 +74,22 @@ function formatRefundRow(
   bankNameByCode = getBankNameByCodeMap(),
 ) {
   const bankCode = row.user.bankCode?.trim().padStart(3, "0");
+  const {
+    variantNameAtSale,
+    variantSkuAtSale,
+    variantOptionValuesAtSale,
+    ...orderItem
+  } = row.orderItem;
 
   return {
     ...row.refundItem,
     orderItem: {
-      ...row.orderItem,
+      ...orderItem,
+      variantAtSale: {
+        name: variantNameAtSale,
+        sku: variantSkuAtSale,
+        optionValues: variantOptionValuesAtSale,
+      },
       product: row.product,
       delivery: row.delivery,
       order: {
@@ -108,7 +132,7 @@ function getRefundFilters({
     conditions.push(eq(schema.refundItemTable.status, status));
   }
 
-  return conditions.length > 0 ? and(...conditions) : undefined;
+  return compactConditions(conditions);
 }
 
 function getRefundBaseQuery() {
@@ -269,43 +293,6 @@ function formatRefundChatMessage({
   ].join("\n");
 }
 
-async function sendRefundCreatedChatMessage({
-  accountId,
-  userId,
-  productId,
-  orderId,
-  senderType,
-  content,
-}: {
-  accountId: string;
-  userId: string;
-  productId: string;
-  orderId: string;
-  senderType?: schema.ChatMessage["senderType"];
-  content: string;
-}) {
-  const chatRoomResult = await findOrCreateChatRoom({
-    userId,
-    accountId,
-    productId,
-    orderId,
-  });
-  const chatRoom = Array.isArray(chatRoomResult)
-    ? chatRoomResult[0]
-    : chatRoomResult;
-
-  if (!chatRoom) {
-    throw new CustomError("Chat room could not be created", 500);
-  }
-
-  await sendChatMessage({
-    chatRoomId: chatRoom.id,
-    senderType:
-      senderType ?? ((await isAccountAdmin(accountId)) ? "admin" : "seller"),
-    content,
-  });
-}
-
 export async function getRefundList({
   page = 1,
   limit = 10,
@@ -317,7 +304,7 @@ export async function getRefundList({
   endAt,
   status,
 }: GetRefundListParams = {}) {
-  const offset = (page - 1) * limit;
+  const pagination = getPagination(page, limit);
   const whereClause = getRefundFilters({
     userId,
     productId,
@@ -340,7 +327,11 @@ export async function getRefundList({
           ),
         )
       : undefined;
-  const scopedWhereClause = and(whereClause, sellerScope, merchantTradeNoScope);
+  const scopedWhereClause = compactConditions([
+    whereClause,
+    sellerScope,
+    merchantTradeNoScope,
+  ]);
 
   const [totalResult] = await db
     .select({ total: count() })
@@ -366,19 +357,19 @@ export async function getRefundList({
   const rows = await getRefundBaseQuery()
     .where(scopedWhereClause)
     .orderBy(desc(schema.refundItemTable.createdAt))
-    .limit(limit)
-    .offset(offset);
+    .limit(pagination.limit)
+    .offset(pagination.offset);
 
   const total = totalResult.total;
-  const totalPages = Math.ceil(total / limit);
+  const totalPages = getTotalPages(total, pagination.limit);
 
   const bankNameByCode = getBankNameByCodeMap();
 
   return {
     refunds: rows.map((row) => formatRefundRow(row, bankNameByCode)),
     total,
-    page,
-    limit,
+    page: pagination.page,
+    limit: pagination.limit,
     totalPages,
   };
 }
@@ -391,7 +382,7 @@ export async function getRefundById(refundItemId: string) {
   return row ? formatRefundRow(row) : undefined;
 }
 
-export async function createRefund(
+export async function createRefundWithChatContext(
   item: schema.NewRefundItem & {
     accountId?: string;
     userId?: string;
@@ -550,6 +541,12 @@ export async function createRefund(
       .values(refundItem)
       .returning();
 
+    if (item.accountId && !orderItem.productVariantId) {
+      throw new CustomError("Order item productVariantId is required", 400);
+    }
+
+    const productVariantId = orderItem.productVariantId;
+
     return {
       refundItem: newRefundItem,
       chatMessageInput: item.accountId
@@ -557,6 +554,7 @@ export async function createRefund(
             accountId: item.accountId,
             userId: item.userId ?? order.userId,
             productId: orderItem.productId,
+            productVariantId: productVariantId!,
             orderId: orderItem.orderId,
             senderType: item.chatSenderType,
             content: formatRefundChatMessage({
@@ -573,14 +571,13 @@ export async function createRefund(
     };
   });
 
-  if (result.chatMessageInput) {
-    void sendRefundCreatedChatMessage(result.chatMessageInput).catch(
-      (error) => {
-        console.error("Failed to send refund chat message:", error);
-      },
-    );
-  }
+  return result;
+}
 
+export async function createRefund(
+  item: Parameters<typeof createRefundWithChatContext>[0],
+) {
+  const result = await createRefundWithChatContext(item);
   return result.refundItem;
 }
 
@@ -809,6 +806,37 @@ export async function updateRefundItemStatus(
         financialUpdates?.quantity ?? refundItem.quantity;
       const effectiveRefundAmount =
         financialUpdates?.refundAmount ?? refundItem.refundAmount ?? 0;
+
+      if (!context.orderItem.productVariantId) {
+        throw new CustomError("Order item productVariantId is required", 400);
+      }
+
+      const [variant] = await tx
+        .select()
+        .from(schema.productVariantTable)
+        .where(eq(schema.productVariantTable.id, context.orderItem.productVariantId))
+        .for("update");
+
+      if (!variant || variant.productId !== context.orderItem.productId) {
+        throw new CustomError("Product variant not found", 404);
+      }
+
+      await Promise.all([
+        tx
+          .update(schema.productVariantTable)
+          .set({
+            stock: sql`${schema.productVariantTable.stock} + ${effectiveQuantity}`,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.productVariantTable.id, variant.id)),
+        tx
+          .update(schema.productTable)
+          .set({
+            stock: sql`${schema.productTable.stock} + ${effectiveQuantity}`,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.productTable.id, context.orderItem.productId)),
+      ]);
 
       // 4.3 Calculate what percentage of the order subtotal is being refunded.
       const refundTotal = effectiveQuantity * effectiveRefundAmount;

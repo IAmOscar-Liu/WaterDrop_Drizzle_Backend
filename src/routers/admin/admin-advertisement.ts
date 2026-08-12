@@ -52,7 +52,15 @@ const router = Router();
  *         - type: object
  *           properties:
  *             product:
- *               $ref: '#/components/schemas/Product'
+ *               allOf:
+ *                 - $ref: '#/components/schemas/Product'
+ *                 - type: object
+ *                   properties:
+ *                     variants:
+ *                       type: array
+ *                       description: Active product variants available from the advertisement.
+ *                       items:
+ *                         $ref: '#/components/schemas/ProductVariant'
  *
  *     AdvertisementWithProductAndStats:
  *       allOf:
@@ -63,7 +71,15 @@ const router = Router();
  *               $ref: '#/components/schemas/AdvertisementBudgetStatus'
  *               nullable: true
  *             product:
- *               $ref: '#/components/schemas/Product'
+ *               allOf:
+ *                 - $ref: '#/components/schemas/Product'
+ *                 - type: object
+ *                   properties:
+ *                     variants:
+ *                       type: array
+ *                       description: Active product variants available from the advertisement.
+ *                       items:
+ *                         $ref: '#/components/schemas/ProductVariant'
  *
  *     AdvertisementWithProductAndDetails:
  *       allOf:
@@ -78,7 +94,15 @@ const router = Router();
  *               items:
  *                 $ref: '#/components/schemas/AdvertisementTransaction'
  *             product:
- *               $ref: '#/components/schemas/Product'
+ *               allOf:
+ *                 - $ref: '#/components/schemas/Product'
+ *                 - type: object
+ *                   properties:
+ *                     variants:
+ *                       type: array
+ *                       description: Active product variants available from the advertisement.
+ *                       items:
+ *                         $ref: '#/components/schemas/ProductVariant'
  *
  *     ListAdvertisementsResponse:
  *       type: object

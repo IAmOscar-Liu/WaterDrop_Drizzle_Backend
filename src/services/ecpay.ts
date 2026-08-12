@@ -8,6 +8,11 @@ import {
   ECPAY_LOGISTIC_BASE_URL,
   ECPAY_QUERY_LOGISTICS_TRADE_INFO_URL,
 } from "../constants/ecpay";
+import {
+  getEcpayLength as getEcpayStringLength,
+  hasEmoji as containsEmoji,
+  hasSpecialChars as containsSpecialChars,
+} from "../lib/ecpayValidation";
 import { generateRandomString } from "../lib/general";
 import axios from "axios";
 import {
@@ -185,27 +190,15 @@ class EcPayService {
    * @returns {number} 綠界規範下的長度。
    */
   getEcpayLength(str: string) {
-    let length = 0;
-    for (let i = 0; i < str.length; i++) {
-      // 檢查是否為中文字符或全形字符 (Unicode 編碼 > 255 的字符視為佔用 2 字元)
-      if (str.charCodeAt(i) > 255) {
-        length += 2;
-      } else {
-        length += 1;
-      }
-    }
-    return length;
+    return getEcpayStringLength(str);
   }
 
   hasSpecialChars(str: string) {
-    const specialCharRegex = /[\^'`!@#%&*+\\"<>|_\[\]‘”]/;
-    return specialCharRegex.test(str);
+    return containsSpecialChars(str);
   }
 
   hasEmoji(str: string) {
-    // 檢查是否包含表情符號 (emoji)
-    const emojiRegex = /\p{Emoji}/u;
-    return emojiRegex.test(str);
+    return containsEmoji(str);
   }
 
   /**
@@ -398,7 +391,7 @@ class EcPayService {
     {
       type = "B2C",
       orderId,
-      productIds,
+      products = [],
       LogisticsSubType,
       GoodsName,
       GoodsAmount,
@@ -413,7 +406,10 @@ class EcPayService {
       SenderCellPhone,
       shippingCost,
       shippingCostDeduction,
-    }: Record<string, any>,
+    }: {
+      products: Array<{ productId: string; variantId: string }>;
+      [key: string]: any;
+    },
     options?: { throwError?: boolean },
   ) {
     if (
@@ -439,14 +435,24 @@ class EcPayService {
 
     const merchantTradeNo = this.generateTradeNo();
 
-    let pIds: string[] = [];
-    if (Array.isArray(productIds)) {
-      pIds = productIds.filter((p) => typeof p === "string") as string[];
-    } else if (typeof productIds === "string") {
-      pIds = [productIds];
+    // let pIds: string[] = [];
+    const productIds = products.map((p) => p.productId);
+    const variantIds = products.map((p) => p.variantId);
+
+    if (
+      productIds.length !== variantIds.length ||
+      productIds.some((productId) => !productId) ||
+      variantIds.some((variantId) => !variantId)
+    ) {
+      console.error("products must include paired productIds and variantIds");
+      if (options?.throwError)
+        throw new Error(
+          "products must include paired productIds and variantIds",
+        );
+      return null;
     }
 
-    if (pIds.length > 0) {
+    if (products.length > 0) {
       const cvsStoreInfo: Record<string, string> = {};
       cvsStoreInfo["storeID"] = String(ReceiverStoreID);
       if (ReceiverStoreName)
@@ -459,7 +465,8 @@ class EcPayService {
       await createMerchantTrade({
         merchantTradeNo,
         orderId: String(orderId),
-        productIds: pIds,
+        productIds,
+        variantIds,
         cvsStoreInfo,
         shippingCost: shippingCost ? Number(shippingCost) : 0,
         shippingCostDeduction: shippingCostDeduction

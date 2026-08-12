@@ -1,13 +1,59 @@
 import { handleServiceError } from "../lib/error";
+import { isAccountAdmin } from "../repository/account";
+import { findOrCreateChatRoom, sendChatMessage } from "../repository/chatroom";
 import {
   canRefund as canRefundOrderItem,
   createRefund,
+  createRefundWithChatContext,
   getRefundById,
   getRefundList,
   GetRefundListParams,
+  RefundCreatedChatMessageInput,
   updateRefundItemStatus,
 } from "../repository/refund";
 import { ServiceResponse } from "../type/general";
+
+async function sendRefundCreatedChatMessage({
+  accountId,
+  userId,
+  productId,
+  productVariantId,
+  orderId,
+  senderType,
+  content,
+}: RefundCreatedChatMessageInput) {
+  const chatRoomResult = await findOrCreateChatRoom({
+    userId,
+    accountId,
+    productId,
+    productVariantId,
+    orderId,
+  });
+  const chatRoom = Array.isArray(chatRoomResult)
+    ? chatRoomResult[0]
+    : chatRoomResult;
+
+  if (!chatRoom) {
+    throw new Error("Chat room could not be created");
+  }
+
+  await sendChatMessage({
+    chatRoomId: chatRoom.id,
+    senderType:
+      senderType ?? ((await isAccountAdmin(accountId)) ? "admin" : "seller"),
+    content,
+  });
+}
+
+function sendRefundCreatedChatMessageAsync(
+  input?: RefundCreatedChatMessageInput,
+) {
+  if (!input) return;
+
+  void sendRefundCreatedChatMessage(input).catch((error) => {
+    console.error("Failed to send refund chat message:", error);
+  });
+}
 
 class RefundService {
   async getRefundList(
@@ -43,8 +89,9 @@ class RefundService {
     item: Parameters<typeof createRefund>[0],
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof createRefund>>>> {
     try {
-      const refund = await createRefund(item);
-      return { success: true, data: refund };
+      const result = await createRefundWithChatContext(item);
+      sendRefundCreatedChatMessageAsync(result.chatMessageInput);
+      return { success: true, data: result.refundItem };
     } catch (error) {
       return handleServiceError(error);
     }
@@ -54,8 +101,9 @@ class RefundService {
     item: Parameters<typeof createRefund>[0],
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof createRefund>>>> {
     try {
-      const refund = await createRefund(item);
-      return { success: true, data: refund };
+      const result = await createRefundWithChatContext(item);
+      sendRefundCreatedChatMessageAsync(result.chatMessageInput);
+      return { success: true, data: result.refundItem };
     } catch (error) {
       return handleServiceError(error);
     }

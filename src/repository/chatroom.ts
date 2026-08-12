@@ -14,6 +14,7 @@ import * as schema from "../db/schema";
 import db from "../lib/initDB";
 import { CustomError } from "../lib/error";
 import { isAccountAdmin } from "./account";
+import { compactConditions, getPagination, getTotalPages } from "./utils/query";
 
 function chatRoomHasMessagesCondition() {
   return sql`EXISTS (
@@ -21,6 +22,67 @@ function chatRoomHasMessagesCondition() {
     FROM ${schema.chatMessageTable} cm
     WHERE cm.chat_room_id = ${schema.chatRoomTable.id}
   )`;
+}
+
+function getVariantDisplayName(
+  variant:
+    | Pick<schema.ProductVariant, "name" | "optionValues">
+    | null
+    | undefined,
+) {
+  if (!variant) {
+    return null;
+  }
+
+  const name = variant.name?.trim();
+  if (name) {
+    return name;
+  }
+
+  const optionValues = variant.optionValues;
+  if (
+    optionValues &&
+    typeof optionValues === "object" &&
+    !Array.isArray(optionValues)
+  ) {
+    const values = Object.values(optionValues as Record<string, unknown>)
+      .map((value) => (value == null ? "" : String(value).trim()))
+      .filter(Boolean);
+
+    return values.length > 0 ? values.join(" / ") : null;
+  }
+
+  return null;
+}
+
+function getChatRoomLookupCondition({
+  userId,
+  accountId,
+  productId,
+  productVariantId,
+  orderId,
+}: {
+  userId: string;
+  accountId: string | null;
+  productId: string | null;
+  productVariantId: string | null;
+  orderId: string | null;
+}) {
+  return and(
+    eq(schema.chatRoomTable.userId, userId),
+    accountId === null
+      ? isNull(schema.chatRoomTable.accountId)
+      : eq(schema.chatRoomTable.accountId, accountId),
+    productId === null
+      ? isNull(schema.chatRoomTable.productId)
+      : eq(schema.chatRoomTable.productId, productId),
+    productVariantId === null
+      ? isNull(schema.chatRoomTable.productVariantId)
+      : eq(schema.chatRoomTable.productVariantId, productVariantId),
+    orderId === null
+      ? isNull(schema.chatRoomTable.orderId)
+      : eq(schema.chatRoomTable.orderId, orderId),
+  );
 }
 
 /**
@@ -36,101 +98,111 @@ export async function findOrCreateChatRoom({
   userId,
   accountId,
   productId,
+  productVariantId,
   orderId,
 }: {
   userId: string;
   accountId?: string | null;
   productId?: string | null;
+  productVariantId?: string | null;
   orderId?: string | null;
 }) {
-  const accountIdCondition =
-    accountId == null
-      ? isNull(schema.chatRoomTable.accountId)
-      : eq(schema.chatRoomTable.accountId, accountId);
+  const lookup = {
+    userId,
+    accountId: accountId ?? null,
+    productId: productId ?? null,
+    productVariantId: productVariantId ?? null,
+    orderId: orderId ?? null,
+  };
 
-  // 1. Try to find an existing chat room
-  let existingRoom = await db.query.chatRoomTable.findFirst({
-    where: and(
-      eq(schema.chatRoomTable.userId, userId),
-      accountIdCondition,
-      orderId
-        ? eq(schema.chatRoomTable.orderId, orderId)
-        : isNull(schema.chatRoomTable.orderId),
-      productId
-        ? eq(schema.chatRoomTable.productId, productId)
-        : isNull(schema.chatRoomTable.productId),
-    ),
-  });
-
-  // 1.1 Try to find an existing chat room without orderId
-  if (!existingRoom && orderId) {
-    existingRoom = await db.query.chatRoomTable.findFirst({
-      where: and(
-        eq(schema.chatRoomTable.userId, userId),
-        accountIdCondition,
-        isNull(schema.chatRoomTable.orderId),
-        productId
-          ? eq(schema.chatRoomTable.productId, productId)
-          : isNull(schema.chatRoomTable.productId),
-      ),
-    });
-    if (existingRoom) {
-      [existingRoom] = await db
-        .update(schema.chatRoomTable)
-        .set({ orderId })
-        .where(eq(schema.chatRoomTable.id, existingRoom.id))
-        .returning();
-    }
+  if (lookup.productId && !lookup.productVariantId) {
+    throw new CustomError("productVariantId is required for product chat rooms", 400);
   }
 
-  // const existingRoom = await db.query.chatRoomTable.findFirst({
-  //   where: and(
-  //     eq(schema.chatRoomTable.userId, userId),
-  //     eq(schema.chatRoomTable.accountId, accountId),
-  //     productId
-  //       ? eq(schema.chatRoomTable.productId, productId)
-  //       : isNull(schema.chatRoomTable.productId)
-  //   ),
-  // });
+  if (!lookup.productId && lookup.productVariantId) {
+    throw new CustomError("productId is required when productVariantId is provided", 400);
+  }
 
-  if (existingRoom) {
-    console.log("Found existing chat room:", existingRoom.id);
-    if (existingRoom.status !== "active") {
-      // if existing room is inactive, set it to active
-      return await db
+  return db.transaction(async (tx) => {
+    const [user] = await tx
+      .select({ id: schema.userTable.id })
+      .from(schema.userTable)
+      .where(eq(schema.userTable.id, userId))
+      .for("update");
+
+    if (!user) {
+      throw new CustomError("User not found", 404);
+    }
+
+    if (lookup.productId && lookup.productVariantId) {
+      const [variant] = await tx
+        .select({
+          id: schema.productVariantTable.id,
+          productId: schema.productVariantTable.productId,
+        })
+        .from(schema.productVariantTable)
+        .where(eq(schema.productVariantTable.id, lookup.productVariantId))
+        .for("update");
+
+      if (!variant || variant.productId !== lookup.productId) {
+        throw new CustomError("Product variant not found", 404);
+      }
+    }
+
+    const activateChatRoom = async (room: schema.ChatRoom) => {
+      if (room.status === "active") return room;
+
+      const [updatedRoom] = await tx
         .update(schema.chatRoomTable)
         .set({ status: "active" })
-        .where(eq(schema.chatRoomTable.id, existingRoom.id))
+        .where(eq(schema.chatRoomTable.id, room.id))
         .returning();
+
+      return updatedRoom ?? room;
+    };
+
+    let existingRoom = await tx.query.chatRoomTable.findFirst({
+      where: getChatRoomLookupCondition(lookup),
+    });
+
+    if (!existingRoom && lookup.orderId) {
+      existingRoom = await tx.query.chatRoomTable.findFirst({
+        where: getChatRoomLookupCondition({ ...lookup, orderId: null }),
+      });
+
+      if (existingRoom) {
+        const [updatedRoom] = await tx
+          .update(schema.chatRoomTable)
+          .set({ orderId: lookup.orderId })
+          .where(eq(schema.chatRoomTable.id, existingRoom.id))
+          .returning();
+
+        existingRoom = updatedRoom ?? existingRoom;
+      }
     }
 
-    return existingRoom;
-  }
+    if (existingRoom) {
+      return activateChatRoom(existingRoom);
+    }
 
-  // 2. If not found, create a new one
-  console.log("No chat room found, creating a new one...");
-  let [newRoom] = await db
-    .insert(schema.chatRoomTable)
-    .values({ userId, accountId, productId: productId ?? null })
-    .returning();
-
-  console.log("New chat room created:", newRoom.id);
-
-  // 2.2 If order is given and not in the room, update it
-  if (orderId && newRoom.orderId !== orderId) {
-    [newRoom] = await db
-      .update(schema.chatRoomTable)
-      .set({ orderId })
-      .where(eq(schema.chatRoomTable.id, newRoom.id))
+    const [newRoom] = await tx
+      .insert(schema.chatRoomTable)
+      .values(lookup)
       .returning();
-  }
-  return newRoom;
+
+    if (!newRoom) {
+      throw new CustomError("Chat room could not be created", 500);
+    }
+
+    return newRoom;
+  });
 }
 
 export async function getChatRoomById(chatRoomId: string) {
   return db.query.chatRoomTable.findFirst({
     with: {
       product: true,
+      variant: true,
     },
     where: eq(schema.chatRoomTable.id, chatRoomId),
   });
@@ -186,8 +258,6 @@ export async function sendChatMessage({
       })
       .returning();
 
-    console.log("New message sent:", newMessage.id);
-
     if (attachments && attachments.length > 0) {
       await tx.insert(schema.chatMessageAttachmentTable).values(
         attachments.map((a) => ({
@@ -238,31 +308,29 @@ export async function getChatHistory({
   startAt,
   endAt,
 }: GetChatHistoryParams) {
-  const offset = (page - 1) * limit;
+  const pagination = getPagination(page, limit);
 
   // Build the conditions for the query
-  const conditions = [eq(schema.chatMessageTable.chatRoomId, chatRoomId)];
-  if (startAt) {
-    conditions.push(gte(schema.chatMessageTable.createdAt, startAt));
-  }
-  if (endAt) {
-    conditions.push(lte(schema.chatMessageTable.createdAt, endAt));
-  }
+  const whereClause = compactConditions([
+    eq(schema.chatMessageTable.chatRoomId, chatRoomId),
+    startAt ? gte(schema.chatMessageTable.createdAt, startAt) : undefined,
+    endAt ? lte(schema.chatMessageTable.createdAt, endAt) : undefined,
+  ]);
 
   // Query for total count of messages in the room
   const totalResult = await db
     .select({ total: count() })
     .from(schema.chatMessageTable)
-    .where(and(...conditions));
+    .where(whereClause);
 
   const total = totalResult[0]?.total ?? 0;
-  const totalPages = Math.ceil(total / limit);
+  const totalPages = getTotalPages(total, pagination.limit);
 
   // Query for the paginated messages, sorted by most recent first
   const messages = await db.query.chatMessageTable.findMany({
-    where: and(...conditions),
-    limit: limit,
-    offset: offset,
+    where: whereClause,
+    limit: pagination.limit,
+    offset: pagination.offset,
     orderBy: (messages, { desc }) => [desc(messages.createdAt)],
     with: {
       attachments: true,
@@ -279,8 +347,8 @@ export async function getChatHistory({
   return {
     messages,
     total,
-    page,
-    limit,
+    page: pagination.page,
+    limit: pagination.limit,
     totalPages,
   };
 }
@@ -308,9 +376,6 @@ export async function markMessagesAsRead(
     throw new CustomError("Chat room not found or not active", 404);
   }
 
-  console.log(
-    `Marking messages in room ${chatRoomId} as read for ${readerType}.`,
-  );
   return db
     .update(schema.chatMessageTable)
     .set({ isRead: true, updatedAt: new Date() })
@@ -335,7 +400,7 @@ export async function listChatRooms({
   page = 1,
   limit = 20,
 }: ListChatRoomsParams) {
-  const offset = (page - 1) * limit;
+  const pagination = getPagination(page, limit);
   const conditions: (SQL | undefined)[] = [];
   // Build the conditions for the query
   conditions.push(eq(schema.chatRoomTable.userId, userId));
@@ -346,25 +411,37 @@ export async function listChatRooms({
   const totalResult = await db
     .select({ total: count() })
     .from(schema.chatRoomTable)
-    .where(and(...conditions));
+    .where(compactConditions(conditions));
 
   const total = totalResult[0].total;
-  const totalPages = Math.ceil(total / limit);
+  const totalPages = getTotalPages(total, pagination.limit);
 
   // 2. Get the paginated list of chat rooms
   // We order by the last message's timestamp (prioritizing rooms with messages), then by room creation date.
   const roomsData = await db.query.chatRoomTable.findMany({
-    where: and(...conditions),
+    where: compactConditions(conditions),
     orderBy: (chatRooms, { desc }) => [
       sql`(SELECT cm.created_at FROM ${schema.chatMessageTable} cm 
            WHERE cm.chat_room_id = ${chatRooms.id} 
            ORDER BY cm.created_at DESC LIMIT 1) DESC NULLS LAST`,
       desc(chatRooms.createdAt),
     ],
-    limit: limit,
-    offset: offset,
+    limit: pagination.limit,
+    offset: pagination.offset,
     with: {
-      product: true,
+      product: {
+        columns: {
+          id: true,
+          name: true,
+          images: true,
+        },
+      },
+      variant: {
+        columns: {
+          name: true,
+          optionValues: true,
+        },
+      },
       order: {
         with: {
           items: true,
@@ -409,11 +486,22 @@ export async function listChatRooms({
   }
 
   const rooms = roomsData.map((room) => {
-    const { unreadCount, lastMessageId, order, ...rest } = room;
+    const {
+      unreadCount,
+      lastMessageId,
+      order,
+      product: roomProduct,
+      variant,
+      ...rest
+    } = room;
 
     let delivery = null;
-    if (order && room.productId) {
-      const item = order.items.find((i) => i.productId === room.productId);
+    if (order && room.productId && room.productVariantId) {
+      const item = order.items.find(
+        (i) =>
+          i.productId === room.productId &&
+          i.productVariantId === room.productVariantId,
+      );
       if (item?.deliveryId) {
         delivery = order.deliveries.find((d) => d.id === item.deliveryId);
       }
@@ -422,9 +510,16 @@ export async function listChatRooms({
     const lastMessage = lastMessageId
       ? lastMessagesMap.get(lastMessageId)
       : null;
+    const product = roomProduct
+      ? {
+          ...roomProduct,
+          variantName: getVariantDisplayName(variant),
+        }
+      : roomProduct;
 
     return {
       ...rest,
+      product,
       totalUnread: Number(unreadCount),
       lastMessage: lastMessage || null,
       order: order
@@ -436,6 +531,8 @@ export async function listChatRooms({
             discountCoin: order.discountCoin,
             delivery: delivery
               ? {
+                  id: delivery.id,
+                  merchantTradeNo: delivery.merchantTradeNo,
                   LogisticsType: delivery.LogisticsType,
                   LogisticsSubType: delivery.LogisticsSubType,
                   status: delivery.status,
@@ -451,8 +548,8 @@ export async function listChatRooms({
   return {
     rooms,
     total,
-    page,
-    limit,
+    page: pagination.page,
+    limit: pagination.limit,
     totalPages,
   };
 }
@@ -460,6 +557,7 @@ export async function listChatRooms({
 export type ListAdminChatRoomsParams = {
   accountId: string;
   productId?: string;
+  productVariantId?: string;
   status?: schema.ChatRoom["status"];
   page?: number;
   limit?: number;
@@ -469,12 +567,13 @@ export type ListAdminChatRoomsParams = {
 export async function listAdminChatRooms({
   accountId,
   productId,
+  productVariantId,
   status,
   page = 1,
   limit = 20,
   supportOnly = false,
 }: ListAdminChatRoomsParams) {
-  const offset = (page - 1) * limit;
+  const pagination = getPagination(page, limit);
   const conditions: (SQL | undefined)[] = [];
   // Build the conditions for the query
 
@@ -489,6 +588,9 @@ export async function listAdminChatRooms({
   if (productId && !supportOnly) {
     conditions.push(eq(schema.chatRoomTable.productId, productId));
   }
+  if (productVariantId && !supportOnly) {
+    conditions.push(eq(schema.chatRoomTable.productVariantId, productVariantId));
+  }
   if (status) {
     conditions.push(eq(schema.chatRoomTable.status, status));
   }
@@ -498,29 +600,35 @@ export async function listAdminChatRooms({
   const totalResult = await db
     .select({ total: count() })
     .from(schema.chatRoomTable)
-    .where(and(...conditions));
+    .where(compactConditions(conditions));
 
   const total = totalResult[0].total;
-  const totalPages = Math.ceil(total / limit);
+  const totalPages = getTotalPages(total, pagination.limit);
 
   // 2. Get the paginated list of chat rooms
   // We order by the last message's timestamp (prioritizing rooms with messages), then by room creation date.
   const roomsData = await db.query.chatRoomTable.findMany({
-    where: and(...conditions),
+    where: compactConditions(conditions),
     orderBy: (chatRooms, { desc }) => [
       sql`(SELECT cm.created_at FROM ${schema.chatMessageTable} cm 
            WHERE cm.chat_room_id = ${chatRooms.id} 
            ORDER BY cm.created_at DESC LIMIT 1) DESC NULLS LAST`,
       desc(chatRooms.createdAt),
     ],
-    limit: limit,
-    offset: offset,
+    limit: pagination.limit,
+    offset: pagination.offset,
     with: {
       product: {
         columns: {
           id: true,
           name: true,
           images: true,
+        },
+      },
+      variant: {
+        columns: {
+          name: true,
+          optionValues: true,
         },
       },
       user: {
@@ -574,11 +682,22 @@ export async function listAdminChatRooms({
   }
 
   const rooms = roomsData.map((room) => {
-    const { unreadCount, lastMessageId, order, ...rest } = room;
+    const {
+      unreadCount,
+      lastMessageId,
+      order,
+      product: roomProduct,
+      variant,
+      ...rest
+    } = room;
 
     let delivery = null;
-    if (order && room.productId) {
-      const item = order.items.find((i) => i.productId === room.productId);
+    if (order && room.productId && room.productVariantId) {
+      const item = order.items.find(
+        (i) =>
+          i.productId === room.productId &&
+          i.productVariantId === room.productVariantId,
+      );
       if (item?.deliveryId) {
         delivery = order.deliveries.find((d) => d.id === item.deliveryId);
       }
@@ -587,9 +706,16 @@ export async function listAdminChatRooms({
     const lastMessage = lastMessageId
       ? lastMessagesMap.get(lastMessageId)
       : null;
+    const product = roomProduct
+      ? {
+          ...roomProduct,
+          variantName: getVariantDisplayName(variant),
+        }
+      : roomProduct;
 
     return {
       ...rest,
+      product,
       totalUnread: Number(unreadCount),
       lastMessage: lastMessage || null,
       order: order
@@ -618,8 +744,8 @@ export async function listAdminChatRooms({
   return {
     rooms,
     total,
-    page,
-    limit,
+    page: pagination.page,
+    limit: pagination.limit,
     totalPages,
   };
 }

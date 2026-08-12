@@ -25,13 +25,31 @@ const router = Router();
  *         productId:
  *           type: string
  *           format: uuid
+ *         productVariantId:
+ *           type: string
+ *           format: uuid
  *         quantity:
+ *           type: integer
+ *         pendingQuantity:
  *           type: integer
  *         unitPriceAtSale:
  *           type: number
  *           format: double
  *         productNameAtSale:
  *           type: string
+ *         variantAtSale:
+ *           type: object
+ *           description: Convenience snapshot object for frontend display.
+ *           properties:
+ *             name:
+ *               type: string
+ *               nullable: true
+ *             sku:
+ *               type: string
+ *               nullable: true
+ *             optionValues:
+ *               type: object
+ *               nullable: true
  *         lineTotal:
  *           type: number
  *           format: double
@@ -242,8 +260,23 @@ const router = Router();
  *                   productId:
  *                     type: string
  *                     format: uuid
+ *                   productVariantId:
+ *                     type: string
+ *                     format: uuid
  *                   productNameAtSale:
  *                     type: string
+ *                   variantAtSale:
+ *                     type: object
+ *                     properties:
+ *                       name:
+ *                         type: string
+ *                         nullable: true
+ *                       sku:
+ *                         type: string
+ *                         nullable: true
+ *                       optionValues:
+ *                         type: object
+ *                         nullable: true
  *             deliveries:
  *               type: array
  *               items:
@@ -360,8 +393,23 @@ const router = Router();
  *                             productId:
  *                               type: string
  *                               format: uuid
+ *                             productVariantId:
+ *                               type: string
+ *                               format: uuid
  *                             productNameAtSale:
  *                               type: string
+ *                             variantAtSale:
+ *                               type: object
+ *                               properties:
+ *                                 name:
+ *                                   type: string
+ *                                   nullable: true
+ *                                 sku:
+ *                                   type: string
+ *                                   nullable: true
+ *                                 optionValues:
+ *                                   type: object
+ *                                   nullable: true
  *             user:
  *               type: object
  *               properties:
@@ -417,7 +465,7 @@ const router = Router();
  *           format: uuid
  *       - in: query
  *         name: merchantTradeNo
- *         description: Filters by merchant trade number prefix when at least 4 characters are provided. Shorter values are ignored.
+ *         description: Filters by order or delivery merchant trade number prefix when at least 4 characters are provided. Shorter values are ignored.
  *         schema:
  *           type: string
  *       - in: query
@@ -494,43 +542,6 @@ router.get(
   isAuth,
   validateZod({ params: adminValidation.order.idParams }),
   OrderController.getOrder,
-);
-
-/**
- * @swagger
- * /api/admin/order/merchant-trade-no/{merchantTradeNo}:
- *   get:
- *     tags: [Order]
- *     summary: Get orders by merchant trade number
- *     description: Search by merchant trade number prefix. Requires at least 4 characters. Matches from the beginning and returns a list.
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: merchantTradeNo
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       '200':
- *         description: The requested orders.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 data:
- *                   type: array
- *                   items:
- *                     $ref: '#/components/schemas/OrderWithRelations'
- */
-router.get(
-  "/merchant-trade-no/:merchantTradeNo",
-  isAuth,
-  validateZod({ params: adminValidation.order.merchantTradeNoParams }),
-  OrderController.getOrdersByMerchantTradeNo,
 );
 
 export default router;

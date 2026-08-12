@@ -7,6 +7,7 @@ import {
   like,
   lt,
   lte,
+  or,
   SQL,
   sql,
 } from "drizzle-orm";
@@ -15,7 +16,50 @@ import { CustomError } from "../lib/error";
 import { isPlainObject } from "../lib/general";
 import db from "../lib/initDB";
 import { isAccountAdmin } from "./account";
-import { upsertCartItem } from "./cart";
+import {
+  compactConditions,
+  getPagination,
+  getTotalPages,
+  PaginationParams,
+} from "./utils/query";
+
+type OrderItemWithProductVariant = {
+  product?: schema.Product | null;
+  variant?: schema.ProductVariant | null;
+  variantNameAtSale?: string | null;
+  variantSkuAtSale?: string | null;
+  variantOptionValuesAtSale?: unknown;
+};
+
+function withVariantAtSaleDisplay<T extends OrderItemWithProductVariant>(item: T) {
+  const {
+    product,
+    variant: _variant,
+    variantNameAtSale,
+    variantSkuAtSale,
+    variantOptionValuesAtSale,
+    ...rest
+  } = item;
+  const productWithoutVariant = product
+    ? (() => {
+        const {
+          variant: _productVariant,
+          ...productRest
+        } = product as typeof product & { variant?: unknown };
+        return productRest;
+      })()
+    : product;
+
+  return {
+    ...rest,
+    product: productWithoutVariant,
+    variantAtSale: {
+      name: variantNameAtSale ?? null,
+      sku: variantSkuAtSale ?? null,
+      optionValues: variantOptionValuesAtSale ?? null,
+    },
+  };
+}
 
 /**
  * Creates a new order, inserts order items, and updates product reserves.
@@ -41,40 +85,74 @@ export async function createOrder({
   }
 
   return db.transaction(async (tx) => {
-    // check if each item's quantity less or equal to (product.stock - product.reserve)
-    if (items.length > 0) {
-      // 1. Sort product IDs to prevent deadlocks when locking multiple rows
-      const productIds = items.map((item) => item.productId).sort();
+    const variantIds = items.map((item) => item.productVariantId);
 
-      // 2. Fetch products with "FOR UPDATE" lock
-      // This ensures no other transaction can modify these rows until this transaction commits/rollbacks
-      const products = await tx
+    if (variantIds.some((variantId) => !variantId)) {
+      throw new CustomError("productVariantId is required for every item", 400);
+    }
+
+    const requestedQuantityByVariantId = new Map<string, number>();
+    for (const item of items) {
+      requestedQuantityByVariantId.set(
+        item.productVariantId!,
+        (requestedQuantityByVariantId.get(item.productVariantId!) ?? 0) +
+          item.quantity,
+      );
+    }
+
+    const variantMap = new Map<string, schema.ProductVariant>();
+
+    if (items.length > 0) {
+      const sortedVariantIds = [
+        ...new Set(items.map((item) => item.productVariantId!)),
+      ].sort();
+
+      const variants = await tx
         .select()
-        .from(schema.productTable)
-        .where(inArray(schema.productTable.id, productIds))
+        .from(schema.productVariantTable)
+        .where(inArray(schema.productVariantTable.id, sortedVariantIds))
         .for("update");
 
-      const productMap = new Map(products.map((p) => [p.id, p]));
+      variants.forEach((variant) => {
+        variantMap.set(variant.id, variant);
+      });
 
       const errors = [];
       for (const item of items) {
-        const product = productMap.get(item.productId);
-        if (!product) {
+        const variant = variantMap.get(item.productVariantId!);
+        if (!variant || variant.productId !== item.productId) {
           errors.push({
             productId: item.productId,
+            productVariantId: item.productVariantId,
             productName: item.productNameAtSale,
-            reason: "Not found",
+            reason: "Variant not found",
           });
-        } else {
-          if (item.quantity > product.stock - product.reserve) {
-            errors.push({
-              productId: item.productId,
-              productName: item.productNameAtSale,
-              reason: "Insufficient stock",
-              quantity: item.quantity,
-              remaining: product.stock - product.reserve,
-            });
-          }
+          continue;
+        }
+
+        if (variant.status !== "active") {
+          errors.push({
+            productId: item.productId,
+            productVariantId: item.productVariantId,
+            productName: item.productNameAtSale,
+            reason: "Variant inactive",
+          });
+          continue;
+        }
+
+        const requestedQuantity = requestedQuantityByVariantId.get(
+          item.productVariantId!,
+        )!;
+        const remaining = variant.stock - variant.reserve;
+        if (requestedQuantity > remaining) {
+          errors.push({
+            productId: item.productId,
+            productVariantId: item.productVariantId,
+            productName: item.productNameAtSale,
+            reason: "Insufficient stock",
+            quantity: requestedQuantity,
+            remaining,
+          });
         }
       }
 
@@ -88,19 +166,35 @@ export async function createOrder({
       .values(orderData)
       .returning();
 
-    console.log("New Order Created:", newOrder.id);
-
     await Promise.all([
       tx.insert(schema.orderItemTable).values(
         items.map((item) => ({
           ...item,
+          variantNameAtSale:
+            item.variantNameAtSale ?? variantMap.get(item.productVariantId!)?.name,
+          variantSkuAtSale:
+            item.variantSkuAtSale ?? variantMap.get(item.productVariantId!)?.sku,
+          variantOptionValuesAtSale:
+            item.variantOptionValuesAtSale ??
+            variantMap.get(item.productVariantId!)?.optionValues,
           pendingQuantity: item.quantity,
           orderId: newOrder.id,
           lineTotal: item.unitPriceAtSale * item.quantity,
         })),
       ),
 
-      // Update each product's reserve
+      // Update each variant's reserve; product reserve is kept in sync during
+      // the transition while product-level stock fields still exist.
+      ...items.map((item) =>
+        tx
+          .update(schema.productVariantTable)
+          .set({
+            reserve: sql`COALESCE(${schema.productVariantTable.reserve}, 0) + ${item.quantity}`,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.productVariantTable.id, item.productVariantId!)),
+      ),
+
       ...items.map((item) =>
         tx
           .update(schema.productTable)
@@ -128,10 +222,18 @@ export async function createOrder({
         items: {
           with: {
             product: true,
+            variant: true,
           },
         },
       },
-    });
+    }).then((order) =>
+      order
+        ? {
+            ...order,
+            items: order.items.map(withVariantAtSaleDisplay),
+          }
+        : order,
+    );
   });
 }
 
@@ -205,9 +307,35 @@ export async function updateOrderStatus({
       const promises: Promise<any>[] = [];
       if (order.items.length > 0) {
         for (let item of order.items) {
-          if (order.orderStatus === "pending") {
-            promises.push(upsertCartItem(order.userId, item.productId, 0));
+          if (!item.productVariantId) {
+            throw new CustomError("Order item productVariantId is required", 400);
           }
+
+          if (order.orderStatus === "pending") {
+            promises.push(
+              tx
+                .delete(schema.cartItemTable)
+                .where(
+                  and(
+                    eq(schema.cartItemTable.userId, order.userId),
+                    eq(
+                      schema.cartItemTable.productVariantId,
+                      item.productVariantId,
+                    ),
+                  ),
+                ),
+            );
+          }
+          promises.push(
+            tx
+              .update(schema.productVariantTable)
+              .set({
+                reserve: sql`COALESCE(${schema.productVariantTable.reserve}, 0) - ${item.pendingQuantity}`,
+                stock: sql`COALESCE(${schema.productVariantTable.stock}, 0) - ${item.pendingQuantity}`,
+                updatedAt: new Date(),
+              })
+              .where(eq(schema.productVariantTable.id, item.productVariantId)),
+          );
           promises.push(
             tx
               .update(schema.productTable)
@@ -290,7 +418,23 @@ export async function updateOrderStatus({
       const promises: Promise<any>[] = [];
       if (order.items.length > 0) {
         for (let item of order.items) {
-          promises.push(upsertCartItem(order.userId, item.productId, 0));
+          if (!item.productVariantId) {
+            throw new CustomError("Order item productVariantId is required", 400);
+          }
+
+          promises.push(
+            tx
+              .delete(schema.cartItemTable)
+              .where(
+                and(
+                  eq(schema.cartItemTable.userId, order.userId),
+                  eq(
+                    schema.cartItemTable.productVariantId,
+                    item.productVariantId,
+                  ),
+                ),
+              ),
+          );
         }
       }
       if (
@@ -354,6 +498,19 @@ export async function updateOrderStatus({
       const promises: Promise<any>[] = [];
       if (order.items.length > 0) {
         for (let item of order.items) {
+          if (!item.productVariantId) {
+            throw new CustomError("Order item productVariantId is required", 400);
+          }
+
+          promises.push(
+            tx
+              .update(schema.productVariantTable)
+              .set({
+                reserve: sql`COALESCE(${schema.productVariantTable.reserve}, 0) - ${item.pendingQuantity}`,
+                updatedAt: new Date(),
+              })
+              .where(eq(schema.productVariantTable.id, item.productVariantId)),
+          );
           promises.push(
             tx
               .update(schema.productTable)
@@ -434,11 +591,19 @@ export async function updateOrderStatus({
         items: {
           with: {
             product: true,
+            variant: true,
           },
         },
         deliveries: true,
       },
-    });
+    }).then((order) =>
+      order
+        ? {
+            ...order,
+            items: order.items.map(withVariantAtSaleDisplay),
+          }
+        : order,
+    );
   });
 }
 
@@ -492,10 +657,8 @@ export async function expirePaymentProcessingOrders(expireInMs: number) {
   return results;
 }
 
-export interface ListOrdersParams {
+export interface ListOrdersParams extends PaginationParams {
   userId: string;
-  page?: number;
-  limit?: number;
   statusIn: Exclude<schema.NewOrder["orderStatus"], undefined>[];
   order?: "asc" | "desc";
 }
@@ -507,49 +670,68 @@ export async function listOrders({
   statusIn,
   order = "desc",
 }: ListOrdersParams) {
-  const offset = (page - 1) * limit;
+  const pagination = getPagination(page, limit);
+  const whereClause = compactConditions([
+    inArray(schema.orderTable.orderStatus, statusIn),
+    eq(schema.orderTable.userId, userId),
+  ]);
 
   // Query for total count
   const totalResult = await db
     .select({ total: count() })
     .from(schema.orderTable)
-    .where(
-      and(
-        inArray(schema.orderTable.orderStatus, statusIn),
-        eq(schema.orderTable.userId, userId),
-      ),
-    );
+    .where(whereClause);
 
   const total = totalResult[0].total;
-  const totalPages = Math.ceil(total / limit);
+  const totalPages = getTotalPages(total, pagination.limit);
 
   // Query for the paginated orders with their related items and products
   const orders = await db.query.orderTable.findMany({
-    limit,
-    offset,
-    where: and(
-      inArray(schema.orderTable.orderStatus, statusIn),
-      eq(schema.orderTable.userId, userId),
-    ),
-    // with: {
-    //   items: {
-    //     with: {
-    //       product: true,
-    //     },
-    //   },
-    //   delivery: true,
-    // },
+    limit: pagination.limit,
+    offset: pagination.offset,
+    where: whereClause,
+    with: {
+      items: {
+        columns: {
+          id: true,
+          productId: true,
+          productVariantId: true,
+          productNameAtSale: true,
+          variantNameAtSale: true,
+          variantSkuAtSale: true,
+          variantOptionValuesAtSale: true,
+        },
+      },
+      deliveries: {
+        columns: {
+          id: true,
+          merchantTradeNo: true,
+          status: true,
+          LogisticsType: true,
+          LogisticsSubType: true,
+          RtnCode: true,
+          RtnMsg: true,
+        },
+      },
+    },
     orderBy: (orders, { desc, asc }) => [
       order === "asc" ? asc(orders.createdAt) : desc(orders.createdAt),
     ],
   });
 
-  return { orders, total, page, limit, totalPages };
+  return {
+    orders: orders.map((order) => ({
+      ...order,
+      items: order.items.map(withVariantAtSaleDisplay),
+    })),
+    total,
+    page: pagination.page,
+    limit: pagination.limit,
+    totalPages,
+  };
 }
 
-export interface ListAdminOrdersParams {
-  page?: number;
-  limit?: number;
+export interface ListAdminOrdersParams extends PaginationParams {
   accountId: string;
   userId?: string;
   merchantTradeNo?: string;
@@ -570,7 +752,7 @@ export async function listAdminOrders({
   startDate,
   endDate,
 }: ListAdminOrdersParams) {
-  const offset = (page - 1) * limit;
+  const pagination = getPagination(page, limit);
   const conditions: (SQL | undefined)[] = [];
 
   const isAdmin = await isAccountAdmin(accountId);
@@ -593,8 +775,18 @@ export async function listAdminOrders({
 
   const merchantTradeNoPrefix = merchantTradeNo?.trim();
   if (merchantTradeNoPrefix && merchantTradeNoPrefix.length >= 4) {
+    const orderIdsWithDeliveryMerchantTradeNo = db
+      .select({ orderId: schema.deliveryTable.orderId })
+      .from(schema.deliveryTable)
+      .where(
+        like(schema.deliveryTable.merchantTradeNo, `${merchantTradeNoPrefix}%`),
+      );
+
     conditions.push(
-      like(schema.orderTable.merchantTradeNo, `${merchantTradeNoPrefix}%`),
+      or(
+        like(schema.orderTable.merchantTradeNo, `${merchantTradeNoPrefix}%`),
+        inArray(schema.orderTable.id, orderIdsWithDeliveryMerchantTradeNo),
+      ),
     );
   }
 
@@ -610,7 +802,7 @@ export async function listAdminOrders({
     conditions.push(lte(schema.orderTable.createdAt, endDate));
   }
 
-  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+  const whereClause = compactConditions(conditions);
 
   // Query for total count matching the filters
   const totalResult = await db
@@ -619,19 +811,23 @@ export async function listAdminOrders({
     .where(whereClause);
 
   const total = totalResult[0].total;
-  const totalPages = Math.ceil(total / limit);
+  const totalPages = getTotalPages(total, pagination.limit);
 
   // Query for the paginated orders
   const orders = await db.query.orderTable.findMany({
     where: whereClause,
-    limit,
-    offset,
+    limit: pagination.limit,
+    offset: pagination.offset,
     with: {
       items: {
         columns: {
           id: true,
           productId: true,
+          productVariantId: true,
           productNameAtSale: true,
+          variantNameAtSale: true,
+          variantSkuAtSale: true,
+          variantOptionValuesAtSale: true,
         },
       },
       user: {
@@ -658,7 +854,16 @@ export async function listAdminOrders({
     ],
   });
 
-  return { orders, total, page, limit, totalPages };
+  return {
+    orders: orders.map((order) => ({
+      ...order,
+      items: order.items.map(withVariantAtSaleDisplay),
+    })),
+    total,
+    page: pagination.page,
+    limit: pagination.limit,
+    totalPages,
+  };
 }
 
 export async function getOrderStatusById(orderId: string) {
@@ -725,13 +930,21 @@ function canRefundOrderItem(
   return getRemainingRefundQuantity(order, delivery, item) > 0;
 }
 
-export async function getOrderById(orderId: string) {
+export async function getOrderById(
+  orderId: string,
+  options?: { userId?: string; includeUser?: boolean },
+) {
+  const { userId, includeUser = true } = options ?? {};
   const order = await db.query.orderTable.findFirst({
-    where: eq(schema.orderTable.id, orderId),
+    where: compactConditions([
+      eq(schema.orderTable.id, orderId),
+      userId ? eq(schema.orderTable.userId, userId) : undefined,
+    ]),
     with: {
       items: {
         with: {
           product: true,
+          variant: true,
           refundItems: {
             orderBy: (refundItems, { desc }) => [desc(refundItems.createdAt)],
           },
@@ -743,7 +956,11 @@ export async function getOrderById(orderId: string) {
             columns: {
               id: true,
               productId: true,
+              productVariantId: true,
               productNameAtSale: true,
+              variantNameAtSale: true,
+              variantSkuAtSale: true,
+              variantOptionValuesAtSale: true,
             },
           },
           logs: {
@@ -751,14 +968,27 @@ export async function getOrderById(orderId: string) {
           },
         },
       },
-      user: {
-        columns: {
-          id: true,
-          name: true,
-          email: true,
-        },
-      },
+      ...(includeUser
+        ? {
+            user: {
+              columns: {
+                id: true,
+                name: true,
+                email: true,
+              },
+            },
+          }
+        : {}),
     },
+  }).then((order) => {
+    if (!order || includeUser) {
+      return order;
+    }
+
+    const { user: _user, ...orderWithoutUser } = order as typeof order & {
+      user?: unknown;
+    };
+    return orderWithoutUser;
   });
 
   if (!order) {
@@ -777,9 +1007,10 @@ export async function getOrderById(orderId: string) {
       const delivery = item.deliveryId
         ? deliveryById.get(item.deliveryId)
         : undefined;
+      const itemWithVariantAtSale = withVariantAtSaleDisplay(item);
 
       return {
-        ...item,
+        ...itemWithVariantAtSale,
         canRefund: canRefundOrderItem(order, delivery, item),
         remainingRefundQuantity: getRemainingRefundQuantity(
           order,
@@ -788,60 +1019,18 @@ export async function getOrderById(orderId: string) {
         ),
       };
     }),
+    deliveries: order.deliveries.map((delivery) => ({
+      ...delivery,
+      items: delivery.items.map(withVariantAtSaleDisplay),
+    })),
   };
-}
-
-export async function getOrdersByMerchantTradeNo(
-  merchantTradeNo: string,
-  options?: { matchPrefix: boolean },
-) {
-  const { matchPrefix = false } = options ?? {};
-
-  if (matchPrefix && merchantTradeNo.length < 4) {
-    throw new CustomError(
-      "Merchant trade no must be at least 4 characters for prefix match",
-      400,
-    );
-  }
-
-  const whereClause = matchPrefix
-    ? like(schema.orderTable.merchantTradeNo, `${merchantTradeNo}%`)
-    : eq(schema.orderTable.merchantTradeNo, merchantTradeNo);
-
-  return db.query.orderTable.findMany({
-    where: whereClause,
-    with: {
-      items: {
-        with: {
-          product: true,
-        },
-      },
-      deliveries: {
-        with: {
-          items: {
-            columns: {
-              id: true,
-              productId: true,
-              productNameAtSale: true,
-            },
-          },
-        },
-      },
-      user: {
-        columns: {
-          id: true,
-          name: true,
-          email: true,
-        },
-      },
-    },
-  });
 }
 
 export async function createMerchantTrade({
   merchantTradeNo,
   orderId,
   productIds,
+  variantIds,
   cvsStoreInfo,
   shippingCost,
   shippingCostDeduction,
@@ -849,6 +1038,7 @@ export async function createMerchantTrade({
   merchantTradeNo: string;
   orderId: string;
   productIds: string[];
+  variantIds: string[];
   cvsStoreInfo: Record<string, string>;
   shippingCost?: number;
   shippingCostDeduction?: number;
@@ -859,14 +1049,12 @@ export async function createMerchantTrade({
       merchantTradeNo,
       orderId,
       productIds,
+      variantIds,
       cvsStoreInfo,
       shippingCost,
       shippingCostDeduction,
     })
     .returning();
-  console.log(
-    `merchantTrade created successfully, merchantTradeNo: ${merchantTradeNo}`,
-  );
   return merchantTrade;
 }
 

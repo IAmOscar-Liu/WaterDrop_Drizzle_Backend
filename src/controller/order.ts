@@ -101,14 +101,12 @@ class OrderController {
     sendJsonResponse(res, result);
   }
 
-  async getOrdersByMerchantTradeNo(req: Request, res: Response): Promise<any> {
-    const { merchantTradeNo } = req.params;
-    const result = await orderService.getOrdersByMerchantTradeNo(
-      merchantTradeNo,
-      {
-        matchPrefix: true,
-      },
-    );
+  async getOwnOrder(req: RequestWithId, res: Response): Promise<any> {
+    const { id } = req.params;
+    const result = await orderService.getOrderById(id, {
+      userId: req.userId ?? "",
+      includeUser: false,
+    });
     sendJsonResponse(res, result);
   }
 

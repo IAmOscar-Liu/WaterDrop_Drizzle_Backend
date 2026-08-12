@@ -119,6 +119,15 @@ const router = Router();
  *           type: string
  *           format: uuid
  *           nullable: true
+ *         productVariantId:
+ *           type: string
+ *           format: uuid
+ *           nullable: true
+ *           description: Required for product-specific chat rooms. Null for general customer support rooms.
+ *         orderId:
+ *           type: string
+ *           format: uuid
+ *           nullable: true
  *         userId:
  *           type: string
  *           format: uuid
@@ -167,6 +176,10 @@ const router = Router();
  *                   items:
  *                     type: string
  *                   nullable: true
+ *                 variantName:
+ *                   type: string
+ *                   nullable: true
+ *                   description: Display name for the selected variant, derived from variant.name or option values.
  *             totalUnread:
  *               type: integer
  *             lastMessage:
@@ -268,15 +281,23 @@ const router = Router();
  *         name: productId
  *         schema:
  *           type: string
+ *           format: uuid
  *         required: false
  *         description: Optional product ID to filter chat rooms by.
+ *       - in: query
+ *         name: productVariantId
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         required: false
+ *         description: Optional product variant ID to filter product-specific chat rooms by.
  *       - in: query
  *         name: supportOnly
  *         schema:
  *           type: boolean
  *           default: false
  *         required: false
- *         description: When true, only returns general customer support chat rooms where accountId and productId are both null.
+ *         description: When true, only returns general customer support chat rooms where accountId, productId, and productVariantId are null.
  *       - in: query
  *         name: status
  *         schema:
@@ -300,7 +321,7 @@ const router = Router();
  *         description: Number of items per page.
  *     responses:
  *       200:
- *         description: A paginated list of chat rooms. When accountId is null, product is also null; the room is for general customer support rather than a specific product, and only admin accounts receive those rooms because they can support customers directly.
+ *         description: A paginated list of chat rooms. General support rooms have accountId, productId, and productVariantId all null; product-specific rooms include both productId and productVariantId.
  *         content:
  *           application/json:
  *             schema:

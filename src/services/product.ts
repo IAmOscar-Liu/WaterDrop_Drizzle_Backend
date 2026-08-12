@@ -12,6 +12,7 @@ import {
   updateProduct,
   getProductSalesSummary,
   type ListProductsParams,
+  type ProductVariantWriteInput,
 } from "../repository/product";
 import { ServiceResponse } from "../type/general";
 
@@ -103,11 +104,15 @@ class ProductService {
   }
 
   async createProduct(
-    productDataWithCategoryIds: schema.NewProduct & { categoryIds?: string[] },
+    productDataWithCategoryIds: schema.NewProduct & {
+      categoryIds?: string[];
+      variants?: ProductVariantWriteInput[];
+    },
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof createProduct>>>> {
     try {
-      const { categoryIds, ...productData } = productDataWithCategoryIds;
-      const product = await createProduct(productData, categoryIds);
+      const { categoryIds, variants, ...productData } =
+        productDataWithCategoryIds;
+      const product = await createProduct(productData, categoryIds, variants);
       return { success: true, data: product };
     } catch (error) {
       // console.error(error);
@@ -119,11 +124,18 @@ class ProductService {
     productId: string,
     productDataWithCategoryIds: Partial<Omit<schema.NewProduct, "id">> & {
       categoryIds?: string[];
+      variants?: ProductVariantWriteInput[];
     },
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof updateProduct>>>> {
     try {
-      const { categoryIds, ...productData } = productDataWithCategoryIds;
-      const product = await updateProduct(productId, productData, categoryIds);
+      const { categoryIds, variants, ...productData } =
+        productDataWithCategoryIds;
+      const product = await updateProduct(
+        productId,
+        productData,
+        categoryIds,
+        variants,
+      );
       if (product) {
         return { success: true, data: product };
       } else {

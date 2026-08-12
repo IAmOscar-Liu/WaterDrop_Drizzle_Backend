@@ -7,7 +7,6 @@ import { createNotification } from "../repository/notification";
 import {
   createOrder,
   getOrderById,
-  getOrdersByMerchantTradeNo,
   listAdminOrders,
   ListAdminOrdersParams,
   listOrders,
@@ -42,9 +41,10 @@ class OrderService {
 
   async getOrderById(
     id: string,
+    options?: { userId?: string; includeUser?: boolean },
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof getOrderById>>>> {
     try {
-      const order = await getOrderById(id);
+      const order = await getOrderById(id, options);
       if (order) {
         return { success: true, data: order };
       } else {
@@ -54,20 +54,6 @@ class OrderService {
           message: "order not found",
         };
       }
-    } catch (error) {
-      return handleServiceError(error);
-    }
-  }
-
-  async getOrdersByMerchantTradeNo(
-    merchantTradeNo: string,
-    options?: { matchPrefix: boolean },
-  ): Promise<
-    ServiceResponse<Awaited<ReturnType<typeof getOrdersByMerchantTradeNo>>>
-  > {
-    try {
-      const orders = await getOrdersByMerchantTradeNo(merchantTradeNo, options);
-      return { success: true, data: orders };
     } catch (error) {
       return handleServiceError(error);
     }
@@ -105,6 +91,10 @@ class OrderService {
     orderPayment?: schema.Order["orderPayment"];
   }): Promise<ServiceResponse<Awaited<ReturnType<typeof createOrder>>>> {
     try {
+      if (items.some((item) => !item.productVariantId)) {
+        throw new CustomError("productVariantId is required for every item", 400);
+      }
+
       const order = await createOrder({
         orderData: {
           userId,

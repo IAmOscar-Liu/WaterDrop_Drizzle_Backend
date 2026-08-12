@@ -2,7 +2,6 @@ import {
   and,
   count,
   eq,
-  gt,
   gte,
   ilike,
   inArray,
@@ -14,11 +13,137 @@ import {
 } from "drizzle-orm";
 
 import * as schema from "../db/schema";
+import { getEcpayLength, hasSpecialChars } from "../lib/ecpayValidation";
 import { CustomError } from "../lib/error";
 import db from "../lib/initDB";
 import { isAccountAdmin } from "./account";
-import ecpayService from "../services/ecpay";
-import product from "../services/product";
+import {
+  compactConditions,
+  getPagination,
+  getTotalPages,
+  PaginationParams,
+} from "./utils/query";
+
+export type ProductVariantWriteInput = {
+  id?: string;
+  name?: string | null;
+  sku?: string | null;
+  optionValues?: Record<string, unknown>;
+  stock?: number;
+  sortOrder?: number;
+  status?: schema.NewProductVariant["status"];
+  metadata?: Record<string, unknown> | null;
+};
+
+type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+function activeVariantAvailabilityCondition(
+  productIdColumn: typeof schema.productTable.id,
+) {
+  return sql<boolean>`exists (
+    select 1
+    from product_variants active_variant
+    where active_variant.product_id = ${productIdColumn}
+      and active_variant.status = 'active'
+      and active_variant.stock > active_variant.reserve
+  )`;
+}
+
+function withAggregateProductInventory<
+  T extends schema.Product & { variants?: schema.ProductVariant[] },
+>(product: T) {
+  const activeVariants = product.variants?.filter(
+    (variant) => variant.status === "active",
+  );
+  const variantsForAggregate = activeVariants?.length
+    ? activeVariants
+    : (product.variants ?? []);
+  const stock = variantsForAggregate.reduce(
+    (total, variant) => total + variant.stock,
+    0,
+  );
+  const reserve = variantsForAggregate.reduce(
+    (total, variant) => total + variant.reserve,
+    0,
+  );
+
+  return {
+    ...product,
+    stock,
+    reserve,
+    availableStock: stock - reserve,
+    variants: product.variants?.map((variant) => ({
+      ...variant,
+      availableStock: variant.stock - variant.reserve,
+    })),
+  };
+}
+
+async function syncProductInventoryWithVariants(
+  tx: DbTransaction,
+  productId: string,
+) {
+  await tx
+    .update(schema.productTable)
+    .set({
+      stock: sql`(
+        select coalesce(sum(${schema.productVariantTable.stock}), 0)::int
+        from ${schema.productVariantTable}
+        where ${schema.productVariantTable.productId} = ${productId}
+          and ${schema.productVariantTable.status} = 'active'
+      )`,
+      reserve: sql`(
+        select coalesce(sum(${schema.productVariantTable.reserve}), 0)::int
+        from ${schema.productVariantTable}
+        where ${schema.productVariantTable.productId} = ${productId}
+          and ${schema.productVariantTable.status} = 'active'
+      )`,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.productTable.id, productId));
+}
+
+function buildCreateVariantValues(
+  productId: string,
+  variant: ProductVariantWriteInput,
+): schema.NewProductVariant {
+  if (variant.stock === undefined) {
+    throw new CustomError("Variant stock is required", 400);
+  }
+
+  return {
+    productId,
+    name: variant.name ?? null,
+    sku: variant.sku ?? null,
+    optionValues: variant.optionValues ?? {},
+    stock: variant.stock,
+    reserve: 0,
+    sortOrder: variant.sortOrder ?? 0,
+    status: variant.status ?? "active",
+    metadata: variant.metadata ?? null,
+  };
+}
+
+function hasVariantName(variant: Pick<ProductVariantWriteInput, "name">) {
+  return typeof variant.name === "string" && variant.name.trim().length > 0;
+}
+
+function validateProductVariantMode(
+  variants: Pick<ProductVariantWriteInput, "name">[],
+) {
+  const isCustomVariantMode =
+    variants.length > 1 || variants.some((variant) => hasVariantName(variant));
+
+  if (
+    isCustomVariantMode &&
+    variants.some((variant) => !hasVariantName(variant))
+  ) {
+    throw new CustomError(
+      "Custom variants require every variant to have a name",
+      400,
+    );
+  }
+}
 
 // --- Category Functions ---
 
@@ -32,7 +157,6 @@ export async function createCategory(categoryData: schema.NewCategory) {
     .insert(schema.categoryTable)
     .values(categoryData)
     .returning();
-  console.log("New category created:", newCategory.id);
   return newCategory;
 }
 
@@ -41,20 +165,21 @@ export async function createCategory(categoryData: schema.NewCategory) {
  * @returns An array of all categories.
  */
 export async function listCategory() {
-  const categories = await db.query.categoryTable.findMany({
+  return db.query.categoryTable.findMany({
     orderBy: (categories, { asc }) => [asc(categories.name)],
   });
-  console.log("No. of categories:", categories.length);
-  return categories;
 }
 
 // --- Product Functions ---
 
 export async function getProductById(productId: string) {
-  return db.query.productTable.findFirst({
+  const product = await db.query.productTable.findFirst({
     where: eq(schema.productTable.id, productId),
     with: {
       advertisement: true,
+      variants: {
+        orderBy: (variants, { asc }) => [asc(variants.sortOrder)],
+      },
       productsToCategories: {
         with: {
           category: true,
@@ -62,13 +187,19 @@ export async function getProductById(productId: string) {
       },
     },
   });
+
+  return product ? withAggregateProductInventory(product) : product;
 }
 
 export async function getProductWithSellerById(productId: string) {
-  return db.query.productTable.findFirst({
+  const product = await db.query.productTable.findFirst({
     where: eq(schema.productTable.id, productId),
     with: {
       advertisement: true,
+      variants: {
+        where: eq(schema.productVariantTable.status, "active"),
+        orderBy: (variants, { asc }) => [asc(variants.sortOrder)],
+      },
       seller: {
         columns: {
           role: true,
@@ -86,6 +217,8 @@ export async function getProductWithSellerById(productId: string) {
       },
     },
   });
+
+  return product ? withAggregateProductInventory(product) : product;
 }
 
 /**
@@ -97,27 +230,54 @@ export async function getProductWithSellerById(productId: string) {
 export async function createProduct(
   productData: schema.NewProduct,
   categoryIds?: string[],
+  variants?: ProductVariantWriteInput[],
 ) {
   // 0. Check product name before creating the product
-  if (ecpayService.hasSpecialChars(productData.name)) {
+  if (hasSpecialChars(productData.name)) {
     throw new CustomError(
       `商品名稱「${productData.name}」不得包含 ^ ‘ \` ! @ # % & * + \\ ” < > | _ [ ] 等特殊符號`,
       400,
     );
   }
-  if (ecpayService.getEcpayLength(productData.name) > 50) {
+  const productNameLength = getEcpayLength(productData.name);
+  if (productNameLength > 50) {
     throw new CustomError(
-      `商品名稱「${productData.name}」總長度超過 50 字元 (目前長度: ${ecpayService.getEcpayLength(productData.name)})`,
+      `商品名稱「${productData.name}」總長度超過 50 字元 (目前長度: ${productNameLength})`,
       400,
     );
   }
 
   return db.transaction(async (tx) => {
+    const variantInputs = variants?.length
+      ? variants
+      : [
+          {
+            name: null,
+            sku: productData.sku,
+            optionValues: {},
+            stock: productData.stock,
+            status: productData.status ?? "active",
+          },
+        ];
+    validateProductVariantMode(variantInputs);
+
+    const aggregateStock = variantInputs
+      .filter((variant) => (variant.status ?? "active") === "active")
+      .reduce((total, variant) => total + (variant.stock ?? 0), 0);
+
     // 1. Create the product
     const [newProduct] = await tx
       .insert(schema.productTable)
-      .values(productData)
+      .values({ ...productData, stock: aggregateStock, reserve: 0 })
       .returning();
+
+    await tx
+      .insert(schema.productVariantTable)
+      .values(
+        variantInputs.map((variant) =>
+          buildCreateVariantValues(newProduct.id, variant),
+        ),
+      );
 
     // 2. If category IDs are provided, create the associations
     if (categoryIds && categoryIds.length > 0) {
@@ -131,8 +291,6 @@ export async function createProduct(
         .values(productToCategoryValues);
     }
 
-    console.log("New product created:", newProduct.id);
-
     // 3. Return the full product with relations for confirmation
     return tx.query.productTable.findFirst({
       where: eq(schema.productTable.id, newProduct.id),
@@ -142,8 +300,13 @@ export async function createProduct(
             category: true,
           },
         },
+        variants: {
+          orderBy: (variants, { asc }) => [asc(variants.sortOrder)],
+        },
       },
-    });
+    }).then((product) =>
+      product ? withAggregateProductInventory(product) : product,
+    );
   });
 }
 
@@ -158,30 +321,40 @@ export async function updateProduct(
   productId: string,
   productData: Partial<Omit<schema.NewProduct, "id">>,
   categoryIds?: string[],
+  variants?: ProductVariantWriteInput[],
 ) {
   // 0. Check product name before updating the product
   if (productData.name) {
-    if (ecpayService.hasSpecialChars(productData.name)) {
+    if (hasSpecialChars(productData.name)) {
       throw new CustomError(
         `商品名稱「${productData.name}」不得包含 ^ ‘ \` ! @ # % & * + \\ ” < > | _ [ ] 等特殊符號`,
         400,
       );
     }
-    if (ecpayService.getEcpayLength(productData.name) > 50) {
+    const productNameLength = getEcpayLength(productData.name);
+    if (productNameLength > 50) {
       throw new CustomError(
-        `商品名稱「${productData.name}」總長度超過 50 字元 (目前長度: ${ecpayService.getEcpayLength(productData.name)})`,
+        `商品名稱「${productData.name}」總長度超過 50 字元 (目前長度: ${productNameLength})`,
         400,
       );
     }
   }
 
   return db.transaction(async (tx) => {
+    const stockForDefaultVariant = productData.stock;
+    const { stock: _stock, reserve: _reserve, ...safeProductData } =
+      productData;
+
     // 1. Update the product itself
     const [updatedProduct] = await tx
       .update(schema.productTable)
-      .set({ ...productData, updatedAt: new Date() })
+      .set({ ...safeProductData, updatedAt: new Date() })
       .where(eq(schema.productTable.id, productId))
       .returning();
+
+    if (!updatedProduct) {
+      throw new CustomError("Product not found", 404);
+    }
 
     // 2. If category IDs are provided, update the associations
     if (categoryIds) {
@@ -202,7 +375,81 @@ export async function updateProduct(
       }
     }
 
-    console.log("Product updated:", updatedProduct.id);
+    if (variants) {
+      for (const variant of variants) {
+        if (variant.id) {
+          const [existingVariant] = await tx
+            .select()
+            .from(schema.productVariantTable)
+            .where(eq(schema.productVariantTable.id, variant.id))
+            .for("update");
+
+          if (!existingVariant || existingVariant.productId !== productId) {
+            throw new CustomError("Product variant not found", 404);
+          }
+
+          if (
+            variant.stock !== undefined &&
+            variant.stock < existingVariant.reserve
+          ) {
+            throw new CustomError(
+              "Variant stock cannot be lower than reserved quantity",
+              400,
+            );
+          }
+
+          await tx
+            .update(schema.productVariantTable)
+            .set({
+              ...(variant.name !== undefined ? { name: variant.name } : {}),
+              ...(variant.sku !== undefined ? { sku: variant.sku } : {}),
+              ...(variant.optionValues !== undefined
+                ? { optionValues: variant.optionValues }
+                : {}),
+              ...(variant.stock !== undefined ? { stock: variant.stock } : {}),
+              ...(variant.sortOrder !== undefined
+                ? { sortOrder: variant.sortOrder }
+                : {}),
+              ...(variant.status !== undefined ? { status: variant.status } : {}),
+              ...(variant.metadata !== undefined
+                ? { metadata: variant.metadata }
+                : {}),
+              updatedAt: new Date(),
+            })
+            .where(eq(schema.productVariantTable.id, variant.id));
+        } else {
+          await tx
+            .insert(schema.productVariantTable)
+            .values(buildCreateVariantValues(productId, variant));
+        }
+      }
+
+      const persistedVariants = await tx.query.productVariantTable.findMany({
+        where: eq(schema.productVariantTable.productId, productId),
+      });
+      validateProductVariantMode(persistedVariants);
+    } else if (stockForDefaultVariant !== undefined) {
+      const defaultVariant = await tx.query.productVariantTable.findFirst({
+        where: eq(schema.productVariantTable.productId, productId),
+        orderBy: (variants, { asc }) => [asc(variants.sortOrder)],
+      });
+
+      if (defaultVariant) {
+        if (stockForDefaultVariant < defaultVariant.reserve) {
+          throw new CustomError(
+            "Variant stock cannot be lower than reserved quantity",
+            400,
+          );
+        }
+
+        await tx
+          .update(schema.productVariantTable)
+          .set({ stock: stockForDefaultVariant, updatedAt: new Date() })
+          .where(eq(schema.productVariantTable.id, defaultVariant.id));
+      }
+    }
+
+    await syncProductInventoryWithVariants(tx, productId);
 
     // 3. Return the fully updated product with its relations
     // We re-fetch it to get the latest state including the new category relations.
@@ -215,8 +462,13 @@ export async function updateProduct(
             category: true,
           },
         },
+        variants: {
+          orderBy: (variants, { asc }) => [asc(variants.sortOrder)],
+        },
       },
-    });
+    }).then((product) =>
+      product ? withAggregateProductInventory(product) : product,
+    );
   });
 }
 
@@ -249,9 +501,7 @@ export async function decreaseProductStock(
   return updatedProduct;
 }
 
-export interface ListAdminProductsParams {
-  page?: number;
-  limit?: number;
+export interface ListAdminProductsParams extends PaginationParams {
   categoryId?: string;
   search?: string;
   status?: schema.NewProduct["status"];
@@ -275,7 +525,7 @@ export async function listAdminProducts({
   minPrice,
   maxPrice,
 }: ListAdminProductsParams) {
-  const offset = (page - 1) * limit;
+  const pagination = getPagination(page, limit);
   const conditions: (SQL | undefined)[] = [];
 
   // Only return products that have an associated seller.
@@ -319,7 +569,7 @@ export async function listAdminProducts({
     conditions.push(lte(schema.productTable.price, maxPrice));
   }
 
-  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+  const whereClause = compactConditions(conditions);
 
   // Query for total count matching the filters
   const totalResult = await db
@@ -328,36 +578,37 @@ export async function listAdminProducts({
     .where(whereClause);
 
   const total = totalResult[0].total;
-  const totalPages = Math.ceil(total / limit);
+  const totalPages = getTotalPages(total, pagination.limit);
 
   // Query for the paginated products with their relations
   const products = await db.query.productTable.findMany({
     where: whereClause,
     with: {
       advertisement: true,
+      variants: {
+        orderBy: (variants, { asc }) => [asc(variants.sortOrder)],
+      },
       productsToCategories: {
         with: {
           category: true,
         },
       },
     },
-    limit: limit,
-    offset: offset,
+    limit: pagination.limit,
+    offset: pagination.offset,
     orderBy: (products, { desc }) => [desc(products.createdAt)],
   });
 
   return {
-    products,
+    products: products.map(withAggregateProductInventory),
     total,
-    page,
-    limit,
+    page: pagination.page,
+    limit: pagination.limit,
     totalPages,
   };
 }
 
-export interface ListProductsParams {
-  page?: number;
-  limit?: number;
+export interface ListProductsParams extends PaginationParams {
   categoryId?: string;
   search?: string;
   status?: schema.NewProduct["status"];
@@ -379,7 +630,7 @@ export async function listProducts({
   minPrice,
   maxPrice,
 }: ListProductsParams) {
-  const offset = (page - 1) * limit;
+  const pagination = getPagination(page, limit);
   const conditions: (SQL | undefined)[] = [];
 
   // Only return products that have an associated seller.
@@ -416,9 +667,9 @@ export async function listProducts({
     conditions.push(lte(schema.productTable.price, maxPrice));
   }
 
-  conditions.push(gt(schema.productTable.stock, schema.productTable.reserve));
+  conditions.push(activeVariantAvailabilityCondition(schema.productTable.id));
 
-  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+  const whereClause = compactConditions(conditions);
 
   // Query for total count matching the filters
   const totalResult = await db
@@ -427,13 +678,17 @@ export async function listProducts({
     .where(whereClause);
 
   const total = totalResult[0].total;
-  const totalPages = Math.ceil(total / limit);
+  const totalPages = getTotalPages(total, pagination.limit);
 
   // Query for the paginated products with their relations
   const products = await db.query.productTable.findMany({
     where: whereClause,
     with: {
       advertisement: true,
+      variants: {
+        where: eq(schema.productVariantTable.status, "active"),
+        orderBy: (variants, { asc }) => [asc(variants.sortOrder)],
+      },
       seller: {
         columns: {
           role: true,
@@ -450,16 +705,16 @@ export async function listProducts({
         },
       },
     },
-    limit: limit,
-    offset: offset,
+    limit: pagination.limit,
+    offset: pagination.offset,
     orderBy: (products, { desc }) => [desc(products.createdAt)],
   });
 
   return {
-    products,
+    products: products.map(withAggregateProductInventory),
     total,
-    page,
-    limit,
+    page: pagination.page,
+    limit: pagination.limit,
     totalPages,
   };
 }

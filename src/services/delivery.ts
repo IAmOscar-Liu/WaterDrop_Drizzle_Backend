@@ -5,13 +5,14 @@ import {
 } from "../constants/delivery";
 import { ECPAY_SHIPPING_FEE } from "../constants/ecpay";
 import { handleServiceError } from "../lib/error";
+import { sendDeliveryNotification } from "../lib/polling";
 import {
   ListAdminDeliveriesParams,
   createDelivery,
-  getDeliveriesByMerchantTradeNo,
   getDeliveryById,
   listAdminDeliveries,
   updateDelivery,
+  updateDeliveryWithNotificationContext,
   upsertShippingFee,
   getShippingFee,
   getShippingFeeByAccountIds,
@@ -49,29 +50,12 @@ class DeliveryService {
     }
   }
 
-  async getDeliveriesByMerchantTradeNo(
-    merchantTradeNo: string,
-    options?: { matchPrefix: boolean },
-  ): Promise<
-    ServiceResponse<Awaited<ReturnType<typeof getDeliveriesByMerchantTradeNo>>>
-  > {
-    try {
-      const deliveries = await getDeliveriesByMerchantTradeNo(
-        merchantTradeNo,
-        options,
-      );
-      return { success: true, data: deliveries };
-    } catch (error) {
-      return handleServiceError(error);
-    }
-  }
-
   async createDelivery(
     data: Parameters<typeof createDelivery>[0],
-    productIds?: string[],
+    products?: { productId: string; variantId: string }[],
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof createDelivery>>>> {
     try {
-      const delivery = await createDelivery(data, productIds);
+      const delivery = await createDelivery(data, products);
       return { success: true, data: delivery };
     } catch (error) {
       return handleServiceError(error);
@@ -83,8 +67,18 @@ class DeliveryService {
     updates: Parameters<typeof updateDelivery>[1],
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof updateDelivery>>>> {
     try {
-      const delivery = await updateDelivery(deliveryId, updates);
+      const result = await updateDeliveryWithNotificationContext(
+        deliveryId,
+        updates,
+      );
+      const delivery = result?.delivery ?? null;
       if (delivery) {
+        if (result?.notificationContext) {
+          await sendDeliveryNotification({
+            ...result.notificationContext,
+            delivery,
+          });
+        }
         return { success: true, data: delivery };
       } else {
         return {
