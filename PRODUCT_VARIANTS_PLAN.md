@@ -260,49 +260,38 @@ orderItem.product;
 orderItem.variant;
 ```
 
-Format API responses with the purchased variant nested under `product`. List endpoints may use a summary version; detail endpoints may use a richer version.
+Format API responses with `variantAtSale` as the purchased variant display object. Keep live DB relations available inside repositories, but do not expose a redundant live `product.variant` object when `variantAtSale` is already present.
 
 ```ts
 orderItem: {
-  product: {
-    id,
+  product,
+  variantAtSale: {
     name,
-    price,
-    images,
-    variant: {
-      id,
-      name,
-      sku,
-      optionValues,
-      status,
-    },
+    sku,
+    optionValues,
   },
-  variantNameAtSale,
-  variantSkuAtSale,
-  variantOptionValuesAtSale,
 }
 ```
 
-Use the same nested shape in refund responses, but keep the existing list/detail distinction:
+Use the same `variantAtSale` display shape in refund and delivery responses, while keeping the existing list/detail distinction for surrounding relations:
 
-- Refund list can include `orderItem.product.variant` summary plus delivery/order/user summary.
-- Refund detail can include the richer `orderItem.product.variant` detail shape and any extra relations needed by admin UI.
+- Refund list can include `orderItem.product`, `orderItem.variantAtSale`, and delivery/order/user summary.
+- Refund detail can include richer order/delivery/user relations, but should still use `orderItem.variantAtSale` for variant display.
 
 ```ts
 refundItem: {
   orderItem: {
-    product: {
-      ...product,
-      variant,
+    product,
+    variantAtSale: {
+      name,
+      sku,
+      optionValues,
     },
-    variantNameAtSale,
-    variantSkuAtSale,
-    variantOptionValuesAtSale,
   },
 }
 ```
 
-For historical display, prefer the `variant*AtSale` snapshot fields when present. The nested live `product.variant` is still useful for admin/debug context and inventory links, but it may later be renamed or inactive.
+For historical display, prefer `variantAtSale`, which is derived from the `variant*AtSale` snapshot fields. Live variant rows may be joined internally for validation or inventory logic, but API display should not depend on mutable live variant values.
 
 ### Cart API
 
@@ -506,7 +495,7 @@ Use this section to track implementation progress. Keep each phase buildable and
   - [x] Run chat room variant backfill.
   - [x] Backfill `merchant_trades.variantIds`.
   - [x] Verify every product/cart item/order item has a variant.
-  - [ ] Verify every product-specific chat room has a variant.
+  - [x] Verify every product-specific chat room has a variant.
   - [x] Verify merchant trades have `variantIds`.
   - [x] Verify aggregate product stock/reserve matches variant stock/reserve.
 - [x] Phase 3: Read support
@@ -530,18 +519,21 @@ Use this section to track implementation progress. Keep each phase buildable and
   - [x] Update refund completion to restock returned variant inventory.
   - [x] Add cart variant-switch flow that merges rows when the target variant already exists.
   - [x] Build verification: `npm run build`.
-- [ ] Phase 5: Constraints
-  - [ ] Make `cart_items.productVariantId` not null.
-  - [ ] Make `order_items.productVariantId` not null.
-  - [ ] Add product-specific chat room check constraint requiring `productVariantId` when `productId` is present.
+- [x] Phase 5: Constraints
+  - [x] Make `cart_items.productVariantId` not null in schema.
+  - [x] Make `order_items.productVariantId` not null in schema.
+  - [x] Add product-specific chat room check constraint requiring `productVariantId` when `productId` is present.
   - [x] Replace cart unique constraint in schema with `(userId, productVariantId)`.
-  - [ ] Replace order item unique constraint with `(orderId, productVariantId)`.
-  - [ ] Replace chat room uniqueness with product variant-aware identity.
-  - [ ] Add merchant trade check constraint requiring `cardinality(productIds) = cardinality(variantIds)`.
-  - [ ] Add product variant inventory check constraints for non-negative stock/reserve and reserve not exceeding stock.
-  - [ ] Add required variant indexes.
-  - [ ] Verify one user can hold multiple variants of the same product in cart after constraint migration.
-  - [ ] Verify one order can hold multiple variants of the same product after constraint migration.
+  - [x] Replace order item unique constraint with `(orderId, productVariantId)`.
+  - [x] Replace chat room uniqueness with product variant-aware identity.
+  - [x] Add merchant trade check constraint requiring `cardinality(productIds) = cardinality(variantIds)`.
+  - [x] Add product variant inventory check constraints for non-negative stock/reserve and reserve not exceeding stock.
+  - [x] Add required variant indexes.
+  - [x] Build verification: `npm run build`.
+  - [x] Generate Phase 5 constraint migration.
+  - [x] Run Phase 5 constraint migration.
+  - [x] Verify one user can hold multiple variants of the same product in cart after constraint migration.
+  - [x] Verify one order can hold multiple variants of the same product after constraint migration.
 - [ ] Phase 6: Cleanup
   - [ ] Deprecate product-level `stock`, `reserve`, and possibly `sku`.
   - [ ] Remove compatibility code after clients use variants.
