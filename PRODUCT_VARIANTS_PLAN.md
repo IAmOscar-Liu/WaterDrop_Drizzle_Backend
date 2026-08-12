@@ -207,7 +207,9 @@ Add `variants` to request body:
 
 Rules:
 
-- Create requires `variants`. Use one variant with `name = null` for products without visible variant choices.
+- Create requires `variants`.
+- Simple products use exactly one default variant with `name = null`.
+- Variant products use at least two variants, and every variant must have a non-empty `name`.
 - If `variants` is passed, create/update variant rows in the same transaction as product/category updates.
 - `reserve` should not be directly writable from API except internal stock workflows.
 - Updating variants should support:

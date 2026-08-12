@@ -183,7 +183,8 @@ Request body additions:
 Validation:
 
 - `variants` is required.
-- Use one variant with `name: null` for products without visible variant choices.
+- Simple products must use exactly one default variant with `name: null` or omitted. The app/admin UI should not show a variant selector for this case.
+- Variant products must use at least two variants, and every variant must have a non-empty `name`.
 - Every variant requires non-negative integer `stock`.
 - `reserve` is not writable from the API.
 - `optionValues` must be a plain object.
@@ -222,6 +223,7 @@ Validation/behavior:
 - Existing variant updates are matched by `id`.
 - Variant rows without `id` are created.
 - Variants are never physically deleted; use `status: "inactive"`.
+- After the update is applied, the product must still be either exactly one unnamed default variant or at least two named variants.
 - `reserve` is not writable from the API.
 - If a variant has pending reserved quantity, reducing `stock` below `reserve` fails.
 - Top-level product `stock`, `reserve`, and `sku` are no longer accepted.
@@ -398,52 +400,6 @@ chatRooms: Array<ChatRoom & {
 ```
 
 When resolving delivery context for a chat room, backend matches order items by both `productId` and `productVariantId`.
-
-### Admin Delivery Creation / ECPay Logistics Create
-
-Request body change:
-
-Replace product id array usage with paired product+variant selection:
-
-```ts
-{
-  items: Array<{
-    productId: string;
-    variantId: string;
-  }>;
-}
-```
-
-If the actual field name remains `productIds` for compatibility, its element shape should become:
-
-```ts
-productIds: Array<{
-  productId: string;
-  variantId: string;
-}>
-```
-
-Response body change:
-
-- `GET /api/admin/delivery/list?merchantTradeNo=xxxx` replaces `GET /api/admin/delivery/merchant-trade-no/:merchantTradeNo`.
-- `merchantTradeNo` on delivery list matches delivery `merchantTradeNo` only. It does not match order `merchantTradeNo`.
-- Delivery list `items` include `variantAtSale`.
-- Delivery detail `items` include `variantAtSale` for historical display and do not include `product.variant`.
-
-### ECPay / Merchant Trade Callback Related Data
-
-`merchantTradeTable` has:
-
-```ts
-productIds: string[];
-variantIds: string[];
-```
-
-Contract:
-
-- Arrays are positionally aligned.
-- `productIds[index]` corresponds to `variantIds[index]`.
-- Backend validates equal array lengths before updating `order_items`.
 
 ## Flutter App APIs
 
