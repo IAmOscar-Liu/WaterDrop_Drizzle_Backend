@@ -97,8 +97,7 @@ const router = Router();
  *         price:
  *           type: number
  *           format: double
- *           nullable: true
- *           description: Current variant price. Nullable only during the Phase 1 database transition.
+ *           description: Current variant price.
  *         images:
  *           type: array
  *           items:
@@ -351,7 +350,7 @@ router.get(
  *               - description
  *               - variants
  *             type: object
- *             description: Variants are required. Use exactly one unnamed variant for products without visible variant choices. Variant products require at least two variants, and every variant must have a non-empty name.
+ *             description: Variants are required. Active variants must be either exactly one unnamed default variant, or at least two named variants. Inactive historical variants may remain. At most one unnamed default row may exist.
  *             properties:
  *               name:
  *                 type: string
@@ -374,7 +373,7 @@ router.get(
  *                     name:
  *                       type: string
  *                       nullable: true
- *                       description: Must be null/omitted for the single default variant. Required and non-empty when the product has multiple variants.
+ *                       description: Null/omitted identifies the single default variant. It must be active in simple mode and absent or inactive while two or more named variants are active.
  *                       example: "Black / M"
  *                     sku:
  *                       type: string
@@ -490,7 +489,7 @@ router.post(
  *                 example: "http://example.com/avatar.png"
  *               variants:
  *                 type: array
- *                 description: Create or update variants. If id is provided, the existing variant is updated; otherwise a new variant is created. Variants are not deleted; set status to inactive. A product must have either exactly one unnamed default variant, or at least two named variants.
+ *                 description: Create or update variants. If id is provided, the existing variant is updated; otherwise a new variant is created. Variants are not deleted; set status to inactive. Active variants must be either exactly one unnamed default variant, or at least two named variants. Inactive historical variants may remain.
  *                 items:
  *                   type: object
  *                   properties:
@@ -501,7 +500,7 @@ router.post(
  *                     name:
  *                       type: string
  *                       nullable: true
- *                       description: Must be null/omitted when the product has one default variant. Required and non-empty when the product has multiple variants.
+ *                       description: Null/omitted identifies the single default variant. It must be active in simple mode and absent or inactive while two or more named variants are active.
  *                     sku:
  *                       type: string
  *                       nullable: true

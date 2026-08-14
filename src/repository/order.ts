@@ -16,6 +16,7 @@ import { CustomError } from "../lib/error";
 import { isPlainObject } from "../lib/general";
 import db from "../lib/initDB";
 import { isAccountAdmin } from "./account";
+import { minimumVariantPrice } from "./utils/product";
 import {
   compactConditions,
   getPagination,
@@ -25,7 +26,7 @@ import {
 
 type OrderItemWithProductVariant = {
   product?: schema.Product | null;
-  variant?: schema.ProductVariant | null;
+  variant?: Pick<schema.ProductVariant, "images"> | null;
   unitPriceAtSale: number;
   variantNameAtSale?: string | null;
   variantSkuAtSale?: string | null;
@@ -35,7 +36,7 @@ type OrderItemWithProductVariant = {
 function withVariantAtSaleDisplay<T extends OrderItemWithProductVariant>(item: T) {
   const {
     product,
-    variant: _variant,
+    variant,
     variantNameAtSale,
     variantSkuAtSale,
     variantOptionValuesAtSale,
@@ -60,6 +61,7 @@ function withVariantAtSaleDisplay<T extends OrderItemWithProductVariant>(item: T
       optionValues: variantOptionValuesAtSale ?? null,
       price: rest.unitPriceAtSale,
     },
+    variantImage: variant?.images?.[0] ?? null,
   };
 }
 
@@ -216,7 +218,11 @@ export async function createOrder({
       with: {
         items: {
           with: {
-            product: true,
+            product: {
+              extras: (products) => ({
+                price: minimumVariantPrice(products.id).as("price"),
+              }),
+            },
             variant: true,
           },
         },
@@ -287,7 +293,11 @@ export async function updateOrderStatus({
       with: {
         items: {
           with: {
-            product: true,
+            product: {
+              extras: (products) => ({
+                price: minimumVariantPrice(products.id).as("price"),
+              }),
+            },
           },
         },
       },
@@ -566,7 +576,11 @@ export async function updateOrderStatus({
       with: {
         items: {
           with: {
-            product: true,
+            product: {
+              extras: (products) => ({
+                price: minimumVariantPrice(products.id).as("price"),
+              }),
+            },
             variant: true,
           },
         },
@@ -677,6 +691,11 @@ export async function listOrders({
           variantNameAtSale: true,
           variantSkuAtSale: true,
           variantOptionValuesAtSale: true,
+        },
+        with: {
+          variant: {
+            columns: { images: true },
+          },
         },
       },
       deliveries: {
@@ -807,6 +826,11 @@ export async function listAdminOrders({
           variantSkuAtSale: true,
           variantOptionValuesAtSale: true,
         },
+        with: {
+          variant: {
+            columns: { images: true },
+          },
+        },
       },
       user: {
         columns: {
@@ -921,7 +945,11 @@ export async function getOrderById(
     with: {
       items: {
         with: {
-          product: true,
+          product: {
+            extras: (products) => ({
+              price: minimumVariantPrice(products.id).as("price"),
+            }),
+          },
           variant: true,
           refundItems: {
             orderBy: (refundItems, { desc }) => [desc(refundItems.createdAt)],
@@ -940,6 +968,11 @@ export async function getOrderById(
               variantNameAtSale: true,
               variantSkuAtSale: true,
               variantOptionValuesAtSale: true,
+            },
+            with: {
+              variant: {
+                columns: { images: true },
+              },
             },
           },
           logs: {

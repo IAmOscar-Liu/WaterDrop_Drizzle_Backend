@@ -3,6 +3,7 @@ import {
   count,
   desc,
   eq,
+  getTableColumns,
   gte,
   inArray,
   like,
@@ -21,6 +22,7 @@ import {
 } from "../lib/general";
 import db from "../lib/initDB";
 import { isAccountAdmin } from "./account";
+import { minimumVariantPrice } from "./utils/product";
 import {
   compactConditions,
   getPagination,
@@ -52,6 +54,7 @@ function formatRefundRow(
   row: {
     refundItem: schema.RefundItem;
     orderItem: schema.OrderItem;
+    variantImage: string | null;
     product: schema.Product;
     delivery: {
       id: string;
@@ -91,6 +94,7 @@ function formatRefundRow(
         optionValues: variantOptionValuesAtSale,
         price: orderItem.unitPriceAtSale,
       },
+      variantImage: row.variantImage,
       product: row.product,
       delivery: row.delivery,
       order: {
@@ -137,11 +141,17 @@ function getRefundFilters({
 }
 
 function getRefundBaseQuery() {
+  const productPrice = minimumVariantPrice(schema.productTable.id);
+
   return db
     .select({
       refundItem: schema.refundItemTable,
       orderItem: schema.orderItemTable,
-      product: schema.productTable,
+      variantImage: sql<string | null>`${schema.productVariantTable.images}[1]`,
+      product: {
+        ...getTableColumns(schema.productTable),
+        price: productPrice,
+      },
       delivery: {
         id: schema.deliveryTable.id,
         merchantTradeNo: schema.deliveryTable.merchantTradeNo,
@@ -168,6 +178,13 @@ function getRefundBaseQuery() {
     .innerJoin(
       schema.productTable,
       eq(schema.orderItemTable.productId, schema.productTable.id),
+    )
+    .innerJoin(
+      schema.productVariantTable,
+      eq(
+        schema.orderItemTable.productVariantId,
+        schema.productVariantTable.id,
+      ),
     )
     .leftJoin(
       schema.deliveryTable,
@@ -257,6 +274,7 @@ function validateRefundQuantityAndAmount({
 function formatRefundChatMessage({
   createdAt,
   productName,
+  variantName,
   quantity,
   paidRefundAmount,
   coins,
@@ -265,6 +283,7 @@ function formatRefundChatMessage({
 }: {
   createdAt: Date;
   productName: string;
+  variantName?: string | null;
   quantity: number;
   paidRefundAmount: number | null;
   coins: number;
@@ -285,6 +304,9 @@ function formatRefundChatMessage({
     "【退貨申請】",
     `• 申請時間：${appliedAt}`,
     `• 商品名稱：${productName}`,
+    ...(variantName?.trim()
+      ? [`• 商品規格：${variantName.trim()}`]
+      : []),
     `• 退貨數量：${quantity}`,
     `• 退款金額：NT$ ${formatInteger(paidRefundAmount)}`,
     `• 退還金幣：${formatInteger(coins)}`,
@@ -561,6 +583,7 @@ export async function createRefundWithChatContext(
             content: formatRefundChatMessage({
               createdAt: newRefundItem.createdAt,
               productName: product.name,
+              variantName: orderItem.variantNameAtSale,
               quantity: newRefundItem.quantity,
               paidRefundAmount: newRefundItem.paidRefundAmount,
               coins: newRefundItem.coins,

@@ -32,6 +32,7 @@ Add a `product_variants` table and make stock/reserve belong to variants.
 Resolved model decisions:
 
 - Variant price is authoritative; product responses expose the minimum eligible variant price at the root.
+- Active variants define the selling mode: either exactly one active unnamed default variant, or at least two active named variants. Inactive historical variants may remain, and at most one unnamed default row may exist.
 - Variant SKU is optional.
 - Variant option names and values are stored as free-form JSON in `optionValues`.
 - Inactive variants remain visible in admin order/refund history through order item snapshots and/or explicit variant relations.
@@ -208,8 +209,9 @@ Add `variants` to request body:
 Rules:
 
 - Create requires `variants`.
-- Simple products use exactly one default variant with `name = null`.
-- Variant products use at least two variants, and every variant must have a non-empty `name`.
+- Simple products use exactly one active default variant with `name = null`; named variants may remain only when inactive.
+- Variant products use at least two active named variants; the unnamed default variant must be absent or inactive.
+- At most one unnamed default variant row may exist.
 - If `variants` is passed, create/update variant rows in the same transaction as product/category updates.
 - `reserve` should not be directly writable from API except internal stock workflows.
 - Updating variants should support:
@@ -269,13 +271,14 @@ orderItem: {
     sku,
     optionValues,
   },
+  variantImage,
 }
 ```
 
 Use the same `variantAtSale` display shape in refund and delivery responses, while keeping the existing list/detail distinction for surrounding relations:
 
-- Refund list can include `orderItem.product`, `orderItem.variantAtSale`, and delivery/order/user summary.
-- Refund detail can include richer order/delivery/user relations, but should still use `orderItem.variantAtSale` for variant display.
+- Refund list can include `orderItem.product`, `orderItem.variantAtSale`, `orderItem.variantImage`, and delivery/order/user summary.
+- Refund detail can include richer order/delivery/user relations, but should still use `orderItem.variantAtSale` for historical variant display and `orderItem.variantImage` for the current image.
 
 ```ts
 refundItem: {
@@ -286,11 +289,12 @@ refundItem: {
       sku,
       optionValues,
     },
+    variantImage,
   },
 }
 ```
 
-For historical display, prefer `variantAtSale`, which is derived from the `variant*AtSale` snapshot fields. Live variant rows may be joined internally for validation or inventory logic, but API display should not depend on mutable live variant values.
+For historical display, prefer `variantAtSale`, which is derived from the `variant*AtSale` snapshot fields. `variantImage` is the explicit exception: it is derived from the current live variant's first image and may change when that variant is edited.
 
 ### Cart API
 

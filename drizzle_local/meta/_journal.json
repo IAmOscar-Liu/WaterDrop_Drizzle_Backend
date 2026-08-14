@@ -729,6 +729,13 @@
       "when": 1786549836767,
       "tag": "0103_large_talisman",
       "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1786551323012,
+      "tag": "0104_yellow_revanche",
+      "breakpoints": true
     }
   ]
 }

@@ -13,7 +13,7 @@ type ProductVariant = {
   productId: string;
   name: string | null;
   sku: string | null;
-  price: number | null; // nullable only during the Phase 1 migration window
+  price: number;
   images: string[] | null;
   optionValues: Record<string, unknown>;
   stock: number;
@@ -25,12 +25,12 @@ type ProductVariant = {
 };
 ```
 
-Products have two valid variant modes:
+Products have two valid active-variant modes:
 
-- Simple product: exactly one variant, and `name` must be `null` or omitted. Do not show a variant selector.
-- Variant product: at least two variants, and every variant must have a non-empty `name`. Show variant selection.
+- Simple product: exactly one active variant, and its `name` must be `null` or omitted. Named historical variants may remain only when inactive. Do not show a variant selector.
+- Variant product: at least two active variants, and every active variant must have a non-empty `name`. The unnamed default variant must be absent or inactive. Show variant selection.
 
-Avoid the middle state of one named variant. The backend rejects it.
+At most one unnamed default variant row may exist. The backend rejects no active variants, one active named variant, or a mix of active named and unnamed variants.
 
 Variants are not deleted. To remove a variant from sale, update it with `status: "inactive"`.
 
@@ -69,8 +69,8 @@ Request body:
 Rules:
 
 - `variants` is required.
-- Simple product: send one variant with `name: null`.
-- Variant product: send at least two variants, all with non-empty `name`.
+- Simple product: send exactly one active variant with `name: null`; any named variants must be inactive.
+- Variant product: send at least two active named variants; the default unnamed variant must be absent or inactive.
 - `stock` is required for every new variant.
 - `price` is required for every new variant.
 - `reserve` is read-only and cannot be sent.
@@ -107,9 +107,10 @@ Variant update behavior:
 - Existing variants cannot be deleted.
 - To hide/remove a variant from sale, set `status: "inactive"`.
 - If a variant has `reserve > 0`, `stock` cannot be reduced below `reserve`.
-- After update, the full persisted variant set must still be valid:
-  - exactly one unnamed default variant, or
-  - at least two named variants.
+- After update, the active persisted variant set must still be valid:
+  - exactly one active unnamed default variant with all named variants inactive, or
+  - at least two active named variants with the unnamed default absent or inactive.
+- Inactive historical named variants may remain in either mode, but only one unnamed default row may exist.
 
 ## Admin Product Responses
 
@@ -137,7 +138,13 @@ variantAtSale: {
   optionValues: Record<string, unknown> | null;
   price: number;
 }
+
+variantImage: string | null;
 ```
+
+`variantImage` is a sibling of `variantAtSale`. It is the current first image
+of the live variant and is not a historical snapshot. It is `null` when the
+variant currently has no image.
 
 Admin order, delivery, and refund APIs should not display `product.variant` when `variantAtSale` is present.
 
@@ -157,7 +164,9 @@ product: {
   name: string;
   images: string[] | null;
   variantName: string | null;
+  variantImage: string | null;
 } | null;
 ```
 
-Use `variantName` beside the product name when present.
+Use `variantName` beside the product name when present. `variantImage` is the
+current first image of the selected variant and is `null` when it has no image.

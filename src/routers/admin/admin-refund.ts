@@ -96,6 +96,10 @@ const router = Router();
  *                           type: number
  *                           format: double
  *                           description: Historical variant price from unitPriceAtSale.
+ *                     variantImage:
+ *                       type: string
+ *                       nullable: true
+ *                       description: Current first image of the live variant; not a historical snapshot.
  *                     product:
  *                       $ref: '#/components/schemas/Product'
  *                     delivery:

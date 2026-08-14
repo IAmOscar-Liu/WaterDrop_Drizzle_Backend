@@ -4,7 +4,7 @@ import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
 import db from "../lib/initDB";
 import { isAccountAdmin } from "./account";
-import { withProductVariantAggregates } from "./product";
+import { withProductVariantAggregates } from "./utils/product";
 import {
   compactConditions,
   getPagination,

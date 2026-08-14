@@ -104,7 +104,7 @@ class ProductService {
   }
 
   async createProduct(
-    productDataWithCategoryIds: Omit<schema.NewProduct, "price"> & {
+    productDataWithCategoryIds: schema.NewProduct & {
       categoryIds?: string[];
       variants?: ProductVariantWriteInput[];
     },
@@ -122,9 +122,7 @@ class ProductService {
 
   async updateProduct(
     productId: string,
-    productDataWithCategoryIds: Partial<
-      Omit<schema.NewProduct, "id" | "price">
-    > & {
+    productDataWithCategoryIds: Partial<Omit<schema.NewProduct, "id">> & {
       categoryIds?: string[];
       variants?: ProductVariantWriteInput[];
     },

@@ -20,7 +20,7 @@ type ProductVariantSummary = {
   productId: string;
   name: string | null;
   sku: string | null;
-  price: number | null;
+  price: number;
   images: string[] | null;
   optionValues: Record<string, unknown>;
   availableStock: number;
@@ -36,7 +36,7 @@ type ProductVariantDetail = {
   productId: string;
   name: string | null;
   sku: string | null;
-  price: number | null;
+  price: number;
   images: string[] | null;
   optionValues: Record<string, unknown>;
   stock: number;
@@ -52,7 +52,7 @@ type ProductVariantDetail = {
 
 Notes:
 
-- Variant price is authoritative. It is nullable only during the Phase 1 migration window and becomes required after the backfill.
+- Variant price is authoritative and required.
 - Product responses keep a computed root `price` equal to the minimum eligible variant price.
 - `sku` is optional.
 - `optionValues` is free-form JSON, for example `{ "size": "M", "color": "Black" }`.
@@ -98,10 +98,13 @@ type OrderItemWithVariant = OrderItem & {
     optionValues: Record<string, unknown> | null;
     price: number;
   };
+  variantImage: string | null;
 };
 ```
 
-For order, refund, and delivery display, use `variantAtSale`. Order responses should not return the raw snapshot fields (`variantNameAtSale`, `variantSkuAtSale`, `variantOptionValuesAtSale`). Delivery/refund responses also omit the live variant under `product.variant` when `variantAtSale` is present.
+`variantImage` is the current first image of the live variant and is not historical snapshot data. It is `null` when the variant currently has no image.
+
+For order, refund, and delivery display, use `variantAtSale` for historical text and price data, and its sibling `variantImage` for the current variant image. Order responses should not return the raw snapshot fields (`variantNameAtSale`, `variantSkuAtSale`, `variantOptionValuesAtSale`). Delivery/refund responses also omit the live variant under `product.variant` when `variantAtSale` is present.
 
 ```ts
 type PurchasedProductSummary = Product;
@@ -189,8 +192,9 @@ Request body additions:
 Validation:
 
 - `variants` is required.
-- Simple products must use exactly one default variant with `name: null` or omitted. The app/admin UI should not show a variant selector for this case.
-- Variant products must use at least two variants, and every variant must have a non-empty `name`.
+- Simple products must have exactly one active default variant with `name: null` or omitted. Named historical variants may remain only when inactive. The app/admin UI should not show a variant selector for this case.
+- Variant products must have at least two active named variants. The unnamed default variant must be absent or inactive.
+- At most one unnamed default variant row may exist.
 - Every variant requires non-negative integer `stock`.
 - `reserve` is not writable from the API.
 - `optionValues` must be a plain object.
@@ -229,7 +233,8 @@ Validation/behavior:
 - Existing variant updates are matched by `id`.
 - Variant rows without `id` are created.
 - Variants are never physically deleted; use `status: "inactive"`.
-- After the update is applied, the product must still be either exactly one unnamed default variant or at least two named variants.
+- After the update is applied, active variants must be either exactly one unnamed default variant with no active named variants, or at least two named variants with no active unnamed variant.
+- Inactive historical named variants may remain in either mode. The unnamed default may remain inactive in variant mode, but at most one unnamed default row may exist.
 - `reserve` is not writable from the API.
 - If a variant has pending reserved quantity, reducing `stock` below `reserve` fails.
 - Top-level product `stock`, `reserve`, and `sku` are no longer accepted.
@@ -296,6 +301,7 @@ items: Array<{
     optionValues: Record<string, unknown> | null;
     price: number;
   };
+  variantImage: string | null;
 }>
 ```
 
@@ -314,6 +320,7 @@ items: Array<OrderItem & {
     optionValues: Record<string, unknown> | null;
     price: number;
   };
+  variantImage: string | null;
 }>
 ```
 
@@ -339,6 +346,7 @@ refunds: Array<RefundItem & {
       optionValues: Record<string, unknown> | null;
       price: number;
     };
+    variantImage: string | null;
   };
 }>
 ```
@@ -404,6 +412,7 @@ chatRooms: Array<ChatRoom & {
     name: string;
     images: string[] | null;
     variantName: string | null;
+    variantImage: string | null;
   } | null;
 }>
 ```
@@ -640,7 +649,7 @@ Request body item change:
 }
 ```
 
-Backend should derive/snapshot variant fields from the locked variant row when possible. Flutter can still send display snapshots if the current flow already builds order item snapshots client-side.
+Backend should derive/snapshot variant fields from the locked variant row when possible. Flutter can still send display snapshots if the current flow already builds order item snapshots client-side. Response-only `variantImage` is read from the current live variant and is not sent in the order request.
 
 Validation:
 
@@ -732,8 +741,12 @@ product: {
   name: string;
   images: string[] | null;
   variantName: string | null;
+  variantImage: string | null;
 } | null;
 ```
+
+For both admin and Flutter chatroom lists, `variantImage` is the current first
+image of the selected variant and is `null` when it has no image.
 
 - `order.delivery` matches admin chatroom list and includes `id` and `merchantTradeNo` when a delivery is linked.
 - Product inquiry/order chat rooms are unique by user, account, product, variant, and order context after Phase 5 constraints.

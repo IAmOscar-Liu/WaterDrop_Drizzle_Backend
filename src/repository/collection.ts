@@ -2,7 +2,7 @@ import { and, count, eq, ilike, inArray, or } from "drizzle-orm";
 import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
 import db from "../lib/initDB";
-import { withProductVariantAggregates } from "./product";
+import { withProductVariantAggregates } from "./utils/product";
 import {
   compactConditions,
   getPagination,
