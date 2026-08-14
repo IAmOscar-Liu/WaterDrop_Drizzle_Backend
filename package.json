@@ -28,7 +28,7 @@
     "generate-dbml": "ts-node src/generate-dmbl.ts",
     "daily-reset": "NODE_ENV=stg ts-node src/daily-reset.ts",
     "getStoreList": "NODE_ENV=stg ts-node src/ecpay-storeList.ts",
-    "back-fill": "NODE_ENV=local ts-node src/back-fill.ts",
+    "back-fill": "NODE_ENV=development ts-node src/back-fill.ts",
     "test-script": "NODE_ENV=stg ts-node src/test_script.ts"
   },
   "keywords": [],
