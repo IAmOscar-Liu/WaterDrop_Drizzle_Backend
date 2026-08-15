@@ -50,6 +50,21 @@ export type RefundCreatedChatMessageInput = {
   content: string;
 };
 
+export type RefundNotificationContext = {
+  userId: string;
+  orderId: string;
+  refundItemId: string;
+  merchantTradeNo: string | null;
+  productName: string;
+  variantName: string | null;
+  status: schema.RefundItem["status"];
+};
+
+export type RefundStatusChangedNotificationContext =
+  RefundNotificationContext & {
+    previousStatus: schema.RefundItem["status"];
+  };
+
 function formatRefundRow(
   row: {
     refundItem: schema.RefundItem;
@@ -398,11 +413,15 @@ export async function getRefundList({
 }
 
 export async function getRefundById(refundItemId: string) {
-  const [row] = await getRefundBaseQuery().where(
-    eq(schema.refundItemTable.id, refundItemId),
-  );
+  const [[row], logs] = await Promise.all([
+    getRefundBaseQuery().where(eq(schema.refundItemTable.id, refundItemId)),
+    db.query.refundLogTable.findMany({
+      where: eq(schema.refundLogTable.refundItemId, refundItemId),
+      orderBy: (logs, { desc }) => [desc(logs.createdAt)],
+    }),
+  ]);
 
-  return row ? formatRefundRow(row) : undefined;
+  return row ? { ...formatRefundRow(row), logs } : undefined;
 }
 
 export async function createRefundWithChatContext(
@@ -564,6 +583,12 @@ export async function createRefundWithChatContext(
       .values(refundItem)
       .returning();
 
+    await tx.insert(schema.refundLogTable).values({
+      refundItemId: newRefundItem.id,
+      status: newRefundItem.status,
+      message: "申請退貨",
+    });
+
     if (item.accountId && !orderItem.productVariantId) {
       throw new CustomError("Order item productVariantId is required", 400);
     }
@@ -572,6 +597,15 @@ export async function createRefundWithChatContext(
 
     return {
       refundItem: newRefundItem,
+      notificationContext: {
+        userId: order.userId,
+        orderId: order.id,
+        refundItemId: newRefundItem.id,
+        merchantTradeNo: order.merchantTradeNo,
+        productName: product.name,
+        variantName: orderItem.variantNameAtSale,
+        status: newRefundItem.status,
+      } satisfies RefundNotificationContext,
       chatMessageInput: item.accountId
         ? {
             accountId: item.accountId,
@@ -670,6 +704,7 @@ export async function updateRefundItemStatus(
     refundAmount?: number;
     reason?: string;
     note?: string | null;
+    message?: string;
     extraRefundAmount?: number;
     metadata?: schema.RefundItem["metadata"];
   },
@@ -690,6 +725,23 @@ export async function updateRefundItemStatus(
       updates.status !== undefined && refundItem.status !== updates.status;
     const financialChanged =
       updates.quantity !== undefined || updates.refundAmount !== undefined;
+    const latestLog =
+      updates.message !== undefined
+        ? await tx.query.refundLogTable.findFirst({
+            where: eq(schema.refundLogTable.refundItemId, refundItemId),
+            orderBy: (logs, { desc }) => [desc(logs.createdAt)],
+          })
+        : undefined;
+    const messageChanged =
+      updates.message !== undefined && updates.message !== latestLog?.message;
+    const refundItemChanged =
+      statusChanged ||
+      financialChanged ||
+      updates.reason !== undefined ||
+      updates.note !== undefined ||
+      updates.extraRefundAmount !== undefined ||
+      updates.metadata !== undefined;
+    const shouldLog = statusChanged || messageChanged;
 
     // 2. Completed refund items cannot have their status changed again.
     if (refundItem.status === "completed" && statusChanged) {
@@ -710,15 +762,11 @@ export async function updateRefundItemStatus(
     }
 
     // 3. If nothing changes, return the current refund item.
-    if (
-      !statusChanged &&
-      !financialChanged &&
-      updates.reason === undefined &&
-      updates.note === undefined &&
-      updates.extraRefundAmount === undefined &&
-      updates.metadata === undefined
-    ) {
-      return refundItem;
+    if (!refundItemChanged && !shouldLog) {
+      return {
+        refundItem,
+        notificationContext: undefined,
+      };
     }
 
     let orderItem: schema.OrderItem | undefined;
@@ -990,34 +1038,64 @@ export async function updateRefundItemStatus(
     }
 
     // 5. Status, reason, note, and extra refund amount are mutable.
-    const [updatedRefundItem] = await tx
-      .update(schema.refundItemTable)
-      .set({
-        ...(updates.status !== undefined ? { status: updates.status } : {}),
-        ...(financialUpdates
-          ? {
-              quantity: financialUpdates.quantity,
-              refundAmount: financialUpdates.refundAmount,
-              paidRefundAmount: financialUpdates.paidRefundAmount,
-              coins: financialUpdates.coins,
-            }
-          : {}),
-        ...(updates.reason !== undefined ? { reason: updates.reason } : {}),
-        ...(updates.note !== undefined ? { note: updates.note } : {}),
-        ...(updates.extraRefundAmount !== undefined
-          ? { extraRefundAmount: updates.extraRefundAmount }
-          : {}),
-        ...(updates.metadata !== undefined
-          ? { metadata: updates.metadata }
-          : {}),
-        ...(statusChanged && updates.status === "completed"
-          ? { returnableCoins: summary.returnableCoin, summary }
-          : {}),
-        updatedAt: new Date(),
-      })
-      .where(eq(schema.refundItemTable.id, refundItemId))
-      .returning();
+    let updatedRefundItem = refundItem;
 
-    return updatedRefundItem;
+    if (refundItemChanged) {
+      [updatedRefundItem] = await tx
+        .update(schema.refundItemTable)
+        .set({
+          ...(updates.status !== undefined ? { status: updates.status } : {}),
+          ...(financialUpdates
+            ? {
+                quantity: financialUpdates.quantity,
+                refundAmount: financialUpdates.refundAmount,
+                paidRefundAmount: financialUpdates.paidRefundAmount,
+                coins: financialUpdates.coins,
+              }
+            : {}),
+          ...(updates.reason !== undefined ? { reason: updates.reason } : {}),
+          ...(updates.note !== undefined ? { note: updates.note } : {}),
+          ...(updates.extraRefundAmount !== undefined
+            ? { extraRefundAmount: updates.extraRefundAmount }
+            : {}),
+          ...(updates.metadata !== undefined
+            ? { metadata: updates.metadata }
+            : {}),
+          ...(statusChanged && updates.status === "completed"
+            ? { returnableCoins: summary.returnableCoin, summary }
+            : {}),
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.refundItemTable.id, refundItemId))
+        .returning();
+    }
+
+    if (shouldLog) {
+      await tx.insert(schema.refundLogTable).values({
+        refundItemId,
+        status: updatedRefundItem.status,
+        message: updates.message ?? null,
+      });
+    }
+
+    let notificationContext: RefundStatusChangedNotificationContext | undefined;
+    if (statusChanged) {
+      const context = await getLockedOrderContext();
+      notificationContext = {
+        userId: context.order.userId,
+        orderId: context.order.id,
+        refundItemId: updatedRefundItem.id,
+        merchantTradeNo: context.order.merchantTradeNo,
+        productName: context.orderItem.productNameAtSale,
+        variantName: context.orderItem.variantNameAtSale,
+        previousStatus: refundItem.status,
+        status: updatedRefundItem.status,
+      };
+    }
+
+    return {
+      refundItem: updatedRefundItem,
+      notificationContext,
+    };
   });
 }

@@ -736,6 +736,13 @@
       "when": 1786551323012,
       "tag": "0104_yellow_revanche",
       "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1786797395081,
+      "tag": "0105_crazy_madame_hydra",
+      "breakpoints": true
     }
   ]
 }

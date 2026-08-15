@@ -69,6 +69,25 @@ const router = Router();
  *           nullable: true
  *           example: {}
  *
+ *     RefundLog:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: string
+ *           format: uuid
+ *         refundItemId:
+ *           type: string
+ *           format: uuid
+ *         status:
+ *           type: string
+ *           enum: [pending, processing, completed, cancelled]
+ *         message:
+ *           type: string
+ *           nullable: true
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *
  *     RefundWithOrderItem:
  *       allOf:
  *         - $ref: '#/components/schemas/RefundItem'
@@ -153,6 +172,16 @@ const router = Router();
  *                                   type: string
  *                                   nullable: true
  *
+ *     RefundDetail:
+ *       allOf:
+ *         - $ref: '#/components/schemas/RefundWithOrderItem'
+ *         - type: object
+ *           properties:
+ *             logs:
+ *               type: array
+ *               description: Reverse-chronological refund status and message logs. Existing refunds may have an empty array.
+ *               items:
+ *                 $ref: '#/components/schemas/RefundLog'
  *
  *     ListRefundsResponse:
  *       type: object
@@ -266,7 +295,7 @@ router.get(
  *                 success:
  *                   type: boolean
  *                 data:
- *                   $ref: '#/components/schemas/RefundWithOrderItem'
+ *                   $ref: '#/components/schemas/RefundDetail'
  */
 router.get(
   "/:refundItemId",
@@ -281,6 +310,7 @@ router.get(
  *   post:
  *     tags: [Refund]
  *     summary: Create a refund item
+ *     description: A successful request automatically creates an initial pending refund log with message 申請退貨, then sends the user a fire-and-forget push notification and email linked to the order detail page.
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -328,7 +358,7 @@ router.post(
  *   patch:
  *     tags: [Refund]
  *     summary: Update refund item
- *     description: Status, quantity, refundAmount, reason, note, extraRefundAmount, and metadata are mutable. Quantity and refundAmount can only be changed while the current refund status is pending or processing. Once completed, the status cannot be changed.
+ *     description: Status, quantity, refundAmount, reason, note, extraRefundAmount, and metadata are mutable. Message is independent from the refund note and is used only for refund logs. A log is appended only when status actually changes or the provided message differs from the latest log message. An actual status change triggers a fire-and-forget push notification linked to order detail; message-only and other field updates do not notify, and status changes do not send email. Quantity and refundAmount can only be changed while the current refund status is pending or processing. Once completed, the status cannot be changed.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -344,7 +374,7 @@ router.post(
  *         application/json:
  *           schema:
  *             type: object
- *             description: Provide at least one of status, quantity, refundAmount, reason, note, extraRefundAmount, or metadata.
+ *             description: Provide at least one of status, quantity, refundAmount, reason, note, message, extraRefundAmount, or metadata.
  *             properties:
  *               status:
  *                 type: string
@@ -361,6 +391,10 @@ router.post(
  *               note:
  *                 type: string
  *                 nullable: true
+ *                 description: Mutable note stored on the refund item; independent from refund log messages.
+ *               message:
+ *                 type: string
+ *                 description: Optional non-empty refund log message. A new log is inserted when this differs from the latest log message.
  *               extraRefundAmount:
  *                 type: number
  *                 description: Additional refund amount for shipping, fees, or manual adjustments.

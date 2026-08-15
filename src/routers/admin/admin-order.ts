@@ -336,7 +336,15 @@ const router = Router();
  *                         type: array
  *                         description: Refund requests associated with this order item.
  *                         items:
- *                           $ref: '#/components/schemas/RefundItem'
+ *                           allOf:
+ *                             - $ref: '#/components/schemas/RefundItem'
+ *                             - type: object
+ *                               properties:
+ *                                 logs:
+ *                                   type: array
+ *                                   description: Reverse-chronological refund status and message logs. Existing refunds may have an empty array.
+ *                                   items:
+ *                                     $ref: '#/components/schemas/RefundLog'
  *                       canRefund:
  *                         type: boolean
  *                         description: Whether this order item still has refundable quantity for the current order and delivery status.

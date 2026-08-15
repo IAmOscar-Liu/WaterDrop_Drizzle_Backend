@@ -102,6 +102,7 @@ class RefundController {
       refundAmount,
       reason,
       note,
+      message,
       extraRefundAmount,
       metadata,
     } = req.body;
@@ -113,6 +114,7 @@ class RefundController {
         ...(refundAmount !== undefined ? { refundAmount } : {}),
         ...(reason !== undefined ? { reason } : {}),
         ...(note !== undefined ? { note } : {}),
+        ...(message !== undefined ? { message } : {}),
         ...(extraRefundAmount !== undefined
           ? { extraRefundAmount }
           : {}),

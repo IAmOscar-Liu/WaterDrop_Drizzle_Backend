@@ -45,6 +45,7 @@ export const refundValidation = {
       refundAmount: nonNegativeNumber.optional(),
       reason: nonEmptyString.optional(),
       note: z.string().optional().nullable(),
+      message: nonEmptyString.optional(),
       extraRefundAmount: nonNegativeNumber.optional(),
       metadata: jsonObject.optional().nullable(),
     }),
