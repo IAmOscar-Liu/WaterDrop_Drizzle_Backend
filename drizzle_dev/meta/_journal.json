@@ -414,6 +414,13 @@
       "when": 1786680348454,
       "tag": "0058_dapper_justin_hammer",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1786804050555,
+      "tag": "0059_wild_frog_thor",
+      "breakpoints": true
     }
   ]
 }
