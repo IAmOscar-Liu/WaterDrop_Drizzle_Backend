@@ -151,17 +151,16 @@ class EcPayController {
 
   async handleReturn(req: Request, res: Response): Promise<any> {
     const data = req.body;
-    // const { CheckMacValue, checkValue, orderId } =
-    //   ecpayService.getCheckValue(data);
-
-    // console.log(
-    //   "確認交易正確性：",
-    //   CheckMacValue === checkValue,
-    //   CheckMacValue,
-    //   checkValue
-    // );
-
     console.log("交易結果:", data);
+
+    if (
+      !ecpayService.validateCheckMacValue(data, {
+        hashKey: process.env.HASHKEY!,
+        hashIV: process.env.HASHIV!,
+      })
+    ) {
+      return res.status(400).send("Invalid CheckMacValue");
+    }
 
     const orderId = data.CustomField1;
     const idempotencyKey = data.CustomField2;
@@ -235,8 +234,17 @@ class EcPayController {
 
   async handlePaymentInfo(req: Request, res: Response): Promise<any> {
     const data = req.body;
-
     console.log("付款相關資訊:", data);
+
+    if (
+      !ecpayService.validateCheckMacValue(data, {
+        hashKey: process.env.HASHKEY!,
+        hashIV: process.env.HASHIV!,
+      })
+    ) {
+      return res.status(400).send("Invalid CheckMacValue");
+    }
+
     const orderId = data.CustomField1;
 
     if (orderId !== TEST_ORDER_ID) {
@@ -288,6 +296,7 @@ class EcPayController {
   async handleLogisticsMapCallback(req: Request, res: Response): Promise<any> {
     const data = req.body;
     console.log("商店結果", data);
+
     res.send(`
       <!DOCTYPE html>
       <html lang="en">
@@ -574,6 +583,16 @@ class EcPayController {
   async handleExpressServerReply(req: Request, res: Response): Promise<any> {
     const data = req.body;
     console.log("運單結果:", data);
+
+    if (
+      !ecpayService.validateCheckMacValue(data, {
+        hashKey: process.env.LOGISTICS_HASH_KEY!,
+        hashIV: process.env.LOGISTICS_HASH_IV!,
+        algorithm: "md5",
+      })
+    ) {
+      return res.status(400).send("Invalid CheckMacValue");
+    }
 
     try {
       const merchantTrade = await getMerchantTradeByMerchantTradeNo(
