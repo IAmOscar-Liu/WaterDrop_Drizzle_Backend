@@ -1,5 +1,8 @@
 import bcrypt from "bcrypt";
 import { count, eq, ilike, or, SQL } from "drizzle-orm";
+import {
+  RECIPROCAL_ACCOUNT_GROUP_ASSIGNMENT_ERROR_MESSAGE,
+} from "../constants/group";
 import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
 import db from "../lib/initDB";
@@ -188,6 +191,23 @@ export async function assignAccountParent(accountId: string, parentId: string) {
       );
     }
 
+    const ownedAccountGroups = await tx
+      .select({ id: schema.accountGroupTable.id })
+      .from(schema.accountGroupTable)
+      .where(eq(schema.accountGroupTable.parentId, myAccount.id))
+      .for("update");
+
+    if (
+      ownedAccountGroups.some(
+        (group) => group.id === parentAccount.accountGroupId,
+      )
+    ) {
+      throw new CustomError(
+        RECIPROCAL_ACCOUNT_GROUP_ASSIGNMENT_ERROR_MESSAGE,
+        400,
+      );
+    }
+
     // 2. Find the account group by parentId.
     let [accountGroup] = await tx
       .select()
@@ -202,6 +222,8 @@ export async function assignAccountParent(accountId: string, parentId: string) {
         .values({ parentId: parentAccount.id })
         .returning();
     }
+
+    if (myAccount.accountGroupId === accountGroup.id) return;
 
     // 4. Make current account join the group.
     const [updatedAccount] = await tx

@@ -10,6 +10,7 @@ import {
 } from "drizzle-orm";
 import fs from "fs";
 import path from "path";
+import { RECIPROCAL_GROUP_JOIN_ERROR_MESSAGE } from "../constants/group";
 import {
   BANK_ACCOUNT_UPDATE_MAX_MS,
   BANK_ACCOUNT_UPDATE_MIN_MS,
@@ -368,29 +369,45 @@ export async function joinGroupByReferralCode(
   userId: string,
 ) {
   return db.transaction(async (tx) => {
-    const [referrer] = await tx
-      .select()
+    const [referrerLookup] = await tx
+      .select({ id: schema.userTable.id })
       .from(schema.userTable)
-      .where(eq(schema.userTable.referralCode, referralCode))
-      .for("update");
+      .where(eq(schema.userTable.referralCode, referralCode));
 
-    if (!referrer) {
+    if (!referrerLookup) {
       throw new CustomError(`Referral code "${referralCode}" not found.`, 404);
     }
 
     // Prevent a user from using their own referral code
-    if (referrer.id === userId) {
+    if (referrerLookup.id === userId) {
       throw new CustomError("You cannot use your own referral code.", 400);
     }
 
-    const [user] = await tx
-      .select({ id: schema.userTable.id })
+    const lockedUsers = await tx
+      .select()
       .from(schema.userTable)
-      .where(eq(schema.userTable.id, userId))
+      .where(inArray(schema.userTable.id, [userId, referrerLookup.id]))
+      .orderBy(schema.userTable.id)
       .for("update");
+    const usersById = new Map(lockedUsers.map((user) => [user.id, user]));
+    const user = usersById.get(userId);
+    const referrer = usersById.get(referrerLookup.id);
 
     if (!user) {
       throw new CustomError(`User with id "${userId}" not found.`, 404);
+    }
+    if (!referrer || referrer.referralCode !== referralCode) {
+      throw new CustomError(`Referral code "${referralCode}" not found.`, 404);
+    }
+
+    const ownedGroups = await tx
+      .select({ id: schema.groupTable.id })
+      .from(schema.groupTable)
+      .where(eq(schema.groupTable.ownerId, user.id))
+      .for("update");
+
+    if (ownedGroups.some((group) => group.id === referrer.groupId)) {
+      throw new CustomError(RECIPROCAL_GROUP_JOIN_ERROR_MESSAGE, 400);
     }
 
     // 2. Find the group owned by the referrer
@@ -407,6 +424,8 @@ export async function joinGroupByReferralCode(
         .values({ ownerId: referrer.id })
         .returning();
     }
+
+    if (user.groupId === group.id) return user;
 
     // 4. Make the current user join the group
     const [updatedUser] = await tx
