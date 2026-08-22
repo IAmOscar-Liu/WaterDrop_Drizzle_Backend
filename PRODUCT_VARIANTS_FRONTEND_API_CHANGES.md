@@ -154,6 +154,37 @@ Admin delivery list `merchantTradeNo` searches delivery merchant trade number pr
 
 Admin users do not create deliveries directly from the admin frontend.
 
+## Refund Logs
+
+Refund logs are append-only status/message history:
+
+```ts
+type RefundLog = {
+  id: string;
+  refundItemId: string;
+  status: "pending" | "processing" | "completed" | "cancelled";
+  message: string | null;
+  createdAt: string;
+};
+```
+
+- `GET /api/admin/refund/{id}` returns `logs: RefundLog[]` at the refund root.
+- `GET /api/admin/order/{id}` returns `logs` under every
+  `items[].refundItems[]` object.
+- Logs are ordered newest first. Existing refunds may return `logs: []` because
+  they are not backfilled.
+- New refund requests start with a pending log whose message is `申請退貨`.
+- `PATCH /api/admin/refund/{id}/status` accepts optional non-empty
+  `message: string` in addition to the existing fields.
+- A log is appended only when status changes or the provided message differs
+  from the latest log message.
+- Creating a refund sends the user fire-and-forget push and email notifications
+  linked to order detail.
+- An actual status change sends a fire-and-forget push/in-app notification only;
+  message-only updates do not notify and no status-change email is sent.
+- Refund-level `note` remains independent from log `message`.
+- Refund and order list APIs do not include logs.
+
 ## Chatroom Display
 
 Product-specific chat rooms include `productVariantId` and compact product display data:

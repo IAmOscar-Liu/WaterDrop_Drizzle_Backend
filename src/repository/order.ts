@@ -952,6 +952,11 @@ export async function getOrderById(
           },
           variant: true,
           refundItems: {
+            with: {
+              logs: {
+                orderBy: (logs, { desc }) => [desc(logs.createdAt)],
+              },
+            },
             orderBy: (refundItems, { desc }) => [desc(refundItems.createdAt)],
           },
         },

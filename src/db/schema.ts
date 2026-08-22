@@ -695,6 +695,26 @@ export const refundItemTable = pgTable(
   }),
 );
 
+export const refundLogTable = pgTable(
+  "refund_logs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    refundItemId: uuid("refund_item_id")
+      .notNull()
+      .references(() => refundItemTable.id, { onDelete: "cascade" }),
+    status: refundStatusEnum("status").default("pending").notNull(),
+    message: text("message"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => ({
+    refundItemCreatedAtIdx: index(
+      "refund_logs_refund_item_id_created_at_idx",
+    ).on(t.refundItemId, t.createdAt),
+  }),
+);
+
 export const deliveryTable = pgTable("deliveries", {
   id: uuid("id").defaultRandom().primaryKey(),
   orderId: uuid("order_id")
@@ -1186,10 +1206,21 @@ export const orderItemRelations = relations(
   }),
 );
 
-export const refundItemRelations = relations(refundItemTable, ({ one }) => ({
-  orderItem: one(orderItemTable, {
-    fields: [refundItemTable.orderItemId],
-    references: [orderItemTable.id],
+export const refundItemRelations = relations(
+  refundItemTable,
+  ({ one, many }) => ({
+    orderItem: one(orderItemTable, {
+      fields: [refundItemTable.orderItemId],
+      references: [orderItemTable.id],
+    }),
+    logs: many(refundLogTable),
+  }),
+);
+
+export const refundLogRelations = relations(refundLogTable, ({ one }) => ({
+  refundItem: one(refundItemTable, {
+    fields: [refundLogTable.refundItemId],
+    references: [refundItemTable.id],
   }),
 }));
 
@@ -1314,6 +1345,8 @@ export type NewOrderItem = typeof orderItemTable.$inferInsert;
 
 export type RefundItem = typeof refundItemTable.$inferSelect;
 export type NewRefundItem = typeof refundItemTable.$inferInsert;
+export type RefundLog = typeof refundLogTable.$inferSelect;
+export type NewRefundLog = typeof refundLogTable.$inferInsert;
 
 export type Delivery = typeof deliveryTable.$inferSelect;
 export type NewDelivery = typeof deliveryTable.$inferInsert;

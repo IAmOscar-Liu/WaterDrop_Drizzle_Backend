@@ -112,6 +112,22 @@ type PurchasedProductSummary = Product;
 type PurchasedProductDetail = Product;
 ```
 
+Refund status history uses this shared shape:
+
+```ts
+type RefundLog = {
+  id: string;
+  refundItemId: string;
+  status: "pending" | "processing" | "completed" | "cancelled";
+  message: string | null;
+  createdAt: string;
+};
+```
+
+Logs are returned newest first. New refunds start with a pending log whose
+message is `申請退貨`. Existing refunds are not backfilled and may have
+`logs: []`.
+
 ## Admin Web APIs
 
 ### `GET /api/admin/product/list`
@@ -325,6 +341,7 @@ items: Array<OrderItem & {
 ```
 
 - Use `variantAtSale` for historical display. Do not use `product.variant` or the raw snapshot columns in order responses.
+- Each nested refund includes `logs: RefundLog[]`, ordered newest first.
 
 ### `GET /api/admin/refund/list`
 
@@ -356,17 +373,23 @@ refunds: Array<RefundItem & {
 Response body change:
 
 - Same `variantAtSale` format as refund list, but detail may use `PurchasedProductDetail` and include richer order/delivery/user relations.
+- Detail adds `logs: RefundLog[]` at the refund object's root. Refund list rows do not load logs.
 
 ### Admin Refund Status Update
 
 Request body:
 
-- No new required request fields for variant support.
+- Existing refund-item fields remain optional.
+- Add optional `message: string` for a non-empty refund-log message.
 
 Behavior change:
 
 - When a refund is accepted/completed and restocking is required, restock the linked `orderItem.productVariantId`.
 - Restock happens in the same transaction as refund completion.
+- `note` remains the independently mutable refund-item note.
+- A new log is inserted only when status actually changes or a provided `message` differs from the latest log message.
+- Status-only logs use `message: null`; changes to other refund fields alone do not create logs.
+- An actual status change sends a fire-and-forget push notification and in-app notification linked to order detail. Message-only updates do not notify, and status changes do not send email.
 
 ### Admin Chatroom APIs
 
@@ -685,6 +708,7 @@ Response body change:
 - Same basic shape as admin order detail, except Flutter does not receive `user` because the caller is the user.
 - The lookup is scoped to the caller's `req.userId`.
 - Use `variantAtSale`; no `product.variant` and no raw variant snapshot columns.
+- Each `items[].refundItems[]` object includes `logs: RefundLog[]`, newest first.
 
 ### `POST /api/refund`
 
@@ -696,6 +720,10 @@ Response/body behavior:
 
 - Refund display data comes from `orderItem.variantAtSale`.
 - Completed/accepted refunds restock the linked variant inventory on the backend.
+- A successfully created refund automatically receives an initial pending log with `message: "申請退貨"`.
+- Refund creation also sends fire-and-forget push and email notifications after the database transaction commits.
+- Push data uses `{ command: "refund_updated", orderId, refundItemId }`; Flutter should open the order detail page.
+- The email's **查看訂單** button uses the same environment-aware order deep link as the order-created email.
 
 ### `POST /api/chatroom/create`
 

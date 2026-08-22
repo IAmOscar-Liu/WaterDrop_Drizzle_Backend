@@ -144,7 +144,12 @@ export async function sendDeliveryNotification({
   const orderId = delivery.orderId;
   const fcmTokens = await getFcmTokensInUserIds([userId]);
 
-  const productNames = delivery.items.map((item) => item.productNameAtSale);
+  const productNames = delivery.items.map((item) => {
+    const variantName = item.variantAtSale.name?.trim();
+    return variantName
+      ? `${item.productNameAtSale}（${variantName}）`
+      : item.productNameAtSale;
+  });
 
   const notificationBody = generateNotificationBody({
     status: update.status,
