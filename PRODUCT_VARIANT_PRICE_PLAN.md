@@ -138,6 +138,8 @@ variantAtSale: {
   optionValues: variantOptionValuesAtSale,
   price: unitPriceAtSale,
 }
+
+variantImage: currentVariant.images?.[0] ?? null,
 ```
 
 - Destructure/read `unitPriceAtSale` without removing it from the root order-item response.
@@ -333,14 +335,14 @@ Keep `product_variants.images` nullable.
 
 ### Phase 2 — follow-up branch
 
-- [ ] Make `product_variants.price` non-nullable in the Drizzle schema.
-- [ ] Remove `products.price` from the Drizzle schema.
-- [ ] Remove product-level price from database insert/update inputs and request parsing.
-- [ ] Remove temporary synchronization writes to `products.price`.
-- [ ] Remove the root-price fallback to `products.price`.
-- [ ] Replace every raw product-price dependency with an explicit minimum-variant-price projection.
-- [ ] Keep computed root `product.price` in API responses.
-- [ ] Keep `variantAtSale.price` historical and backed by `unitPriceAtSale`.
+- [x] Make `product_variants.price` non-nullable in the Drizzle schema.
+- [x] Remove `products.price` from the Drizzle schema.
+- [x] Remove product-level price from database insert/update inputs and request parsing.
+- [x] Remove temporary synchronization writes to `products.price`.
+- [x] Remove the root-price fallback to `products.price`.
+- [x] Replace every raw product-price dependency with an explicit minimum-variant-price projection.
+- [x] Keep computed root `product.price` in API responses.
+- [x] Keep `variantAtSale.price` historical and backed by `unitPriceAtSale`.
 - [ ] Generate the second migration containing `SET NOT NULL` and `DROP products.price`.
 - [ ] Run `npm run build` and focused Phase 2 API checks.
 - [ ] User runs the second migration in the target environment.

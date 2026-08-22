@@ -62,6 +62,10 @@ const router = Router();
  *               type: string
  *               nullable: true
  *               description: Display name for the selected variant, derived from variant.name or option values.
+ *             variantImage:
+ *               type: string
+ *               nullable: true
+ *               description: Current first image of the selected variant.
  *         createdAt:
  *           type: string
  *           format: date-time

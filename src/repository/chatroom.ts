@@ -14,6 +14,7 @@ import * as schema from "../db/schema";
 import db from "../lib/initDB";
 import { CustomError } from "../lib/error";
 import { isAccountAdmin } from "./account";
+import { minimumVariantPrice } from "./utils/product";
 import { compactConditions, getPagination, getTotalPages } from "./utils/query";
 
 function chatRoomHasMessagesCondition() {
@@ -201,7 +202,11 @@ export async function findOrCreateChatRoom({
 export async function getChatRoomById(chatRoomId: string) {
   return db.query.chatRoomTable.findFirst({
     with: {
-      product: true,
+      product: {
+        extras: (products) => ({
+          price: minimumVariantPrice(products.id).as("price"),
+        }),
+      },
       variant: true,
     },
     where: eq(schema.chatRoomTable.id, chatRoomId),
@@ -435,11 +440,15 @@ export async function listChatRooms({
           name: true,
           images: true,
         },
+        extras: (products) => ({
+          price: minimumVariantPrice(products.id, true).as("price"),
+        }),
       },
       variant: {
         columns: {
           name: true,
           optionValues: true,
+          images: true,
         },
       },
       order: {
@@ -514,6 +523,7 @@ export async function listChatRooms({
       ? {
           ...roomProduct,
           variantName: getVariantDisplayName(variant),
+          variantImage: variant?.images?.[0] ?? null,
         }
       : roomProduct;
 
@@ -624,11 +634,15 @@ export async function listAdminChatRooms({
           name: true,
           images: true,
         },
+        extras: (products) => ({
+          price: minimumVariantPrice(products.id).as("price"),
+        }),
       },
       variant: {
         columns: {
           name: true,
           optionValues: true,
+          images: true,
         },
       },
       user: {
@@ -710,6 +724,7 @@ export async function listAdminChatRooms({
       ? {
           ...roomProduct,
           variantName: getVariantDisplayName(variant),
+          variantImage: variant?.images?.[0] ?? null,
         }
       : roomProduct;
 

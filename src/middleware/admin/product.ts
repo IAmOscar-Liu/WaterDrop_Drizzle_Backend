@@ -66,16 +66,23 @@ function hasVariantName(variant: { name?: string | null }) {
   return typeof variant.name === "string" && variant.name.trim().length > 0;
 }
 
-function isValidVariantMode(variants: { name?: string | null }[]) {
-  if (variants.length === 0) {
+function isValidVariantMode(
+  variants: { name?: string | null; status?: "active" | "inactive" }[],
+) {
+  const unnamedVariants = variants.filter((variant) => !hasVariantName(variant));
+  if (unnamedVariants.length > 1) {
     return false;
   }
 
-  if (variants.length === 1) {
-    return !hasVariantName(variants[0]);
-  }
+  const activeVariants = variants.filter(
+    (variant) => (variant.status ?? "active") === "active",
+  );
+  const isSimpleMode =
+    activeVariants.length === 1 && !hasVariantName(activeVariants[0]);
+  const isVariantMode =
+    activeVariants.length >= 2 && activeVariants.every(hasVariantName);
 
-  return variants.every(hasVariantName);
+  return isSimpleMode || isVariantMode;
 }
 
 export const productValidation = {
@@ -98,7 +105,7 @@ export const productValidation = {
   })
     .refine(
       (body) => isValidVariantMode(body.variants ?? []),
-      "Use exactly one unnamed default variant, or at least two variants with names",
+      "Use exactly one active unnamed default variant, or at least two active named variants",
     ),
   updateBody: requireAtLeastOneField(productWriteBody),
   salesSummaryQuery: dateRangeQuery,

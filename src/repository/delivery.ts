@@ -26,10 +26,11 @@ import {
   getTotalPages,
   PaginationParams,
 } from "./utils/query";
+import { minimumVariantPrice } from "./utils/product";
 
 type DeliveryItemWithProductVariant = schema.OrderItem & {
   product?: schema.Product | null;
-  variant?: schema.ProductVariant | null;
+  variant?: Pick<schema.ProductVariant, "images"> | null;
 };
 
 function withVariantAtSaleDisplay<T extends DeliveryItemWithProductVariant>(
@@ -37,7 +38,7 @@ function withVariantAtSaleDisplay<T extends DeliveryItemWithProductVariant>(
 ) {
   const {
     product,
-    variant: _variant,
+    variant,
     variantNameAtSale,
     variantSkuAtSale,
     variantOptionValuesAtSale,
@@ -62,6 +63,7 @@ function withVariantAtSaleDisplay<T extends DeliveryItemWithProductVariant>(
       optionValues: variantOptionValuesAtSale,
       price: rest.unitPriceAtSale,
     },
+    variantImage: variant?.images?.[0] ?? null,
   };
 }
 
@@ -278,7 +280,11 @@ export async function getDeliveryById(deliveryId: string) {
       },
       items: {
         with: {
-          product: true,
+          product: {
+            extras: (products) => ({
+              price: minimumVariantPrice(products.id).as("price"),
+            }),
+          },
           variant: true,
           refundItems: {
             orderBy: (refundItems, { desc }) => [desc(refundItems.createdAt)],
@@ -392,7 +398,13 @@ export async function listAdminDeliveries({
     limit: pagination.limit,
     offset: pagination.offset,
     with: {
-      items: true,
+      items: {
+        with: {
+          variant: {
+            columns: { images: true },
+          },
+        },
+      },
       order: {
         with: {
           user: {

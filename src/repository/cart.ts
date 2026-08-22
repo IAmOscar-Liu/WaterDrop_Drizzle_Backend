@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import * as schema from "../db/schema";
 import db from "../lib/initDB";
 import { CustomError } from "../lib/error";
-import { withProductVariantAggregates } from "./product";
+import { withProductVariantAggregates } from "./utils/product";
 
 /**
  * Adds or updates an item in the user's cart.

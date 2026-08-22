@@ -98,7 +98,6 @@ async function seedDatabase() {
             sellerId: "b8c5dba2-7099-4bbb-b1a9-1d2e2c5be8ba",
             name: product.name,
             description: product.description,
-            price: product.price,
             images: product.images,
             status: product.status as schema.NewProduct["status"],
             createdAt: new Date(product.created_at * 1000),

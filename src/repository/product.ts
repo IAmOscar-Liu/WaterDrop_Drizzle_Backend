@@ -23,6 +23,10 @@ import {
   getTotalPages,
   PaginationParams,
 } from "./utils/query";
+import {
+  minimumVariantPrice,
+  withProductVariantAggregates,
+} from "./utils/product";
 
 export type ProductVariantWriteInput = {
   id?: string;
@@ -47,57 +51,6 @@ function activeVariantAvailabilityCondition(
       and active_variant.status = 'active'
       and active_variant.stock > active_variant.reserve
   )`;
-}
-
-function minimumVariantPrice(
-  productIdColumn: typeof schema.productTable.id,
-  activeOnly: boolean,
-) {
-  return sql<number>`coalesce(
-    (
-      select min(price)
-      from product_variants price_variant
-      where price_variant.product_id = ${productIdColumn}
-        ${activeOnly ? sql`and price_variant.status = 'active'` : sql``}
-    ),
-    ${schema.productTable.price}
-  )`;
-}
-
-export function withProductVariantAggregates<
-  T extends schema.Product & { variants?: schema.ProductVariant[] },
->(product: T, priceScope: "active" | "all" = "active") {
-  const activeVariants = product.variants?.filter(
-    (variant) => variant.status === "active",
-  );
-  const variantsForAggregate = activeVariants?.length
-    ? activeVariants
-    : (product.variants ?? []);
-  const stock = variantsForAggregate.reduce(
-    (total, variant) => total + variant.stock,
-    0,
-  );
-  const reserve = variantsForAggregate.reduce(
-    (total, variant) => total + variant.reserve,
-    0,
-  );
-  const variantsForPrice =
-    priceScope === "all" ? (product.variants ?? []) : variantsForAggregate;
-  const variantPrices = variantsForPrice
-    .map((variant) => variant.price)
-    .filter((price): price is number => price !== null);
-  const price =
-    variantPrices.length > 0 ? Math.min(...variantPrices) : product.price;
-
-  return {
-    ...product,
-    price,
-    availableStock: stock - reserve,
-    variants: product.variants?.map((variant) => ({
-      ...variant,
-      availableStock: variant.stock - variant.reserve,
-    })),
-  };
 }
 
 function buildCreateVariantValues(
@@ -131,21 +84,27 @@ function hasVariantName(variant: Pick<ProductVariantWriteInput, "name">) {
 }
 
 function validateProductVariantMode(
-  variants: Pick<ProductVariantWriteInput, "name">[],
+  variants: Pick<ProductVariantWriteInput, "name" | "status">[],
 ) {
-  if (variants.length === 1 && hasVariantName(variants[0])) {
+  const unnamedVariants = variants.filter((variant) => !hasVariantName(variant));
+  if (unnamedVariants.length > 1) {
     throw new CustomError(
-      "Default variant must not have a name",
+      "A product can have only one unnamed default variant",
       400,
     );
   }
 
-  if (
-    variants.length > 1 &&
-    variants.some((variant) => !hasVariantName(variant))
-  ) {
+  const activeVariants = variants.filter(
+    (variant) => (variant.status ?? "active") === "active",
+  );
+  const isSimpleMode =
+    activeVariants.length === 1 && !hasVariantName(activeVariants[0]);
+  const isVariantMode =
+    activeVariants.length >= 2 && activeVariants.every(hasVariantName);
+
+  if (!isSimpleMode && !isVariantMode) {
     throw new CustomError(
-      "Custom variant products require at least two variants and every variant must have a name",
+      "Product must have exactly one active unnamed default variant, or at least two active named variants",
       400,
     );
   }
@@ -234,7 +193,7 @@ export async function getProductWithSellerById(productId: string) {
  * @returns The newly created product with its category relations.
  */
 export async function createProduct(
-  productData: Omit<schema.NewProduct, "price">,
+  productData: schema.NewProduct,
   categoryIds?: string[],
   variants?: ProductVariantWriteInput[],
 ) {
@@ -259,12 +218,10 @@ export async function createProduct(
     const variantValues = variantInputs.map((variant) =>
       buildCreateVariantValues("", variant),
     );
-    const price = Math.min(...variantValues.map((variant) => variant.price!));
-
     // 1. Create the product
     const [newProduct] = await tx
       .insert(schema.productTable)
-      .values({ ...productData, price })
+      .values(productData)
       .returning();
 
     await tx
@@ -316,7 +273,7 @@ export async function createProduct(
  */
 export async function updateProduct(
   productId: string,
-  productData: Partial<Omit<schema.NewProduct, "id" | "price">>,
+  productData: Partial<Omit<schema.NewProduct, "id">>,
   categoryIds?: string[],
   variants?: ProductVariantWriteInput[],
 ) {
@@ -429,19 +386,6 @@ export async function updateProduct(
         where: eq(schema.productVariantTable.productId, productId),
       });
       validateProductVariantMode(persistedVariants);
-
-      const variantPrices = persistedVariants
-        .map((variant) => variant.price)
-        .filter((price): price is number => price !== null);
-      const price =
-        variantPrices.length > 0
-          ? Math.min(...variantPrices)
-          : updatedProduct.price;
-
-      await tx
-        .update(schema.productTable)
-        .set({ price, updatedAt: new Date() })
-        .where(eq(schema.productTable.id, productId));
     }
 
     // 3. Return the fully updated product with its relations

@@ -7,15 +7,10 @@ import db, { client } from "./lib/initDB";
 async function getBackfillStats() {
   const [
     [variantCount],
-    [missingPriceCount],
     [missingImagesWithProductImageCount],
     [orphanVariantCount],
   ] = await Promise.all([
     db.select({ value: count() }).from(schema.productVariantTable),
-    db
-      .select({ value: count() })
-      .from(schema.productVariantTable)
-      .where(isNull(schema.productVariantTable.price)),
     db
       .select({ value: count() })
       .from(schema.productVariantTable)
@@ -39,26 +34,10 @@ async function getBackfillStats() {
 
   return {
     variantCount: variantCount.value,
-    missingPriceCount: missingPriceCount.value,
     missingImagesWithProductImageCount:
       missingImagesWithProductImageCount.value,
     orphanVariantCount: orphanVariantCount.value,
   };
-}
-
-async function backfillVariantPrices() {
-  const updatedVariants = await db.execute(sql`
-    update ${schema.productVariantTable} as variant
-    set
-      price = product.price,
-      updated_at = now()
-    from ${schema.productTable} as product
-    where variant.product_id = product.id
-      and variant.price is null
-    returning variant.id
-  `);
-
-  return updatedVariants.length;
 }
 
 async function backfillVariantImages() {
@@ -78,7 +57,7 @@ async function backfillVariantImages() {
 }
 
 async function main() {
-  console.log("Starting product variant price and image backfill...");
+  console.log("Starting product variant image backfill...");
 
   const before = await getBackfillStats();
   console.log("Before:", before);
@@ -89,31 +68,24 @@ async function main() {
     );
   }
 
-  const updatedVariantCount = await backfillVariantPrices();
   const updatedVariantImageCount = await backfillVariantImages();
   const after = await getBackfillStats();
 
-  console.log("Updated variant prices:", updatedVariantCount);
   console.log("Updated variant images:", updatedVariantImageCount);
   console.log("After:", after);
 
-  if (after.missingPriceCount > 0) {
-    throw new Error(
-      `Backfill finished with ${after.missingPriceCount} variant price(s) still null.`,
-    );
-  }
   if (after.missingImagesWithProductImageCount > 0) {
     throw new Error(
       `Backfill finished with ${after.missingImagesWithProductImageCount} variant image array(s) still missing despite an available product image.`,
     );
   }
 
-  console.log("Product variant price and image backfill completed.");
+  console.log("Product variant image backfill completed.");
 }
 
 main()
   .catch((error) => {
-    console.error("Product variant price and image backfill failed:", error);
+    console.error("Product variant image backfill failed:", error);
     process.exitCode = 1;
   })
   .finally(async () => {
