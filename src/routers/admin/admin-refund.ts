@@ -92,6 +92,10 @@ const router = Router();
  *                         optionValues:
  *                           type: object
  *                           nullable: true
+ *                         price:
+ *                           type: number
+ *                           format: double
+ *                           description: Historical variant price from unitPriceAtSale.
  *                     product:
  *                       $ref: '#/components/schemas/Product'
  *                     delivery:

@@ -17,6 +17,8 @@ const variantName = z.string().trim().min(1).optional().nullable();
 const productVariantCreateBody = z.object({
   name: variantName,
   sku: z.string().optional().nullable(),
+  price: nonNegativeNumber,
+  images: z.array(z.string()).optional().nullable(),
   optionValues: jsonObject.default({}),
   stock: z.coerce.number().int().min(0),
   sortOrder: z.coerce.number().int().min(0).optional(),
@@ -29,6 +31,8 @@ const productVariantUpdateBody = z
     id: uuid.optional(),
     name: variantName,
     sku: z.string().optional().nullable(),
+    price: nonNegativeNumber.optional(),
+    images: z.array(z.string()).optional().nullable(),
     optionValues: jsonObject.optional(),
     stock: z.coerce.number().int().min(0).optional(),
     sortOrder: z.coerce.number().int().min(0).optional(),
@@ -38,8 +42,10 @@ const productVariantUpdateBody = z
   .refine(
     (variant) =>
       variant.id ||
-      (variant.optionValues !== undefined && variant.stock !== undefined),
-    "New variants require optionValues and stock",
+      (variant.price !== undefined &&
+        variant.optionValues !== undefined &&
+        variant.stock !== undefined),
+    "New variants require price, optionValues, and stock",
   );
 
 const productWriteBody = z.object({
@@ -47,7 +53,6 @@ const productWriteBody = z.object({
   name: nonEmptyString.optional(),
   description: nonEmptyString.optional(),
   avatar: z.string().optional().nullable(),
-  price: nonNegativeNumber.optional(),
   type: productType.optional(),
   allowHomeDelivery: z.coerce.boolean().optional(),
   images: z.array(z.string()).optional().nullable(),
@@ -89,7 +94,6 @@ export const productValidation = {
     sellerId: uuid,
     name: nonEmptyString,
     description: nonEmptyString,
-    price: nonNegativeNumber,
     variants: z.array(productVariantCreateBody).min(1),
   })
     .refine(

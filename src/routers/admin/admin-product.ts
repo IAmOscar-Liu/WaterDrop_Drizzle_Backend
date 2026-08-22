@@ -52,6 +52,7 @@ const router = Router();
  *         price:
  *           type: number
  *           format: double
+ *           description: Minimum eligible variant price. Derived by the API; not independently writable.
  *         type:
  *           type: string
  *           enum: [normal, refrigeration, virtual]
@@ -92,6 +93,16 @@ const router = Router();
  *           nullable: true
  *         sku:
  *           type: string
+ *           nullable: true
+ *         price:
+ *           type: number
+ *           format: double
+ *           nullable: true
+ *           description: Current variant price. Nullable only during the Phase 1 database transition.
+ *         images:
+ *           type: array
+ *           items:
+ *             type: string
  *           nullable: true
  *         optionValues:
  *           type: object
@@ -338,7 +349,6 @@ router.get(
  *               - sellerId
  *               - name
  *               - description
- *               - price
  *               - variants
  *             type: object
  *             description: Variants are required. Use exactly one unnamed variant for products without visible variant choices. Variant products require at least two variants, and every variant must have a non-empty name.
@@ -352,14 +362,12 @@ router.get(
  *               avatar:
  *                 type: string
  *                 example: "http://example.com/avatar.png"
- *               price:
- *                 type: number
- *                 example: 99.99
  *               variants:
  *                 type: array
  *                 items:
  *                   type: object
  *                   required:
+ *                     - price
  *                     - optionValues
  *                     - stock
  *                   properties:
@@ -372,6 +380,15 @@ router.get(
  *                       type: string
  *                       nullable: true
  *                       example: "TS-BLK-M"
+ *                     price:
+ *                       type: number
+ *                       format: double
+ *                       example: 99.99
+ *                     images:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                       nullable: true
  *                     optionValues:
  *                       type: object
  *                       example:
@@ -471,8 +488,6 @@ router.post(
  *               avatar:
  *                 type: string
  *                 example: "http://example.com/avatar.png"
- *               price:
- *                 type: number
  *               variants:
  *                 type: array
  *                 description: Create or update variants. If id is provided, the existing variant is updated; otherwise a new variant is created. Variants are not deleted; set status to inactive. A product must have either exactly one unnamed default variant, or at least two named variants.
@@ -489,6 +504,15 @@ router.post(
  *                       description: Must be null/omitted when the product has one default variant. Required and non-empty when the product has multiple variants.
  *                     sku:
  *                       type: string
+ *                       nullable: true
+ *                     price:
+ *                       type: number
+ *                       format: double
+ *                       description: Required when creating a variant; optional for an existing variant update.
+ *                     images:
+ *                       type: array
+ *                       items:
+ *                         type: string
  *                       nullable: true
  *                     optionValues:
  *                       type: object

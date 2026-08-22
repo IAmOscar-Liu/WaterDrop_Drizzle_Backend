@@ -50,6 +50,10 @@ const router = Router();
  *             optionValues:
  *               type: object
  *               nullable: true
+ *             price:
+ *               type: number
+ *               format: double
+ *               description: Historical variant price from unitPriceAtSale.
  *         lineTotal:
  *           type: number
  *           format: double
@@ -277,6 +281,10 @@ const router = Router();
  *                       optionValues:
  *                         type: object
  *                         nullable: true
+ *                       price:
+ *                         type: number
+ *                         format: double
+ *                         description: Historical variant price from unitPriceAtSale.
  *             deliveries:
  *               type: array
  *               items:
@@ -404,6 +412,10 @@ const router = Router();
  *                                 optionValues:
  *                                   type: object
  *                                   nullable: true
+ *                                 price:
+ *                                   type: number
+ *                                   format: double
+ *                                   description: Historical variant price from unitPriceAtSale.
  *             user:
  *               type: object
  *               properties:

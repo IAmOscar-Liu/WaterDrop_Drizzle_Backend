@@ -4,7 +4,8 @@ This file is for the admin/frontend developer. It excludes Flutter-only behavior
 
 ## Product Variant Model
 
-Product price is shared by all variants. Inventory belongs to variants:
+Price and inventory belong to variants. Product responses keep a computed root
+`price` equal to the minimum eligible variant price:
 
 ```ts
 type ProductVariant = {
@@ -12,6 +13,8 @@ type ProductVariant = {
   productId: string;
   name: string | null;
   sku: string | null;
+  price: number | null; // nullable only during the Phase 1 migration window
+  images: string[] | null;
   optionValues: Record<string, unknown>;
   stock: number;
   reserve: number;
@@ -42,10 +45,11 @@ Request body:
   sellerId: string;
   name: string;
   description: string;
-  price: number;
   variants: Array<{
     name?: string | null;
     sku?: string | null;
+    price: number;
+    images?: string[] | null;
     optionValues: Record<string, unknown>;
     stock: number;
     sortOrder?: number;
@@ -68,6 +72,7 @@ Rules:
 - Simple product: send one variant with `name: null`.
 - Variant product: send at least two variants, all with non-empty `name`.
 - `stock` is required for every new variant.
+- `price` is required for every new variant.
 - `reserve` is read-only and cannot be sent.
 - Product-level `stock`, `reserve`, and `sku` are not accepted.
 
@@ -83,6 +88,8 @@ Request body:
     id?: string;
     name?: string | null;
     sku?: string | null;
+    price?: number;
+    images?: string[] | null;
     optionValues?: Record<string, unknown>;
     stock?: number;
     sortOrder?: number;
@@ -96,7 +103,7 @@ Variant update behavior:
 
 - If `id` is provided, backend updates that existing variant.
 - If `id` is omitted, backend creates a new variant.
-- New variants require `optionValues` and `stock`.
+- New variants require `price`, `optionValues`, and `stock`.
 - Existing variants cannot be deleted.
 - To hide/remove a variant from sale, set `status: "inactive"`.
 - If a variant has `reserve > 0`, `stock` cannot be reduced below `reserve`.
@@ -128,6 +135,7 @@ variantAtSale: {
   name: string | null;
   sku: string | null;
   optionValues: Record<string, unknown> | null;
+  price: number;
 }
 ```
 

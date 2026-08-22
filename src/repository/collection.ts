@@ -2,6 +2,7 @@ import { and, count, eq, ilike, inArray, or } from "drizzle-orm";
 import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
 import db from "../lib/initDB";
+import { withProductVariantAggregates } from "./product";
 import {
   compactConditions,
   getPagination,
@@ -139,13 +140,7 @@ export async function listCollections({
     collections: collections.map((collection) => ({
       ...collection,
       product: collection.product
-        ? {
-            ...collection.product,
-            variants: collection.product.variants.map((variant) => ({
-              ...variant,
-              availableStock: variant.stock - variant.reserve,
-            })),
-          }
+        ? withProductVariantAggregates(collection.product)
         : collection.product,
     })),
     total,

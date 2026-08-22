@@ -60,6 +60,7 @@ function withVariantAtSaleDisplay<T extends DeliveryItemWithProductVariant>(
       name: variantNameAtSale,
       sku: variantSkuAtSale,
       optionValues: variantOptionValuesAtSale,
+      price: rest.unitPriceAtSale,
     },
   };
 }

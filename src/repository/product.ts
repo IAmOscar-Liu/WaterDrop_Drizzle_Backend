@@ -28,6 +28,8 @@ export type ProductVariantWriteInput = {
   id?: string;
   name?: string | null;
   sku?: string | null;
+  price?: number;
+  images?: string[] | null;
   optionValues?: Record<string, unknown>;
   stock?: number;
   sortOrder?: number;
@@ -47,9 +49,24 @@ function activeVariantAvailabilityCondition(
   )`;
 }
 
-function withAggregateProductInventory<
+function minimumVariantPrice(
+  productIdColumn: typeof schema.productTable.id,
+  activeOnly: boolean,
+) {
+  return sql<number>`coalesce(
+    (
+      select min(price)
+      from product_variants price_variant
+      where price_variant.product_id = ${productIdColumn}
+        ${activeOnly ? sql`and price_variant.status = 'active'` : sql``}
+    ),
+    ${schema.productTable.price}
+  )`;
+}
+
+export function withProductVariantAggregates<
   T extends schema.Product & { variants?: schema.ProductVariant[] },
->(product: T) {
+>(product: T, priceScope: "active" | "all" = "active") {
   const activeVariants = product.variants?.filter(
     (variant) => variant.status === "active",
   );
@@ -64,9 +81,17 @@ function withAggregateProductInventory<
     (total, variant) => total + variant.reserve,
     0,
   );
+  const variantsForPrice =
+    priceScope === "all" ? (product.variants ?? []) : variantsForAggregate;
+  const variantPrices = variantsForPrice
+    .map((variant) => variant.price)
+    .filter((price): price is number => price !== null);
+  const price =
+    variantPrices.length > 0 ? Math.min(...variantPrices) : product.price;
 
   return {
     ...product,
+    price,
     availableStock: stock - reserve,
     variants: product.variants?.map((variant) => ({
       ...variant,
@@ -82,11 +107,16 @@ function buildCreateVariantValues(
   if (variant.stock === undefined) {
     throw new CustomError("Variant stock is required", 400);
   }
+  if (variant.price === undefined) {
+    throw new CustomError("Variant price is required", 400);
+  }
 
   return {
     productId,
     name: variant.name ?? null,
     sku: variant.sku ?? null,
+    price: variant.price,
+    images: variant.images ?? null,
     optionValues: variant.optionValues ?? {},
     stock: variant.stock,
     reserve: 0,
@@ -164,7 +194,7 @@ export async function getProductById(productId: string) {
     },
   });
 
-  return product ? withAggregateProductInventory(product) : product;
+  return product ? withProductVariantAggregates(product, "all") : product;
 }
 
 export async function getProductWithSellerById(productId: string) {
@@ -194,7 +224,7 @@ export async function getProductWithSellerById(productId: string) {
     },
   });
 
-  return product ? withAggregateProductInventory(product) : product;
+  return product ? withProductVariantAggregates(product) : product;
 }
 
 /**
@@ -204,7 +234,7 @@ export async function getProductWithSellerById(productId: string) {
  * @returns The newly created product with its category relations.
  */
 export async function createProduct(
-  productData: schema.NewProduct,
+  productData: Omit<schema.NewProduct, "price">,
   categoryIds?: string[],
   variants?: ProductVariantWriteInput[],
 ) {
@@ -226,19 +256,24 @@ export async function createProduct(
   return db.transaction(async (tx) => {
     const variantInputs = variants ?? [];
     validateProductVariantMode(variantInputs);
+    const variantValues = variantInputs.map((variant) =>
+      buildCreateVariantValues("", variant),
+    );
+    const price = Math.min(...variantValues.map((variant) => variant.price!));
 
     // 1. Create the product
     const [newProduct] = await tx
       .insert(schema.productTable)
-      .values(productData)
+      .values({ ...productData, price })
       .returning();
 
     await tx
       .insert(schema.productVariantTable)
       .values(
-        variantInputs.map((variant) =>
-          buildCreateVariantValues(newProduct.id, variant),
-        ),
+        variantValues.map((variant) => ({
+          ...variant,
+          productId: newProduct.id,
+        })),
       );
 
     // 2. If category IDs are provided, create the associations
@@ -267,7 +302,7 @@ export async function createProduct(
         },
       },
     }).then((product) =>
-      product ? withAggregateProductInventory(product) : product,
+      product ? withProductVariantAggregates(product, "all") : product,
     );
   });
 }
@@ -281,7 +316,7 @@ export async function createProduct(
  */
 export async function updateProduct(
   productId: string,
-  productData: Partial<Omit<schema.NewProduct, "id">>,
+  productData: Partial<Omit<schema.NewProduct, "id" | "price">>,
   categoryIds?: string[],
   variants?: ProductVariantWriteInput[],
 ) {
@@ -334,13 +369,19 @@ export async function updateProduct(
     }
 
     if (variants) {
+      const existingVariants = await tx
+        .select()
+        .from(schema.productVariantTable)
+        .where(eq(schema.productVariantTable.productId, productId))
+        .orderBy(schema.productVariantTable.id)
+        .for("update");
+      const existingVariantById = new Map(
+        existingVariants.map((variant) => [variant.id, variant]),
+      );
+
       for (const variant of variants) {
         if (variant.id) {
-          const [existingVariant] = await tx
-            .select()
-            .from(schema.productVariantTable)
-            .where(eq(schema.productVariantTable.id, variant.id))
-            .for("update");
+          const existingVariant = existingVariantById.get(variant.id);
 
           if (!existingVariant || existingVariant.productId !== productId) {
             throw new CustomError("Product variant not found", 404);
@@ -361,6 +402,8 @@ export async function updateProduct(
             .set({
               ...(variant.name !== undefined ? { name: variant.name } : {}),
               ...(variant.sku !== undefined ? { sku: variant.sku } : {}),
+              ...(variant.price !== undefined ? { price: variant.price } : {}),
+              ...(variant.images !== undefined ? { images: variant.images } : {}),
               ...(variant.optionValues !== undefined
                 ? { optionValues: variant.optionValues }
                 : {}),
@@ -386,6 +429,19 @@ export async function updateProduct(
         where: eq(schema.productVariantTable.productId, productId),
       });
       validateProductVariantMode(persistedVariants);
+
+      const variantPrices = persistedVariants
+        .map((variant) => variant.price)
+        .filter((price): price is number => price !== null);
+      const price =
+        variantPrices.length > 0
+          ? Math.min(...variantPrices)
+          : updatedProduct.price;
+
+      await tx
+        .update(schema.productTable)
+        .set({ price, updatedAt: new Date() })
+        .where(eq(schema.productTable.id, productId));
     }
 
     // 3. Return the fully updated product with its relations
@@ -404,7 +460,7 @@ export async function updateProduct(
         },
       },
     }).then((product) =>
-      product ? withAggregateProductInventory(product) : product,
+      product ? withProductVariantAggregates(product, "all") : product,
     );
   });
 }
@@ -470,11 +526,15 @@ export async function listAdminProducts({
   }
 
   if (minPrice !== undefined) {
-    conditions.push(gte(schema.productTable.price, minPrice));
+    conditions.push(
+      gte(minimumVariantPrice(schema.productTable.id, false), minPrice),
+    );
   }
 
   if (maxPrice !== undefined) {
-    conditions.push(lte(schema.productTable.price, maxPrice));
+    conditions.push(
+      lte(minimumVariantPrice(schema.productTable.id, false), maxPrice),
+    );
   }
 
   const whereClause = compactConditions(conditions);
@@ -508,7 +568,9 @@ export async function listAdminProducts({
   });
 
   return {
-    products: products.map(withAggregateProductInventory),
+    products: products.map((product) =>
+      withProductVariantAggregates(product, "all"),
+    ),
     total,
     page: pagination.page,
     limit: pagination.limit,
@@ -568,11 +630,15 @@ export async function listProducts({
   }
 
   if (minPrice !== undefined) {
-    conditions.push(gte(schema.productTable.price, minPrice));
+    conditions.push(
+      gte(minimumVariantPrice(schema.productTable.id, true), minPrice),
+    );
   }
 
   if (maxPrice !== undefined) {
-    conditions.push(lte(schema.productTable.price, maxPrice));
+    conditions.push(
+      lte(minimumVariantPrice(schema.productTable.id, true), maxPrice),
+    );
   }
 
   conditions.push(activeVariantAvailabilityCondition(schema.productTable.id));
@@ -619,7 +685,7 @@ export async function listProducts({
   });
 
   return {
-    products: products.map(withAggregateProductInventory),
+    products: products.map((product) => withProductVariantAggregates(product)),
     total,
     page: pagination.page,
     limit: pagination.limit,
