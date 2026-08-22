@@ -614,7 +614,7 @@ router.get(
  *                 data:
  *                   $ref: '#/components/schemas/AccountWithParent'
  *       '400':
- *         description: Bad Request (e.g. invalid roles or same IDs).
+ *         description: Bad Request (e.g. invalid roles, same IDs, or reciprocal account-group membership).
  *       '404':
  *         description: Account not found.
  */
