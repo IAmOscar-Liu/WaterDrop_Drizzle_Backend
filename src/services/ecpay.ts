@@ -183,6 +183,25 @@ class EcPayService {
     return hexHash.toUpperCase();
   }
 
+  validateCheckMacValue(
+    data: Record<string, any>,
+    options: { hashKey: string; hashIV: string; algorithm?: string },
+  ) {
+    try {
+      const { CheckMacValue, ...params } = data;
+      const generatedCheckMacValue = this.generateCheckValue(
+        params,
+        options.hashKey,
+        options.hashIV,
+        options.algorithm,
+      );
+      return generatedCheckMacValue === CheckMacValue;
+    } catch (error) {
+      console.error("Error validating CheckMacValue:", error);
+      return false;
+    }
+  }
+
   /**
    * 檢查字串長度是否符合綠界規範。
    * 規則：中文佔2字元、全形佔2字元、其餘佔1字元。
