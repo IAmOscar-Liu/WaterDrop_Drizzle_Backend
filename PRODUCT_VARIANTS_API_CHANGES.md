@@ -714,12 +714,22 @@ Response body change:
 
 Request body:
 
-- No new required fields. Refund still uses `orderItemId`.
+- `orderItemId`, `accountId`, and a positive integer `quantity` are required.
+- `refundAmount`, when provided, is a per-unit amount greater than zero and no
+  greater than `unitPriceAtSale`; it defaults to `unitPriceAtSale` and is
+  rounded to two decimal places by the backend.
+- Multiple partial refunds are supported, but the sum of non-cancelled refund
+  quantities cannot exceed the purchased quantity.
+- Coin-related values are calculated by the backend and are not accepted from
+  Flutter. Computed refund and coin values are rounded to two decimal places
+  before persistence.
 
 Response/body behavior:
 
 - Refund display data comes from `orderItem.variantAtSale`.
 - Completed/accepted refunds restock the linked variant inventory on the backend.
+- Both `completed` and `cancelled` refunds are terminal and cannot transition
+  to another status.
 - A successfully created refund automatically receives an initial pending log with `message: "申請退貨"`.
 - Refund creation also sends fire-and-forget push and email notifications after the database transaction commits.
 - Push data uses `{ command: "refund_updated", orderId, refundItemId }`; Flutter should open the order detail page.

@@ -4,6 +4,7 @@ import {
   nonEmptyString,
   nonNegativeNumber,
   positiveInt,
+  positiveNumber,
   uuid,
 } from "./admin/common";
 
@@ -14,7 +15,7 @@ export const refundValidation = {
     quantity: positiveInt,
     reason: nonEmptyString.optional(),
     note: z.string().optional().nullable(),
-    refundAmount: nonNegativeNumber.optional(),
+    refundAmount: positiveNumber.optional(),
     extraRefundAmount: nonNegativeNumber.optional(),
     metadata: jsonObject.optional().nullable(),
   }),

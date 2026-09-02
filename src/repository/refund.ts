@@ -19,6 +19,7 @@ import {
   formatInteger,
   getBankNameByCodeMap,
   isPlainObject,
+  roundToTwoDecimals,
 } from "../lib/general";
 import db from "../lib/initDB";
 import { isAccountAdmin } from "./account";
@@ -220,7 +221,7 @@ function calculateRefundFinancials(
   quantity: number,
   refundAmount: number,
 ) {
-  const refundTotal = refundAmount * quantity;
+  const refundTotal = roundToTwoDecimals(refundAmount * quantity);
   const refundSubtotalRatio =
     order?.subTotal && order.subTotal > 0 ? refundTotal / order.subTotal : 0;
   const refundPaidRatio =
@@ -231,8 +232,10 @@ function calculateRefundFinancials(
 
   return {
     refundTotal,
-    paidRefundAmount: refundTotal * refundPaidRatio,
-    coins: (order?.discountCoin ?? 0) * refundSubtotalRatio,
+    paidRefundAmount: roundToTwoDecimals(refundTotal * refundPaidRatio),
+    coins: roundToTwoDecimals(
+      (order?.discountCoin ?? 0) * refundSubtotalRatio,
+    ),
   };
 }
 
@@ -248,6 +251,7 @@ function validateRefundQuantityAndAmount({
   refundAmount: number;
 }) {
   const errors = [];
+  const unitPriceAtSale = roundToTwoDecimals(orderItem.unitPriceAtSale);
 
   if (refundedQuantity >= orderItem.quantity) {
     errors.push({
@@ -274,12 +278,20 @@ function validateRefundQuantityAndAmount({
     });
   }
 
-  if (refundAmount > orderItem.unitPriceAtSale) {
+  if (!Number.isFinite(refundAmount) || refundAmount <= 0) {
+    errors.push({
+      orderItemId: orderItem.id,
+      reason: "Refund amount must be greater than zero",
+      refundAmount,
+    });
+  }
+
+  if (refundAmount > unitPriceAtSale) {
     errors.push({
       orderItemId: orderItem.id,
       reason: "Refund amount exceeds unit price at sale",
       refundAmount,
-      unitPriceAtSale: orderItem.unitPriceAtSale,
+      unitPriceAtSale,
     });
   }
 
@@ -527,7 +539,9 @@ export async function createRefundWithChatContext(
       );
 
     const refundedQuantity = Number(refundedRow.quantity);
-    const refundAmount = item.refundAmount ?? orderItem.unitPriceAtSale;
+    const refundAmount = roundToTwoDecimals(
+      item.refundAmount ?? orderItem.unitPriceAtSale,
+    );
 
     // 5. Validate the single requested refund item before inserting anything.
     errors.push(
@@ -572,7 +586,7 @@ export async function createRefundWithChatContext(
       note: item.note,
       refundAmount,
       paidRefundAmount: refundFinancials.paidRefundAmount,
-      extraRefundAmount: item.extraRefundAmount ?? 0,
+      extraRefundAmount: roundToTwoDecimals(item.extraRefundAmount ?? 0),
       coins: refundFinancials.coins,
       metadata: item.metadata,
     };
@@ -743,10 +757,14 @@ export async function updateRefundItemStatus(
       updates.metadata !== undefined;
     const shouldLog = statusChanged || messageChanged;
 
-    // 2. Completed refund items cannot have their status changed again.
-    if (refundItem.status === "completed" && statusChanged) {
+    // 2. Completed and cancelled refund items are terminal.
+    if (
+      (refundItem.status === "completed" ||
+        refundItem.status === "cancelled") &&
+      statusChanged
+    ) {
       throw new CustomError(
-        "Cannot change status once refund is completed",
+        `Cannot change status once refund is ${refundItem.status}`,
         400,
       );
     }
@@ -812,10 +830,11 @@ export async function updateRefundItemStatus(
     if (financialChanged) {
       const context = await getLockedOrderContext();
       const quantity = updates.quantity ?? refundItem.quantity;
-      const refundAmount =
+      const refundAmount = roundToTwoDecimals(
         updates.refundAmount ??
-        refundItem.refundAmount ??
-        context.orderItem.unitPriceAtSale;
+          refundItem.refundAmount ??
+          context.orderItem.unitPriceAtSale,
+      );
 
       const [refundedRow] = await tx
         .select({
@@ -876,8 +895,9 @@ export async function updateRefundItemStatus(
       const context = await getLockedOrderContext();
       const effectiveQuantity =
         financialUpdates?.quantity ?? refundItem.quantity;
-      const effectiveRefundAmount =
-        financialUpdates?.refundAmount ?? refundItem.refundAmount ?? 0;
+      const effectiveRefundAmount = roundToTwoDecimals(
+        financialUpdates?.refundAmount ?? refundItem.refundAmount ?? 0,
+      );
 
       if (!context.orderItem.productVariantId) {
         throw new CustomError("Order item productVariantId is required", 400);
@@ -902,7 +922,9 @@ export async function updateRefundItemStatus(
         .where(eq(schema.productVariantTable.id, variant.id));
 
       // 4.3 Calculate what percentage of the order subtotal is being refunded.
-      const refundTotal = effectiveQuantity * effectiveRefundAmount;
+      const refundTotal = roundToTwoDecimals(
+        effectiveQuantity * effectiveRefundAmount,
+      );
       const refundPercentage =
         context.order.subTotal > 0 ? refundTotal / context.order.subTotal : 0;
 
@@ -919,7 +941,9 @@ export async function updateRefundItemStatus(
           for (const [month, coins] of Object.entries(
             context.order.coinInfo as Record<string, number>,
           )) {
-            coinUpdates[month] = coins * refundPercentage;
+            coinUpdates[month] = roundToTwoDecimals(
+              coins * refundPercentage,
+            );
           }
         } else if (
           context.order.discountCoin &&
@@ -937,15 +961,18 @@ export async function updateRefundItemStatus(
             .for("update");
 
           if (latestMonthlyStat) {
-            coinUpdates[latestMonthlyStat.month] =
-              context.order.discountCoin * refundPercentage;
+            coinUpdates[latestMonthlyStat.month] = roundToTwoDecimals(
+              context.order.discountCoin * refundPercentage,
+            );
           }
         }
 
         // 4.5 Total all affected monthly coin amounts for the summary.
-        const coinSum = Object.values(coinUpdates).reduce(
-          (sum, coins) => sum + coins,
-          0,
+        const coinSum = roundToTwoDecimals(
+          Object.values(coinUpdates).reduce(
+            (sum, coins) => sum + coins,
+            0,
+          ),
         );
 
         if (coinSum > 0) {
@@ -973,10 +1000,12 @@ export async function updateRefundItemStatus(
           );
 
           // 4.7 Only non-expired months can be returned to user.coins.
-          const returnableCoinSum = Object.entries(coinUpdates).reduce(
-            (sum, [month, coins]) =>
-              expiredByMonth.get(month) === false ? sum + coins : sum,
-            0,
+          const returnableCoinSum = roundToTwoDecimals(
+            Object.entries(coinUpdates).reduce(
+              (sum, [month, coins]) =>
+                expiredByMonth.get(month) === false ? sum + coins : sum,
+              0,
+            ),
           );
 
           // 4.8 Save a detailed refund coin summary for future reference.
@@ -1056,7 +1085,11 @@ export async function updateRefundItemStatus(
           ...(updates.reason !== undefined ? { reason: updates.reason } : {}),
           ...(updates.note !== undefined ? { note: updates.note } : {}),
           ...(updates.extraRefundAmount !== undefined
-            ? { extraRefundAmount: updates.extraRefundAmount }
+            ? {
+                extraRefundAmount: roundToTwoDecimals(
+                  updates.extraRefundAmount,
+                ),
+              }
             : {}),
           ...(updates.metadata !== undefined
             ? { metadata: updates.metadata }
