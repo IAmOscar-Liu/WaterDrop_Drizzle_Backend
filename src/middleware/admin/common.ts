@@ -3,6 +3,7 @@ import { z } from "zod";
 export const uuid = z.uuid();
 export const nonEmptyString = z.string().trim().min(1);
 export const positiveInt = z.coerce.number().int().positive();
+export const positiveNumber = z.coerce.number().positive();
 export const nonNegativeNumber = z.coerce.number().min(0);
 export const jsonObject = z.record(z.string(), z.any());
 export const dateTimeString = z

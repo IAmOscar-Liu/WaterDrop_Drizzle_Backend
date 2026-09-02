@@ -10,7 +10,11 @@ import {
 } from "drizzle-orm";
 import fs from "fs";
 import path from "path";
-import { RECIPROCAL_GROUP_JOIN_ERROR_MESSAGE } from "../constants/group";
+import {
+  GROUP_FULL_ERROR_MESSAGE,
+  GROUP_MAX_JOINED_MEMBERS,
+  RECIPROCAL_GROUP_JOIN_ERROR_MESSAGE,
+} from "../constants/group";
 import {
   BANK_ACCOUNT_UPDATE_MAX_MS,
   BANK_ACCOUNT_UPDATE_MIN_MS,
@@ -426,6 +430,15 @@ export async function joinGroupByReferralCode(
     }
 
     if (user.groupId === group.id) return user;
+
+    const [memberCount] = await tx
+      .select({ value: count() })
+      .from(schema.userTable)
+      .where(eq(schema.userTable.groupId, group.id));
+
+    if (memberCount.value >= GROUP_MAX_JOINED_MEMBERS) {
+      throw new CustomError(GROUP_FULL_ERROR_MESSAGE, 400);
+    }
 
     // 4. Make the current user join the group
     const [updatedUser] = await tx

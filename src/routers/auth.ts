@@ -22,7 +22,8 @@ router.get("/referral/:referralCode", AuthController.validateReferralCode);
  *       Assigns the authenticated user to the referral-code owner's group.
  *       Rejoining the same group is idempotent. The request is rejected when
  *       the group owner is already a member of a group owned by the joining
- *       user, preventing reciprocal group membership.
+ *       user, preventing reciprocal group membership. A group accepts at most
+ *       10 joined members; the group owner is not included in this limit.
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -39,7 +40,7 @@ router.get("/referral/:referralCode", AuthController.validateReferralCode);
  *       '200':
  *         description: Joined the group, or was already in the group.
  *       '400':
- *         description: Self-referral or reciprocal group membership is not allowed.
+ *         description: Self-referral or reciprocal group membership is not allowed, or the group already has 10 joined members.
  *       '401':
  *         description: Authentication required.
  *       '404':

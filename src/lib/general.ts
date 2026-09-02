@@ -134,6 +134,14 @@ export function isPlainObject(value: any) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+export function roundToTwoDecimals(value: number) {
+  if (!Number.isFinite(value)) return value;
+
+  const roundingOffset =
+    Math.sign(value) * Number.EPSILON * Math.max(1, Math.abs(value));
+  return Math.round((value + roundingOffset) * 100) / 100;
+}
+
 let bankNameByCode: ReadonlyMap<string, string> | null = null;
 
 export function getBankNameByCodeMap() {

@@ -334,10 +334,10 @@ router.get(
  *                 nullable: true
  *               refundAmount:
  *                 type: number
- *                 description: Defaults to the order item's unitPriceAtSale when omitted.
+ *                 description: Unit refund amount. Rounded to two decimal places, must be greater than 0, and defaults to the order item's unitPriceAtSale when omitted.
  *               extraRefundAmount:
  *                 type: number
- *                 description: Additional refund amount for shipping, fees, or manual adjustments. Defaults to 0.
+ *                 description: Additional refund amount for shipping, fees, or manual adjustments. Rounded to two decimal places and defaults to 0.
  *               metadata:
  *                 type: object
  *                 nullable: true
@@ -358,7 +358,7 @@ router.post(
  *   patch:
  *     tags: [Refund]
  *     summary: Update refund item
- *     description: Status, quantity, refundAmount, reason, note, extraRefundAmount, and metadata are mutable. Message is independent from the refund note and is used only for refund logs. A log is appended only when status actually changes or the provided message differs from the latest log message. An actual status change triggers a fire-and-forget push notification linked to order detail; message-only and other field updates do not notify, and status changes do not send email. Quantity and refundAmount can only be changed while the current refund status is pending or processing. Once completed, the status cannot be changed.
+ *     description: Status, quantity, refundAmount, reason, note, extraRefundAmount, and metadata are mutable. Message is independent from the refund note and is used only for refund logs. A log is appended only when status actually changes or the provided message differs from the latest log message. An actual status change triggers a fire-and-forget push notification linked to order detail; message-only and other field updates do not notify, and status changes do not send email. Quantity and refundAmount can only be changed while the current refund status is pending or processing. Completed and cancelled statuses are terminal and cannot transition to another status.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -385,7 +385,7 @@ router.post(
  *                 description: Refund quantity. Must not exceed the remaining refundable quantity for the order item.
  *               refundAmount:
  *                 type: number
- *                 description: Unit refund amount. Must not exceed the order item's unitPriceAtSale.
+ *                 description: Unit refund amount. Rounded to two decimal places, must be greater than 0, and must not exceed the order item's unitPriceAtSale.
  *               reason:
  *                 type: string
  *               note:
@@ -397,7 +397,7 @@ router.post(
  *                 description: Optional non-empty refund log message. A new log is inserted when this differs from the latest log message.
  *               extraRefundAmount:
  *                 type: number
- *                 description: Additional refund amount for shipping, fees, or manual adjustments.
+ *                 description: Additional refund amount for shipping, fees, or manual adjustments. Rounded to two decimal places.
  *               metadata:
  *                 type: object
  *                 nullable: true

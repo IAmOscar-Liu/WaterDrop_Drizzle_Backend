@@ -176,6 +176,13 @@ type RefundLog = {
 - New refund requests start with a pending log whose message is `申請退貨`.
 - `PATCH /api/admin/refund/{id}/status` accepts optional non-empty
   `message: string` in addition to the existing fields.
+- `refundAmount` is a per-unit amount and must be greater than zero and no
+  greater than the order item's `unitPriceAtSale`; the backend rounds it and
+  other refund financial values to two decimal places.
+- Partial quantities are supported, but all non-cancelled refunds for an order
+  item cannot exceed its purchased quantity.
+- Coin fields are backend-calculated and read-only for admin/frontend clients.
+- Both `completed` and `cancelled` refund statuses are terminal.
 - A log is appended only when status changes or the provided message differs
   from the latest log message.
 - Creating a refund sends the user fire-and-forget push and email notifications

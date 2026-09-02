@@ -6,6 +6,7 @@ import {
   nonNegativeNumber,
   paginationQuery,
   positiveInt,
+  positiveNumber,
   requireAtLeastOneField,
   uuid,
 } from "./common";
@@ -34,7 +35,7 @@ export const refundValidation = {
     quantity: positiveInt,
     reason: nonEmptyString.optional(),
     note: z.string().optional().nullable(),
-    refundAmount: nonNegativeNumber.optional(),
+    refundAmount: positiveNumber.optional(),
     extraRefundAmount: nonNegativeNumber.optional(),
     metadata: jsonObject.optional().nullable(),
   }),
@@ -42,7 +43,7 @@ export const refundValidation = {
     z.object({
       status: refundStatus.optional(),
       quantity: positiveInt.optional(),
-      refundAmount: nonNegativeNumber.optional(),
+      refundAmount: positiveNumber.optional(),
       reason: nonEmptyString.optional(),
       note: z.string().optional().nullable(),
       message: nonEmptyString.optional(),
