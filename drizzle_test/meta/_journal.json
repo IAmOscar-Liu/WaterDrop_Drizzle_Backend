@@ -36,6 +36,20 @@
       "when": 1789162023757,
       "tag": "0004_noisy_shadow_king",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789231989335,
+      "tag": "0005_faithful_groot",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789234908783,
+      "tag": "0006_lowly_rumiko_fujikawa",
+      "breakpoints": true
     }
   ]
 }

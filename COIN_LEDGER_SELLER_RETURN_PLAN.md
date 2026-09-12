@@ -2,8 +2,9 @@
 
 ## Status
 
-Revised on 2026-09-11 after reviewing the treasure-box, order, refund,
-advertisement, and scheduled-job implementations.
+Revised on 2026-09-13 after adding whole-TWD refund payout and fractional-cash
+coin conversion to the treasure-box, order, refund, advertisement, and
+scheduled-job implementation plan.
 
 Implementation is in progress on the test branch. The schema, APIs, accounting
 repositories, maintenance jobs, and disposable-database test suite described
@@ -530,6 +531,17 @@ normal expiry, and the 8-coin order usage is later fully refunded, the refund
 returns the final 8 coins to the source advertisement. The user receives zero and
 the final reconciliation is `20 funded = 20 returned + 0 consumed`.
 
+TWD cash refunds use whole dollars. Combine `paidRefundAmount` and
+`extraRefundAmount`, round the combined cash payout down to an integer, and
+convert the fractional remainder at `NT$1 = 10 coins`. These conversion coins:
+
+- are separate from restoration of coins originally spent on the order;
+- are issued only when the refund becomes `completed`;
+- are attributed to the product seller rather than an advertisement;
+- expire at the end of the next month in the user's snapshotted timezone; and
+- create a product-seller return entry if they expire unused or are refunded
+  after their lot has expired.
+
 ### 8. End-of-next-month expiry
 
 Acquired-coin expiry follows the user's snapshotted timezone. For example, coins
@@ -974,6 +986,27 @@ createdAt
 The destination is the source advertisement balance. Store `coinAmount` for the
 seller-facing display and credit `currencyEquivalent` to the ad balance. If the
 ad is archived, the balance remains transferable but the ad remains terminal.
+
+### M1. `product_seller_coin_return_transactions`
+
+Immutable return ledger for fractional-TWD refund coins that originated from a
+product seller rather than an advertisement:
+
+```text
+id
+sourceSellerId
+sourceRefundId
+userCoinLotId
+reason                            -- expired_unused/refund_after_expiry
+coinAmount
+coinToCurrencyRate
+currencyEquivalent
+destinationType                  -- product_seller_refund_credit
+destinationReferenceId           -- source seller
+idempotencyKey
+metadata jsonb
+createdAt
+```
 
 ### N. `advertisement_balance_transfers`
 

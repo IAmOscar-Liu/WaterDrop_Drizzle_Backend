@@ -1,5 +1,6 @@
 import {
   and,
+  asc,
   count,
   eq,
   gte,
@@ -648,12 +649,31 @@ export async function updateOrderStatus({
   });
 }
 
-export async function deleteIdempotencyKeys(expireInMs: number) {
+export async function deleteIdempotencyKeys(
+  expireInMs: number,
+  limit = 5_000,
+) {
+  if (!Number.isInteger(limit) || limit <= 0) {
+    throw new Error("Idempotency-key cleanup limit must be a positive integer.");
+  }
   const cutoffTime = new Date(Date.now() - expireInMs);
+  const candidates = await db
+    .select({ id: schema.idempotencyKeyTable.id })
+    .from(schema.idempotencyKeyTable)
+    .where(lt(schema.idempotencyKeyTable.updatedAt, cutoffTime))
+    .orderBy(asc(schema.idempotencyKeyTable.updatedAt))
+    .limit(limit);
+  if (candidates.length === 0) return [];
 
   return db
     .delete(schema.idempotencyKeyTable)
-    .where(lt(schema.idempotencyKeyTable.updatedAt, cutoffTime));
+    .where(
+      inArray(
+        schema.idempotencyKeyTable.id,
+        candidates.map((candidate) => candidate.id),
+      ),
+    )
+    .returning({ id: schema.idempotencyKeyTable.id });
 }
 
 export async function expirePendingOrders(expireInMs: number) {

@@ -1,15 +1,61 @@
 import { and, asc, eq, inArray, lte, or, sql } from "drizzle-orm";
 import * as schema from "../db/schema";
 import {
+  effectiveTimezone,
   fromCoinUnits,
+  getEndOfNextLocalMonth,
+  getLocalMonth,
   isCoinLedgerEnabled,
   toCoinUnits,
 } from "../lib/coinAccounting";
-import db from "../lib/initDB";
+import db, { client } from "../lib/initDB";
 
 type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 const ASSIGNMENT_CLEANUP_BATCH_SIZE = 5_000;
+const DEFAULT_MAINTENANCE_CONCURRENCY = 5;
+const MAINTENANCE_ADVISORY_LOCK_KEY = "waterdrop:coin-ledger-maintenance";
+
+function getMaintenanceConcurrency() {
+  const value = Number(
+    process.env.COIN_LEDGER_MAINTENANCE_CONCURRENCY ??
+      DEFAULT_MAINTENANCE_CONCURRENCY,
+  );
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(
+      "COIN_LEDGER_MAINTENANCE_CONCURRENCY must be a positive integer.",
+    );
+  }
+  return value;
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  operation: (item: T) => Promise<R>,
+) {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await operation(items[index]);
+    }
+  }
+
+  const workers = Array.from(
+    { length: Math.min(concurrency, items.length) },
+    () => worker(),
+  );
+  const settledWorkers = await Promise.allSettled(workers);
+  const failedWorker = settledWorkers.find(
+    (result): result is PromiseRejectedResult => result.status === "rejected",
+  );
+  if (failedWorker) throw failedWorker.reason;
+  return results;
+}
 
 function getRetentionDays(name: string, fallback: number) {
   const value = Number(process.env[name] ?? fallback);
@@ -298,6 +344,42 @@ async function returnCoinsToSellerWithTx(
   return sellerReturn;
 }
 
+async function returnRefundConversionCoinsToSellerWithTx(
+  tx: DbTransaction,
+  params: {
+    lot: schema.UserCoinLot;
+    coinUnits: number;
+    reason: "expired_unused" | "refund_after_expiry";
+    idempotencyKey: string;
+    metadata?: Record<string, unknown>;
+  },
+) {
+  if (
+    params.coinUnits <= 0 ||
+    !params.lot.sourceRefundId ||
+    !params.lot.sourceSellerId
+  ) {
+    return null;
+  }
+  const coinAmount = fromCoinUnits(params.coinUnits);
+  return tx
+    .insert(schema.productSellerCoinReturnTransactionTable)
+    .values({
+      sourceSellerId: params.lot.sourceSellerId,
+      sourceRefundId: params.lot.sourceRefundId,
+      userCoinLotId: params.lot.id,
+      reason: params.reason,
+      coinAmount,
+      coinToCurrencyRate: "10.000000",
+      currencyEquivalent: (params.coinUnits / 1000).toFixed(2),
+      destinationReferenceId: params.lot.sourceSellerId,
+      idempotencyKey: params.idempotencyKey,
+      metadata: params.metadata,
+    })
+    .onConflictDoNothing()
+    .returning();
+}
+
 export async function expireUnclaimedTreasureBoxes(limit = 200) {
   if (!isCoinLedgerEnabled()) return [];
   const due = await db
@@ -310,58 +392,78 @@ export async function expireUnclaimedTreasureBoxes(limit = 200) {
       ),
     )
     .limit(limit);
-  const expired: string[] = [];
-  for (const candidate of due) {
-    const didExpire = await db.transaction(async (tx) => {
-      const [box] = await tx
-        .select()
-        .from(schema.treasureBoxTable)
-        .where(eq(schema.treasureBoxTable.id, candidate.id))
-        .for("update");
-      if (!box || box.accountingStatus !== "claimable" || box.isOpened) {
-        return false;
-      }
-      if (!box.claimDeadlineAt || box.claimDeadlineAt > new Date()) return false;
-      await tx
-        .update(schema.treasureBoxRewardAllocationTable)
-        .set({ status: "unacquired", settledAt: new Date() })
-        .where(
-          and(
-            eq(
-              schema.treasureBoxRewardAllocationTable.treasureBoxId,
-              box.id,
+  const results = await mapWithConcurrency(
+    due,
+    getMaintenanceConcurrency(),
+    async (candidate) => {
+      const didExpire = await db.transaction(async (tx) => {
+        const [box] = await tx
+          .select()
+          .from(schema.treasureBoxTable)
+          .where(eq(schema.treasureBoxTable.id, candidate.id))
+          .for("update");
+        if (!box || box.accountingStatus !== "claimable" || box.isOpened) {
+          return false;
+        }
+        if (!box.claimDeadlineAt || box.claimDeadlineAt > new Date()) {
+          return false;
+        }
+        await tx
+          .update(schema.treasureBoxRewardAllocationTable)
+          .set({ status: "unacquired", settledAt: new Date() })
+          .where(
+            and(
+              eq(
+                schema.treasureBoxRewardAllocationTable.treasureBoxId,
+                box.id,
+              ),
+              eq(schema.treasureBoxRewardAllocationTable.status, "demand"),
             ),
-            eq(schema.treasureBoxRewardAllocationTable.status, "demand"),
-          ),
-        );
-      await tx
-        .update(schema.treasureBoxTable)
-        .set({
-          accountingStatus: "unacquired",
-          isActive: false,
-          settledAt: new Date(),
-        })
-        .where(eq(schema.treasureBoxTable.id, box.id));
-      return true;
-    });
-    if (didExpire) expired.push(candidate.id);
-  }
-  return expired;
+          );
+        await tx
+          .update(schema.treasureBoxTable)
+          .set({
+            accountingStatus: "unacquired",
+            isActive: false,
+            settledAt: new Date(),
+          })
+          .where(eq(schema.treasureBoxTable.id, box.id));
+        return true;
+      });
+      return didExpire ? candidate.id : null;
+    },
+  );
+  return results.filter((id): id is string => id !== null);
 }
 
 export async function expireCollectingRewardCycles(limit = 200) {
   if (!isCoinLedgerEnabled()) return [];
-  return db
-    .update(schema.treasureBoxRewardCycleTable)
-    .set({ status: "expired" })
+  const candidates = await db
+    .select({ id: schema.treasureBoxRewardCycleTable.id })
+    .from(schema.treasureBoxRewardCycleTable)
     .where(
       and(
         eq(schema.treasureBoxRewardCycleTable.status, "collecting"),
         lte(schema.treasureBoxRewardCycleTable.claimDeadlineAt, new Date()),
       ),
     )
-    .returning({ id: schema.treasureBoxRewardCycleTable.id })
-    .then((rows) => rows.slice(0, limit));
+    .orderBy(asc(schema.treasureBoxRewardCycleTable.claimDeadlineAt))
+    .limit(limit);
+  if (candidates.length === 0) return [];
+
+  return db
+    .update(schema.treasureBoxRewardCycleTable)
+    .set({ status: "expired" })
+    .where(
+      and(
+        inArray(
+          schema.treasureBoxRewardCycleTable.id,
+          candidates.map((candidate) => candidate.id),
+        ),
+        eq(schema.treasureBoxRewardCycleTable.status, "collecting"),
+      ),
+    )
+    .returning({ id: schema.treasureBoxRewardCycleTable.id });
 }
 
 export async function expireUserCoinLots(limit = 200) {
@@ -378,82 +480,93 @@ export async function expireUserCoinLots(limit = 200) {
     )
     .orderBy(asc(schema.userCoinLotTable.expiresAt))
     .limit(limit);
-  const expired: string[] = [];
-  for (const candidate of due) {
-    const didExpire = await db.transaction(async (tx) => {
-      const [lot] = await tx
-        .select()
-        .from(schema.userCoinLotTable)
-        .where(eq(schema.userCoinLotTable.id, candidate.id))
-        .for("update");
-      if (
-        !lot ||
-        lot.status !== "active" ||
-        lot.expiresAt > new Date() ||
-        toCoinUnits(lot.availableAmount) <= 0
-      ) {
-        return false;
-      }
-      const availableUnits = toCoinUnits(lot.availableAmount);
-      await tx
-        .update(schema.userCoinLotTable)
-        .set({
-          availableAmount: "0.00",
-          expiredAmount: sql`${schema.userCoinLotTable.expiredAmount} + ${lot.availableAmount}`,
-          status: "expired",
-        })
-        .where(eq(schema.userCoinLotTable.id, lot.id));
-      await tx
-        .update(schema.userTable)
-        .set({ coins: sql`greatest(${schema.userTable.coins} - ${lot.availableAmount}, 0)` })
-        .where(eq(schema.userTable.id, lot.userId));
-      await tx.insert(schema.userCoinTransactionTable).values({
-        userId: lot.userId,
-        lotId: lot.id,
-        type: "expiry",
-        direction: "debit",
-        amount: lot.availableAmount,
-        idempotencyKey: `lot-expiry:${lot.id}`,
-      });
-      await tx
-        .update(schema.userMonthlyCoinStatTable)
-        .set({ expired: true })
-        .where(
-          and(
-            eq(schema.userMonthlyCoinStatTable.userId, lot.userId),
-            eq(schema.userMonthlyCoinStatTable.month, lot.earningLocalMonth),
-          ),
-        );
+  const results = await mapWithConcurrency(
+    due,
+    getMaintenanceConcurrency(),
+    async (candidate) => {
+      const didExpire = await db.transaction(async (tx) => {
+        const [lot] = await tx
+          .select()
+          .from(schema.userCoinLotTable)
+          .where(eq(schema.userCoinLotTable.id, candidate.id))
+          .for("update");
+        if (
+          !lot ||
+          lot.status !== "active" ||
+          lot.expiresAt > new Date() ||
+          toCoinUnits(lot.availableAmount) <= 0
+        ) {
+          return false;
+        }
+        const availableUnits = toCoinUnits(lot.availableAmount);
+        await tx
+          .update(schema.userCoinLotTable)
+          .set({
+            availableAmount: "0.00",
+            expiredAmount: sql`${schema.userCoinLotTable.expiredAmount} + ${lot.availableAmount}`,
+            status: "expired",
+          })
+          .where(eq(schema.userCoinLotTable.id, lot.id));
+        await tx
+          .update(schema.userTable)
+          .set({
+            coins: sql`greatest(${schema.userTable.coins} - ${lot.availableAmount}, 0)`,
+          })
+          .where(eq(schema.userTable.id, lot.userId));
+        await tx.insert(schema.userCoinTransactionTable).values({
+          userId: lot.userId,
+          lotId: lot.id,
+          type: "expiry",
+          direction: "debit",
+          amount: lot.availableAmount,
+          idempotencyKey: `lot-expiry:${lot.id}`,
+        });
+        await tx
+          .update(schema.userMonthlyCoinStatTable)
+          .set({ expired: true })
+          .where(
+            and(
+              eq(schema.userMonthlyCoinStatTable.userId, lot.userId),
+              eq(schema.userMonthlyCoinStatTable.month, lot.earningLocalMonth),
+            ),
+          );
 
-      const sellerUnits = await getSellerFundedUnitsForOperation(
-        tx,
-        lot,
-        availableUnits,
-      );
-      if (lot.fundingAccountId && sellerUnits > 0) {
-        await returnCoinsToSellerWithTx(tx, {
-          fundingAccountId: lot.fundingAccountId,
+        const sellerUnits = await getSellerFundedUnitsForOperation(
+          tx,
+          lot,
+          availableUnits,
+        );
+        if (lot.fundingAccountId && sellerUnits > 0) {
+          await returnCoinsToSellerWithTx(tx, {
+            fundingAccountId: lot.fundingAccountId,
+            reason: "expired_unused",
+            coinUnits: sellerUnits,
+            idempotencyKey: `lot-expired-return:${lot.id}`,
+            rewardAllocationId: lot.rewardAllocationId,
+            userCoinLotId: lot.id,
+          });
+        }
+        const platformUnits = availableUnits - sellerUnits;
+        if (lot.fundingAccountId && platformUnits > 0) {
+          await reversePlatformFundingWithTx(tx, {
+            fundingAccountId: lot.fundingAccountId,
+            coinUnits: platformUnits,
+            userCoinLotId: lot.id,
+            idempotencyKey: `platform-expiry:${lot.id}`,
+          });
+        }
+        await returnRefundConversionCoinsToSellerWithTx(tx, {
+          lot,
+          coinUnits: availableUnits,
           reason: "expired_unused",
-          coinUnits: sellerUnits,
-          idempotencyKey: `lot-expired-return:${lot.id}`,
-          rewardAllocationId: lot.rewardAllocationId,
-          userCoinLotId: lot.id,
+          idempotencyKey: `refund-conversion-expiry:${lot.id}`,
         });
-      }
-      const platformUnits = availableUnits - sellerUnits;
-      if (lot.fundingAccountId && platformUnits > 0) {
-        await reversePlatformFundingWithTx(tx, {
-          fundingAccountId: lot.fundingAccountId,
-          coinUnits: platformUnits,
-          userCoinLotId: lot.id,
-          idempotencyKey: `platform-expiry:${lot.id}`,
-        });
-      }
-      return true;
-    });
-    if (didExpire) expired.push(candidate.id);
-  }
-  return expired;
+        return true;
+      });
+      return didExpire ? candidate.id : null;
+    },
+  );
+  return results.filter((id): id is string => id !== null);
 }
 
 export async function settleAdvertisementCoinCohorts(limit = 200) {
@@ -472,88 +585,103 @@ export async function settleAdvertisementCoinCohorts(limit = 200) {
     )
     .orderBy(asc(schema.advertisementCoinSettlementCohortTable.claimSettlementAt))
     .limit(limit);
-  const settled: string[] = [];
-  for (const candidate of due) {
-    const didSettle = await db.transaction(async (tx) => {
-      const [cohort] = await tx
-        .select()
-        .from(schema.advertisementCoinSettlementCohortTable)
-        .where(eq(schema.advertisementCoinSettlementCohortTable.id, candidate.id))
-        .for("update");
-      if (!cohort || cohort.status !== "open") return false;
-      const [account] = await tx
-        .select()
-        .from(schema.advertisementCoinFundingAccountTable)
-        .where(
-          eq(
-            schema.advertisementCoinFundingAccountTable.id,
-            cohort.fundingAccountId,
-          ),
-        )
-        .for("update");
-      if (!account) throw new Error("Coin funding account not found.");
+  const results = await mapWithConcurrency(
+    due,
+    getMaintenanceConcurrency(),
+    async (candidate) => {
+      const didSettle = await db.transaction(async (tx) => {
+        const [cohort] = await tx
+          .select()
+          .from(schema.advertisementCoinSettlementCohortTable)
+          .where(
+            eq(
+              schema.advertisementCoinSettlementCohortTable.id,
+              candidate.id,
+            ),
+          )
+          .for("update");
+        if (!cohort || cohort.status !== "open") return false;
+        const [account] = await tx
+          .select()
+          .from(schema.advertisementCoinFundingAccountTable)
+          .where(
+            eq(
+              schema.advertisementCoinFundingAccountTable.id,
+              cohort.fundingAccountId,
+            ),
+          )
+          .for("update");
+        if (!account) throw new Error("Coin funding account not found.");
 
-      const fundedUnits = toCoinUnits(cohort.sellerFundedAmount);
-      const repaidUnits = toCoinUnits(cohort.advanceRepaidAmount);
-      const alreadyReturnedUnits = toCoinUnits(
-        cohort.sellerSurplusReturnedAmount,
-      );
-      const [{ sellerAcquired }] = await tx
-        .select({
-          sellerAcquired: sql<string>`coalesce(sum(${schema.treasureBoxRewardAllocationTable.sellerFundedCoinAmount}), 0)`,
-        })
-        .from(schema.treasureBoxRewardAllocationTable)
-        .where(
-          eq(
-            schema.treasureBoxRewardAllocationTable.settlementCohortId,
-            cohort.id,
-          ),
+        const fundedUnits = toCoinUnits(cohort.sellerFundedAmount);
+        const repaidUnits = toCoinUnits(cohort.advanceRepaidAmount);
+        const alreadyReturnedUnits = toCoinUnits(
+          cohort.sellerSurplusReturnedAmount,
         );
-      const surplusUnits = Math.max(
-        0,
-        fundedUnits -
-          repaidUnits -
-          toCoinUnits(sellerAcquired) -
-          alreadyReturnedUnits,
-      );
-      const returnUnits = Math.min(
-        surplusUnits,
-        toCoinUnits(account.sellerFundingAvailableAmount),
-      );
-      if (returnUnits > 0) {
-        const returned = await returnCoinsToSellerWithTx(tx, {
-          fundingAccountId: account.id,
-          settlementCohortId: cohort.id,
-          reason: "unacquired_surplus",
-          coinUnits: returnUnits,
-          idempotencyKey: `cohort-surplus:${cohort.id}`,
-        });
-        if (returned) {
-          await tx
-            .update(schema.advertisementCoinFundingAccountTable)
-            .set({
-              sellerFundingAvailableAmount: sql`${schema.advertisementCoinFundingAccountTable.sellerFundingAvailableAmount} - ${fromCoinUnits(returnUnits)}`,
-            })
-            .where(eq(schema.advertisementCoinFundingAccountTable.id, account.id));
+        const [{ sellerAcquired }] = await tx
+          .select({
+            sellerAcquired: sql<string>`coalesce(sum(${schema.treasureBoxRewardAllocationTable.sellerFundedCoinAmount}), 0)`,
+          })
+          .from(schema.treasureBoxRewardAllocationTable)
+          .where(
+            eq(
+              schema.treasureBoxRewardAllocationTable.settlementCohortId,
+              cohort.id,
+            ),
+          );
+        const surplusUnits = Math.max(
+          0,
+          fundedUnits -
+            repaidUnits -
+            toCoinUnits(sellerAcquired) -
+            alreadyReturnedUnits,
+        );
+        const returnUnits = Math.min(
+          surplusUnits,
+          toCoinUnits(account.sellerFundingAvailableAmount),
+        );
+        if (returnUnits > 0) {
+          const returned = await returnCoinsToSellerWithTx(tx, {
+            fundingAccountId: account.id,
+            settlementCohortId: cohort.id,
+            reason: "unacquired_surplus",
+            coinUnits: returnUnits,
+            idempotencyKey: `cohort-surplus:${cohort.id}`,
+          });
+          if (returned) {
+            await tx
+              .update(schema.advertisementCoinFundingAccountTable)
+              .set({
+                sellerFundingAvailableAmount: sql`${schema.advertisementCoinFundingAccountTable.sellerFundingAvailableAmount} - ${fromCoinUnits(returnUnits)}`,
+              })
+              .where(
+                eq(
+                  schema.advertisementCoinFundingAccountTable.id,
+                  account.id,
+                ),
+              );
+          }
         }
-      }
-      await tx
-        .update(schema.advertisementCoinSettlementCohortTable)
-        .set({
-          status: "settled",
-          sellerSurplusReturnedAmount: fromCoinUnits(
-            alreadyReturnedUnits + returnUnits,
-          ),
-          closingPlatformAdvanceAmount:
-            account.platformAdvanceOutstandingAmount,
-          settledAt: new Date(),
-        })
-        .where(eq(schema.advertisementCoinSettlementCohortTable.id, cohort.id));
-      return true;
-    });
-    if (didSettle) settled.push(candidate.id);
-  }
-  return settled;
+        await tx
+          .update(schema.advertisementCoinSettlementCohortTable)
+          .set({
+            status: "settled",
+            sellerSurplusReturnedAmount: fromCoinUnits(
+              alreadyReturnedUnits + returnUnits,
+            ),
+            closingPlatformAdvanceAmount:
+              account.platformAdvanceOutstandingAmount,
+            settledAt: new Date(),
+          })
+          .where(
+            eq(schema.advertisementCoinSettlementCohortTable.id, cohort.id),
+          );
+        return true;
+      });
+      return didSettle ? candidate.id : null;
+    },
+  );
+  return results.filter((id): id is string => id !== null);
 }
 
 export async function expireIssuedAdvertisementAssignments(
@@ -643,48 +771,181 @@ export async function purgeTerminalAdvertisementAssignments(
   });
 }
 
+export async function deleteCoinLedgerJobRuns(
+  retentionInMs: number,
+  limit = 5_000,
+) {
+  if (!Number.isInteger(limit) || limit <= 0) {
+    throw new Error("Coin-ledger job-run cleanup limit must be a positive integer.");
+  }
+  const cutoff = new Date(Date.now() - retentionInMs);
+  const candidates = await db
+    .select({ id: schema.coinLedgerJobRunTable.id })
+    .from(schema.coinLedgerJobRunTable)
+    .where(lte(schema.coinLedgerJobRunTable.scheduledFor, cutoff))
+    .orderBy(asc(schema.coinLedgerJobRunTable.scheduledFor))
+    .limit(limit);
+  if (candidates.length === 0) return [];
+
+  return db
+    .delete(schema.coinLedgerJobRunTable)
+    .where(
+      inArray(
+        schema.coinLedgerJobRunTable.id,
+        candidates.map((candidate) => candidate.id),
+      ),
+    )
+    .returning({ id: schema.coinLedgerJobRunTable.id });
+}
+
 export async function runCoinLedgerMaintenance() {
   if (!isCoinLedgerEnabled()) return { skipped: true } as const;
-  const scheduledFor = new Date();
-  scheduledFor.setUTCSeconds(0, 0);
-  const scopeKey = scheduledFor.toISOString().slice(0, 16);
-  const [run] = await db
-    .insert(schema.coinLedgerJobRunTable)
-    .values({ jobName: "coin-ledger-maintenance", scopeKey, scheduledFor })
+  const lockConnection = await client.reserve();
+  let lockAcquired = false;
+  try {
+    const [lockResult] = await lockConnection<{ acquired: boolean }[]>`
+      select pg_try_advisory_lock(
+        hashtextextended(${MAINTENANCE_ADVISORY_LOCK_KEY}, 0)
+      ) as acquired
+    `;
+    lockAcquired = lockResult.acquired;
+    if (!lockAcquired) return { skipped: true } as const;
+
+    const scheduledFor = new Date();
+    scheduledFor.setUTCSeconds(0, 0);
+    const scopeKey = scheduledFor.toISOString().slice(0, 16);
+    const [run] = await db
+      .insert(schema.coinLedgerJobRunTable)
+      .values({ jobName: "coin-ledger-maintenance", scopeKey, scheduledFor })
+      .onConflictDoNothing()
+      .returning();
+    if (!run) return { skipped: true } as const;
+    try {
+      const boxes = await expireUnclaimedTreasureBoxes();
+      const cycles = await expireCollectingRewardCycles();
+      const lots = await expireUserCoinLots();
+      const cohorts = await settleAdvertisementCoinCohorts();
+      const assignmentsExpired = await expireIssuedAdvertisementAssignments();
+      const assignmentsPurged = await purgeTerminalAdvertisementAssignments();
+      const result = {
+        boxes: boxes.length,
+        cycles: cycles.length,
+        lots: lots.length,
+        cohorts: cohorts.length,
+        assignmentsExpired: assignmentsExpired.length,
+        assignmentsPurged: assignmentsPurged.length,
+      };
+      await db
+        .update(schema.coinLedgerJobRunTable)
+        .set({ status: "completed", completedAt: new Date(), metadata: result })
+        .where(eq(schema.coinLedgerJobRunTable.id, run.id));
+      return { skipped: false, ...result } as const;
+    } catch (error) {
+      await db
+        .update(schema.coinLedgerJobRunTable)
+        .set({
+          status: "failed",
+          completedAt: new Date(),
+          error: error instanceof Error ? error.message : String(error),
+        })
+        .where(eq(schema.coinLedgerJobRunTable.id, run.id));
+      throw error;
+    }
+  } finally {
+    try {
+      if (lockAcquired) {
+        await lockConnection`
+          select pg_advisory_unlock(
+            hashtextextended(${MAINTENANCE_ADVISORY_LOCK_KEY}, 0)
+          )
+        `;
+      }
+    } finally {
+      lockConnection.release();
+    }
+  }
+}
+
+export async function issueRefundCashRemainderCoinsWithTx(
+  tx: DbTransaction,
+  params: {
+    refundId: string;
+    userId: string;
+    sourceSellerId: string;
+    amount: number;
+  },
+) {
+  const coinUnits = toCoinUnits(params.amount);
+  if (coinUnits <= 0) {
+    return { creditedCoin: 0, lot: null };
+  }
+
+  const [user] = await tx
+    .select({ timezone: schema.userTable.timezone })
+    .from(schema.userTable)
+    .where(eq(schema.userTable.id, params.userId))
+    .for("update");
+  if (!user) throw new Error("Refund user not found.");
+
+  const now = new Date();
+  const timezone = effectiveTimezone(user.timezone);
+  const earningLocalMonth = getLocalMonth(now, timezone);
+  const expiresAt = getEndOfNextLocalMonth(now, timezone);
+  const amount = fromCoinUnits(coinUnits);
+  const [lot] = await tx
+    .insert(schema.userCoinLotTable)
+    .values({
+      userId: params.userId,
+      sourceRefundId: params.refundId,
+      sourceSellerId: params.sourceSellerId,
+      legacySource: "refund_cash_fraction",
+      currentFunderType: "seller",
+      originalAmount: amount,
+      availableAmount: amount,
+      timezoneSnapshot: timezone,
+      earningLocalMonth,
+      expiresAt,
+    })
     .onConflictDoNothing()
     .returning();
-  if (!run) return { skipped: true } as const;
-  try {
-    const boxes = await expireUnclaimedTreasureBoxes();
-    const cycles = await expireCollectingRewardCycles();
-    const lots = await expireUserCoinLots();
-    const cohorts = await settleAdvertisementCoinCohorts();
-    const assignmentsExpired = await expireIssuedAdvertisementAssignments();
-    const assignmentsPurged = await purgeTerminalAdvertisementAssignments();
-    const result = {
-      boxes: boxes.length,
-      cycles: cycles.length,
-      lots: lots.length,
-      cohorts: cohorts.length,
-      assignmentsExpired: assignmentsExpired.length,
-      assignmentsPurged: assignmentsPurged.length,
-    };
-    await db
-      .update(schema.coinLedgerJobRunTable)
-      .set({ status: "completed", completedAt: new Date(), metadata: result })
-      .where(eq(schema.coinLedgerJobRunTable.id, run.id));
-    return { skipped: false, ...result } as const;
-  } catch (error) {
-    await db
-      .update(schema.coinLedgerJobRunTable)
-      .set({
-        status: "failed",
-        completedAt: new Date(),
-        error: error instanceof Error ? error.message : String(error),
-      })
-      .where(eq(schema.coinLedgerJobRunTable.id, run.id));
-    throw error;
+  if (!lot) {
+    return { creditedCoin: 0, lot: null };
   }
+
+  await tx.insert(schema.userCoinTransactionTable).values({
+    userId: params.userId,
+    lotId: lot.id,
+    refundId: params.refundId,
+    type: "cash_refund_conversion",
+    direction: "credit",
+    amount,
+    idempotencyKey: `refund-cash-conversion:${params.refundId}`,
+    metadata: {
+      sourceSellerId: params.sourceSellerId,
+      currencyEquivalent: (coinUnits / 1000).toFixed(2),
+    },
+  });
+  await tx
+    .update(schema.userTable)
+    .set({ coins: sql`${schema.userTable.coins} + ${amount}` })
+    .where(eq(schema.userTable.id, params.userId));
+  await tx
+    .insert(schema.userMonthlyCoinStatTable)
+    .values({
+      userId: params.userId,
+      month: earningLocalMonth,
+      coinsEarned: Number(amount),
+    })
+    .onConflictDoUpdate({
+      target: [
+        schema.userMonthlyCoinStatTable.userId,
+        schema.userMonthlyCoinStatTable.month,
+      ],
+      set: {
+        coinsEarned: sql`${schema.userMonthlyCoinStatTable.coinsEarned} + ${amount}`,
+      },
+    });
+  return { creditedCoin: coinUnits / 100, lot };
 }
 
 export async function allocateOrderCoinsWithTx(
@@ -945,6 +1206,14 @@ export async function releaseOrderReservationsWithTx(
         idempotencyKey: `platform-reservation-expiry:${params.orderId}:${lot.id}`,
       });
     }
+    if (expired && lot.sourceRefundId) {
+      await returnRefundConversionCoinsToSellerWithTx(tx, {
+        lot,
+        coinUnits: units,
+        reason: "expired_unused",
+        idempotencyKey: `refund-conversion-reservation-expiry:${params.orderId}:${lot.id}`,
+      });
+    }
     if (!expired) releasedUnits += units;
   }
   if (releasedUnits > 0) {
@@ -1083,6 +1352,15 @@ export async function refundOrderCoinsWithTx(
           });
         }
       }
+    }
+    if (expired && lot.sourceRefundId) {
+      await returnRefundConversionCoinsToSellerWithTx(tx, {
+        lot,
+        coinUnits: reversedUnits,
+        reason: "refund_after_expiry",
+        idempotencyKey: `refund-conversion-after-expiry:${params.refundId}:${allocation.id}`,
+        metadata: { reversingRefundId: params.refundId },
+      });
     }
 
     const previous = coinByMonth[lot.earningLocalMonth] ?? {

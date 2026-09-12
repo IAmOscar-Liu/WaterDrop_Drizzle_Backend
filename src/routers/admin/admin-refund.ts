@@ -20,10 +20,26 @@ const router = Router();
  *       properties:
  *         totalCoin:
  *           type: number
+ *           description: Original order coins reversed by the refund.
+ *         returnableCoin:
+ *           type: number
+ *           description: Total coins credited to the user, including cash-remainder conversion coins.
+ *         originalReturnableCoin:
+ *           type: number
+ *         cashRemainderCoin:
+ *           type: number
+ *         cashRemainderExpiresAt:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *         cashRemainderSourceSellerId:
+ *           type: string
+ *           format: uuid
+ *           nullable: true
  *         coinByMonth:
  *           type: object
  *           additionalProperties:
- *             type: number
+ *             type: object
  *
  *     RefundItem:
  *       type: object
@@ -54,13 +70,20 @@ const router = Router();
  *         extraRefundAmount:
  *           type: number
  *           description: Additional refund amount for shipping, fees, or manual adjustments.
+ *         cashRefundAmount:
+ *           type: integer
+ *           nullable: true
+ *           description: Whole-TWD cash payout after combining paidRefundAmount and extraRefundAmount and rounding down.
+ *         cashRemainderCoins:
+ *           type: number
+ *           description: Fractional TWD remainder converted at NT$1 = 10 coins.
  *         coins:
  *           type: number
  *           description: Proportional discount coins associated with this refund item.
  *         returnableCoins:
  *           type: number
  *           nullable: true
- *           description: Portion of refund coins that can be returned to the user.
+ *           description: Total coins actually credited on completion, including cash-remainder conversion coins.
  *         metadata:
  *           type: object
  *           nullable: true
@@ -310,7 +333,7 @@ router.get(
  *   post:
  *     tags: [Refund]
  *     summary: Create a refund item
- *     description: A successful request automatically creates an initial pending refund log with message 申請退貨, then sends the user a fire-and-forget push notification and email linked to the order detail page.
+ *     description: A successful request automatically creates an initial pending refund log with message 申請退貨, then sends the user a fire-and-forget push notification and email linked to the order detail page. paidRefundAmount plus extraRefundAmount is rounded down to whole TWD in cashRefundAmount; the fractional TWD remainder is exposed as cashRemainderCoins at NT$1 = 10 coins and is credited only when the refund completes.
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -358,7 +381,7 @@ router.post(
  *   patch:
  *     tags: [Refund]
  *     summary: Update refund item
- *     description: Status, quantity, refundAmount, reason, note, extraRefundAmount, and metadata are mutable. Message is independent from the refund note and is used only for refund logs. A log is appended only when status actually changes or the provided message differs from the latest log message. An actual status change triggers a fire-and-forget push notification linked to order detail; message-only and other field updates do not notify, and status changes do not send email. Quantity and refundAmount can only be changed while the current refund status is pending or processing. Completed and cancelled statuses are terminal and cannot transition to another status.
+ *     description: Status, quantity, refundAmount, reason, note, extraRefundAmount, and metadata are mutable. Message is independent from the refund note and is used only for refund logs. A log is appended only when status actually changes or the provided message differs from the latest log message. An actual status change triggers a fire-and-forget push notification linked to order detail; message-only and other field updates do not notify, and status changes do not send email. Quantity, refundAmount, and extraRefundAmount can only be changed while the current refund status is pending or processing. Completed and cancelled statuses are terminal and cannot transition to another status. Completion credits cashRemainderCoins as a product-seller-funded coin lot that expires at the end of the next month in the user's timezone.
  *     security:
  *       - bearerAuth: []
  *     parameters:

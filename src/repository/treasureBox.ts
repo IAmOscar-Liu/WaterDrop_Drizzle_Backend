@@ -1,4 +1,5 @@
-import { and, asc, eq, gt, not, sql } from "drizzle-orm";
+import { randomUUID } from "crypto";
+import { and, asc, eq, gt, inArray, not, sql } from "drizzle-orm";
 import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
 import { getCurrentYYYYMM } from "../lib/general";
@@ -435,8 +436,16 @@ async function processVideoCompletionWithLedger(
           advertisementId: schema.adViewCountTable.advertisementId,
           fundingAccountId: schema.adViewCountTable.fundingAccountId,
           settlementCohortId: schema.adViewCountTable.settlementCohortId,
+          sourceSellerId: schema.advertisementAssignmentTable.sourceSellerId,
         })
         .from(schema.adViewCountTable)
+        .innerJoin(
+          schema.advertisementAssignmentTable,
+          eq(
+            schema.adViewCountTable.assignmentId,
+            schema.advertisementAssignmentTable.id,
+          ),
+        )
         .where(eq(schema.adViewCountTable.rewardCycleId, cycle.id))
         .orderBy(asc(schema.adViewCountTable.createdAt));
       const grouped = new Map<string, typeof cycleViews>();
@@ -457,26 +466,12 @@ async function processVideoCompletionWithLedger(
               : rewardUnits - Math.floor(rewardUnits / 2);
         if (attributedUnits <= 0) continue;
         const view = views[0];
-        const [sourceAssignment] = await tx
-          .select({ sourceSellerId: schema.advertisementAssignmentTable.sourceSellerId })
-          .from(schema.advertisementAssignmentTable)
-          .innerJoin(
-            schema.adViewCountTable,
-            eq(schema.adViewCountTable.assignmentId, schema.advertisementAssignmentTable.id),
-          )
-          .where(
-            and(
-              eq(schema.adViewCountTable.rewardCycleId, cycle.id),
-              eq(schema.adViewCountTable.advertisementId, sourceAdvertisementId),
-            ),
-          )
-          .limit(1);
         await tx.insert(schema.treasureBoxRewardAllocationTable).values({
           treasureBoxId: box.id,
           fundingAccountId: view.fundingAccountId,
           settlementCohortId: view.settlementCohortId,
           advertisementId: sourceAdvertisementId,
-          sourceSellerId: sourceAssignment?.sourceSellerId,
+          sourceSellerId: view.sourceSellerId,
           attributedCoinAmount: fromCoinUnits(attributedUnits),
         });
       }
@@ -645,16 +640,80 @@ async function openTreasureBoxWithLedger(userId: string, treasureBoxId: string) 
       .where(eq(schema.treasureBoxRewardAllocationTable.treasureBoxId, box.id))
       .orderBy(asc(schema.treasureBoxRewardAllocationTable.createdAt));
 
+    const fundingAccountIds = [
+      ...new Set(
+        allocations
+          .map((allocation) => allocation.fundingAccountId)
+          .filter((id): id is string => id !== null),
+      ),
+    ].sort();
+    const fundingAccounts = fundingAccountIds.length
+      ? await tx
+          .select()
+          .from(schema.advertisementCoinFundingAccountTable)
+          .where(
+            inArray(
+              schema.advertisementCoinFundingAccountTable.id,
+              fundingAccountIds,
+            ),
+          )
+          .orderBy(asc(schema.advertisementCoinFundingAccountTable.id))
+          .for("update")
+      : [];
+    if (fundingAccounts.length !== fundingAccountIds.length) {
+      throw new CustomError("Funding account not found.", 500);
+    }
+
+    const accountsById = new Map(
+      fundingAccounts.map((account) => [account.id, account]),
+    );
+    const sellerUnitsRemaining = new Map(
+      fundingAccounts.map((account) => [
+        account.id,
+        toCoinUnits(account.sellerFundingAvailableAmount),
+      ]),
+    );
+    const accountAdjustments = new Map<
+      string,
+      { sellerUnits: number; platformUnits: number }
+    >();
+    const cohortAdjustments = new Map<
+      string,
+      { acquiredUnits: number; platformUnits: number }
+    >();
+    const lots: schema.NewUserCoinLot[] = [];
+    const userTransactions: schema.NewUserCoinTransaction[] = [];
+    const fundingTransactions: schema.NewAdvertisementCoinFundingTransaction[] = [];
     let creditedUnits = 0;
+
+    const addLot = (
+      lot: schema.NewUserCoinLot & { id: string },
+      idempotencyKey: string,
+      fundingTransaction?: schema.NewAdvertisementCoinFundingTransaction,
+    ) => {
+      lots.push(lot);
+      userTransactions.push({
+        userId,
+        lotId: lot.id,
+        type: "acquire",
+        direction: "credit",
+        amount: lot.originalAmount,
+        idempotencyKey,
+      });
+      if (fundingTransaction) fundingTransactions.push(fundingTransaction);
+    };
+
     for (const allocation of allocations) {
+      const attributedUnits = toCoinUnits(allocation.attributedCoinAmount);
+      if (attributedUnits <= 0) continue;
+      creditedUnits += attributedUnits;
+
       if (!allocation.fundingAccountId) {
-        const legacyUnits = toCoinUnits(allocation.attributedCoinAmount);
-        if (legacyUnits <= 0) continue;
-        const amount = fromCoinUnits(legacyUnits);
-        creditedUnits += legacyUnits;
-        const [lot] = await tx
-          .insert(schema.userCoinLotTable)
-          .values({
+        const amount = fromCoinUnits(attributedUnits);
+        const lotId = randomUUID();
+        addLot(
+          {
+            id: lotId,
             userId,
             rewardAllocationId: allocation.id,
             legacySource: allocation.legacySource ?? "legacy_unattributed",
@@ -664,16 +723,9 @@ async function openTreasureBoxWithLedger(userId: string, treasureBoxId: string) 
             timezoneSnapshot: timezone,
             earningLocalMonth,
             expiresAt,
-          })
-          .returning();
-        await tx.insert(schema.userCoinTransactionTable).values({
-          userId,
-          lotId: lot.id,
-          type: "acquire",
-          direction: "credit",
-          amount,
-          idempotencyKey: `box-acquire:${box.id}:legacy-allocation:${allocation.id}`,
-        });
+          },
+          `box-acquire:${box.id}:legacy-allocation:${allocation.id}`,
+        );
         await tx
           .update(schema.treasureBoxRewardAllocationTable)
           .set({
@@ -685,28 +737,35 @@ async function openTreasureBoxWithLedger(userId: string, treasureBoxId: string) 
           .where(eq(schema.treasureBoxRewardAllocationTable.id, allocation.id));
         continue;
       }
-      const [account] = await tx
-        .select()
-        .from(schema.advertisementCoinFundingAccountTable)
-        .where(eq(schema.advertisementCoinFundingAccountTable.id, allocation.fundingAccountId))
-        .for("update");
-      if (!account) throw new CustomError("Funding account not found.", 500);
-      const attributedUnits = toCoinUnits(allocation.attributedCoinAmount);
-      const sellerUnits = Math.min(
-        attributedUnits,
-        toCoinUnits(account.sellerFundingAvailableAmount),
-      );
-      const platformUnits = attributedUnits - sellerUnits;
-      creditedUnits += attributedUnits;
 
-      await tx
-        .update(schema.advertisementCoinFundingAccountTable)
-        .set({
-          sellerFundingAvailableAmount: sql`${schema.advertisementCoinFundingAccountTable.sellerFundingAvailableAmount} - ${fromCoinUnits(sellerUnits)}`,
-          platformAdvanceOutstandingAmount: sql`${schema.advertisementCoinFundingAccountTable.platformAdvanceOutstandingAmount} + ${fromCoinUnits(platformUnits)}`,
-          platformFundedConsumedAmount: sql`${schema.advertisementCoinFundingAccountTable.platformFundedConsumedAmount} + ${fromCoinUnits(platformUnits)}`,
-        })
-        .where(eq(schema.advertisementCoinFundingAccountTable.id, account.id));
+      const account = accountsById.get(allocation.fundingAccountId);
+      if (!account) throw new CustomError("Funding account not found.", 500);
+      const availableSellerUnits =
+        sellerUnitsRemaining.get(account.id) ?? 0;
+      const sellerUnits = Math.min(attributedUnits, availableSellerUnits);
+      const platformUnits = attributedUnits - sellerUnits;
+      sellerUnitsRemaining.set(account.id, availableSellerUnits - sellerUnits);
+
+      const accountAdjustment = accountAdjustments.get(account.id) ?? {
+        sellerUnits: 0,
+        platformUnits: 0,
+      };
+      accountAdjustment.sellerUnits += sellerUnits;
+      accountAdjustment.platformUnits += platformUnits;
+      accountAdjustments.set(account.id, accountAdjustment);
+
+      if (allocation.settlementCohortId) {
+        const cohortAdjustment = cohortAdjustments.get(
+          allocation.settlementCohortId,
+        ) ?? { acquiredUnits: 0, platformUnits: 0 };
+        cohortAdjustment.acquiredUnits += attributedUnits;
+        cohortAdjustment.platformUnits += platformUnits;
+        cohortAdjustments.set(
+          allocation.settlementCohortId,
+          cohortAdjustment,
+        );
+      }
+
       await tx
         .update(schema.treasureBoxRewardAllocationTable)
         .set({
@@ -717,15 +776,6 @@ async function openTreasureBoxWithLedger(userId: string, treasureBoxId: string) 
           acquiredAt: now,
         })
         .where(eq(schema.treasureBoxRewardAllocationTable.id, allocation.id));
-      if (allocation.settlementCohortId) {
-        await tx
-          .update(schema.advertisementCoinSettlementCohortTable)
-          .set({
-            acquiredRewardAmount: sql`${schema.advertisementCoinSettlementCohortTable.acquiredRewardAmount} + ${allocation.attributedCoinAmount}`,
-            advanceCreatedAmount: sql`${schema.advertisementCoinSettlementCohortTable.advanceCreatedAmount} + ${fromCoinUnits(platformUnits)}`,
-          })
-          .where(eq(schema.advertisementCoinSettlementCohortTable.id, allocation.settlementCohortId));
-      }
 
       for (const portion of [
         { type: "seller" as const, units: sellerUnits },
@@ -733,12 +783,13 @@ async function openTreasureBoxWithLedger(userId: string, treasureBoxId: string) 
       ]) {
         if (portion.units <= 0) continue;
         const amount = fromCoinUnits(portion.units);
-        const [lot] = await tx
-          .insert(schema.userCoinLotTable)
-          .values({
+        const lotId = randomUUID();
+        addLot(
+          {
+            id: lotId,
             userId,
             rewardAllocationId: allocation.id,
-            fundingAccountId: allocation.fundingAccountId,
+            fundingAccountId: account.id,
             advertisementId: allocation.advertisementId,
             sourceSellerId: allocation.sourceSellerId,
             currentFunderType: portion.type,
@@ -747,39 +798,33 @@ async function openTreasureBoxWithLedger(userId: string, treasureBoxId: string) 
             timezoneSnapshot: timezone,
             earningLocalMonth,
             expiresAt,
-          })
-          .returning();
-        await tx.insert(schema.userCoinTransactionTable).values({
-          userId,
-          lotId: lot.id,
-          type: "acquire",
-          direction: "credit",
-          amount,
-          idempotencyKey: `box-acquire:${box.id}:${lot.id}`,
-        });
-        await tx.insert(schema.advertisementCoinFundingTransactionTable).values({
-          fundingAccountId: allocation.fundingAccountId,
-          settlementCohortId: allocation.settlementCohortId,
-          type:
-            portion.type === "seller"
-              ? "reward_acquired_seller_funded"
-              : "platform_advance_created",
-          coinAmount: amount,
-          currencyEquivalent: (portion.units / 1000).toFixed(2),
-          coinToCurrencyRate: "10.000000",
-          treasureBoxRewardAllocationId: allocation.id,
-          userCoinLotId: lot.id,
-          idempotencyKey: `box-funding:${box.id}:${lot.id}`,
-        });
+          },
+          `box-acquire:${box.id}:${lotId}`,
+          {
+            fundingAccountId: account.id,
+            settlementCohortId: allocation.settlementCohortId,
+            type:
+              portion.type === "seller"
+                ? "reward_acquired_seller_funded"
+                : "platform_advance_created",
+            coinAmount: amount,
+            currencyEquivalent: (portion.units / 1000).toFixed(2),
+            coinToCurrencyRate: account.coinToCurrencyRate,
+            treasureBoxRewardAllocationId: allocation.id,
+            userCoinLotId: lotId,
+            idempotencyKey: `box-funding:${box.id}:${lotId}`,
+          },
+        );
       }
     }
 
     if (allocations.length === 0 && box.coinsAwarded > 0) {
       const amount = decimalAmount(box.coinsAwarded);
       creditedUnits = toCoinUnits(amount);
-      const [lot] = await tx
-        .insert(schema.userCoinLotTable)
-        .values({
+      const lotId = randomUUID();
+      addLot(
+        {
+          id: lotId,
           userId,
           legacySource: "legacy_unattributed",
           currentFunderType: "platform",
@@ -788,16 +833,38 @@ async function openTreasureBoxWithLedger(userId: string, treasureBoxId: string) 
           timezoneSnapshot: timezone,
           earningLocalMonth,
           expiresAt,
+        },
+        `box-acquire:${box.id}:legacy`,
+      );
+    }
+
+    for (const [accountId, adjustment] of accountAdjustments) {
+      await tx
+        .update(schema.advertisementCoinFundingAccountTable)
+        .set({
+          sellerFundingAvailableAmount: sql`${schema.advertisementCoinFundingAccountTable.sellerFundingAvailableAmount} - ${fromCoinUnits(adjustment.sellerUnits)}`,
+          platformAdvanceOutstandingAmount: sql`${schema.advertisementCoinFundingAccountTable.platformAdvanceOutstandingAmount} + ${fromCoinUnits(adjustment.platformUnits)}`,
+          platformFundedConsumedAmount: sql`${schema.advertisementCoinFundingAccountTable.platformFundedConsumedAmount} + ${fromCoinUnits(adjustment.platformUnits)}`,
         })
-        .returning();
-      await tx.insert(schema.userCoinTransactionTable).values({
-        userId,
-        lotId: lot.id,
-        type: "acquire",
-        direction: "credit",
-        amount,
-        idempotencyKey: `box-acquire:${box.id}:legacy`,
-      });
+        .where(eq(schema.advertisementCoinFundingAccountTable.id, accountId));
+    }
+    for (const [cohortId, adjustment] of cohortAdjustments) {
+      await tx
+        .update(schema.advertisementCoinSettlementCohortTable)
+        .set({
+          acquiredRewardAmount: sql`${schema.advertisementCoinSettlementCohortTable.acquiredRewardAmount} + ${fromCoinUnits(adjustment.acquiredUnits)}`,
+          advanceCreatedAmount: sql`${schema.advertisementCoinSettlementCohortTable.advanceCreatedAmount} + ${fromCoinUnits(adjustment.platformUnits)}`,
+        })
+        .where(eq(schema.advertisementCoinSettlementCohortTable.id, cohortId));
+    }
+    if (lots.length > 0) {
+      await tx.insert(schema.userCoinLotTable).values(lots);
+      await tx.insert(schema.userCoinTransactionTable).values(userTransactions);
+    }
+    if (fundingTransactions.length > 0) {
+      await tx
+        .insert(schema.advertisementCoinFundingTransactionTable)
+        .values(fundingTransactions);
     }
 
     const credited = fromCoinUnits(creditedUnits);

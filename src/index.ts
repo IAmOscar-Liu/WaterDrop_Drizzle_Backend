@@ -7,6 +7,7 @@ import {
   coinLedgerMaintenanceTask,
   dailyNotificationTask,
   dailyResetTask,
+  deleteCoinLedgerJobRunsTask,
   deleteIdempotencyKeysTask,
   deleteUnusedDeviceTokensTask,
   expireOrdersTask,
@@ -20,6 +21,7 @@ const PORT = process.env.PORT ?? 4000;
 
 dailyResetTask.start();
 coinLedgerMaintenanceTask.start();
+deleteCoinLedgerJobRunsTask.start();
 dailyNotificationTask.start();
 monthlyCoinStatExpirationTask.start();
 monthlyCoinExpirationNotificationTask.start();

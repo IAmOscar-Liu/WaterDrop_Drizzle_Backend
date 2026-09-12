@@ -152,7 +152,16 @@ export const userCoinLotStatusEnum = pgEnum("user_coin_lot_status", [
 
 export const userCoinTransactionTypeEnum = pgEnum(
   "user_coin_transaction_type",
-  ["acquire", "reserve", "spend", "reversal", "refund", "expiry", "manual"],
+  [
+    "acquire",
+    "reserve",
+    "spend",
+    "reversal",
+    "refund",
+    "cash_refund_conversion",
+    "expiry",
+    "manual",
+  ],
 );
 
 export const coinTransactionDirectionEnum = pgEnum(
@@ -853,6 +862,10 @@ export const refundItemTable = pgTable(
     extraRefundAmount: doublePrecision("extra_refund_amount")
       .default(0)
       .notNull(),
+    cashRefundAmount: integer("cash_refund_amount"),
+    cashRemainderCoins: doublePrecision("cash_remainder_coins")
+      .default(0)
+      .notNull(),
     coins: doublePrecision("coins").default(0).notNull(),
     returnableCoins: doublePrecision("returnable_coins"),
     metadata: jsonb("metadata"),
@@ -1000,6 +1013,7 @@ export const deviceTokenTable = pgTable(
       t.userId,
       t.deviceId,
     ),
+    lastUsedAtIdx: index("device_tokens_last_used_at_idx").on(t.lastUsedAt),
   }),
 );
 
@@ -1064,21 +1078,27 @@ export const userNotificationTable = pgTable(
   }),
 );
 
-export const idempotencyKeyTable = pgTable("idempotency_keys", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  key: text("key").notNull().unique(),
-  requestPath: text("request_path").notNull(),
-  requestData: jsonb("request_data").notNull(),
-  responseData: jsonb("response_data"),
-  status: idempotencyKeyStatusEnum("status").default("started").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .defaultNow()
-    .$onUpdate(() => new Date())
-    .notNull(),
-});
+export const idempotencyKeyTable = pgTable(
+  "idempotency_keys",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    key: text("key").notNull().unique(),
+    requestPath: text("request_path").notNull(),
+    requestData: jsonb("request_data").notNull(),
+    responseData: jsonb("response_data"),
+    status: idempotencyKeyStatusEnum("status").default("started").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (t) => ({
+    updatedAtIdx: index("idempotency_keys_updated_at_idx").on(t.updatedAt),
+  }),
+);
 
 export const advertisementCoinFundingAccountTable = pgTable(
   "advertisement_coin_funding_accounts",
@@ -1454,6 +1474,10 @@ export const userCoinLotTable = pgTable(
       () => accountTable.id,
       { onDelete: "restrict" },
     ),
+    sourceRefundId: uuid("source_refund_id").references(
+      () => refundItemTable.id,
+      { onDelete: "restrict" },
+    ),
     legacySource: text("legacy_source"),
     currentFunderType: coinFunderTypeEnum("current_funder_type").notNull(),
     originalAmount: numeric("original_amount", {
@@ -1512,6 +1536,9 @@ export const userCoinLotTable = pgTable(
     sourceAdvertisementIdx: index(
       "user_coin_lots_source_advertisement_idx",
     ).on(t.advertisementId, t.currentFunderType),
+    sourceRefundUnique: uniqueIndex("user_coin_lots_source_refund_id_uk")
+      .on(t.sourceRefundId)
+      .where(sql`${t.sourceRefundId} is not null`),
     amountsNonNegativeCheck: check(
       "user_coin_lots_amounts_non_negative_ck",
       sql`${t.originalAmount} >= 0 and
@@ -1623,6 +1650,60 @@ export const userCoinTransactionTable = pgTable(
     amountPositiveCheck: check(
       "user_coin_transactions_amount_positive_ck",
       sql`${t.amount} > 0`,
+    ),
+  }),
+);
+
+export const productSellerCoinReturnTransactionTable = pgTable(
+  "product_seller_coin_return_transactions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    sourceSellerId: uuid("source_seller_id")
+      .notNull()
+      .references(() => accountTable.id, { onDelete: "restrict" }),
+    sourceRefundId: uuid("source_refund_id")
+      .notNull()
+      .references(() => refundItemTable.id, { onDelete: "restrict" }),
+    userCoinLotId: uuid("user_coin_lot_id")
+      .notNull()
+      .references(() => userCoinLotTable.id, { onDelete: "restrict" }),
+    reason: text("reason").notNull(),
+    coinAmount: numeric("coin_amount", { precision: 18, scale: 2 }).notNull(),
+    coinToCurrencyRate: numeric("coin_to_currency_rate", {
+      precision: 18,
+      scale: 6,
+    })
+      .default("10")
+      .notNull(),
+    currencyEquivalent: numeric("currency_equivalent", {
+      precision: 18,
+      scale: 2,
+    }).notNull(),
+    destinationType: text("destination_type")
+      .default("product_seller_refund_credit")
+      .notNull(),
+    destinationReferenceId: uuid("destination_reference_id").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => ({
+    idempotencyUnique: uniqueIndex(
+      "product_seller_coin_returns_idempotency_key_uk",
+    ).on(t.idempotencyKey),
+    sellerCreatedAtIdx: index(
+      "product_seller_coin_returns_seller_created_at_idx",
+    ).on(t.sourceSellerId, t.createdAt),
+    refundIdx: index("product_seller_coin_returns_refund_id_idx").on(
+      t.sourceRefundId,
+    ),
+    amountsPositiveCheck: check(
+      "product_seller_coin_returns_amounts_positive_ck",
+      sql`${t.coinAmount} > 0 and
+          ${t.coinToCurrencyRate} > 0 and
+          ${t.currencyEquivalent} > 0`,
     ),
   }),
 );
@@ -1843,6 +1924,9 @@ export const coinLedgerJobRunTable = pgTable(
     statusScheduledIdx: index(
       "coin_ledger_job_runs_status_scheduled_for_idx",
     ).on(t.status, t.scheduledFor),
+    scheduledForIdx: index("coin_ledger_job_runs_scheduled_for_idx").on(
+      t.scheduledFor,
+    ),
   }),
 );
 
@@ -2370,6 +2454,11 @@ export type UserCoinTransaction =
   typeof userCoinTransactionTable.$inferSelect;
 export type NewUserCoinTransaction =
   typeof userCoinTransactionTable.$inferInsert;
+
+export type ProductSellerCoinReturnTransaction =
+  typeof productSellerCoinReturnTransactionTable.$inferSelect;
+export type NewProductSellerCoinReturnTransaction =
+  typeof productSellerCoinReturnTransactionTable.$inferInsert;
 
 export type OrderCoinAllocation = typeof orderCoinAllocationTable.$inferSelect;
 export type NewOrderCoinAllocation =

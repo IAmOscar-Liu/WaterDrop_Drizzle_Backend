@@ -7,14 +7,18 @@ import { getLocalDate } from "../lib/coinAccounting";
 import { runCoinLedgerMaintenanceJob } from "../lib/coinLedgerMaintenanceJob";
 import { client } from "../lib/initDB";
 import db from "../lib/initDB";
+import { withPostgresAdvisoryLock } from "../lib/postgresAdvisoryLock";
+import {
+  deleteCoinLedgerJobRuns,
+  expireCollectingRewardCycles,
+} from "../repository/coinLedger";
 import {
   createAdvertisement,
   listAdvertisements,
 } from "../repository/advertisement";
-import {
-  openTreasureBox,
-  processVideoCompletion,
-} from "../repository/treasureBox";
+import { deleteIdempotencyKeys } from "../repository/order";
+import { openTreasureBox, processVideoCompletion } from "../repository/treasureBox";
+import { deleteUnusedDeviceTokens } from "../repository/user";
 
 async function run() {
   assert.equal(process.env.NODE_ENV, "test");
@@ -197,6 +201,52 @@ async function run() {
         ),
       );
 
+    const limitedCycles = await db
+      .insert(schema.treasureBoxRewardCycleTable)
+      .values(
+        [0, 1, 2].map((index) => ({
+          userId: users[index % users.length].id,
+          accountingBusinessDate: staleLocalDate,
+          userLocalDate: staleLocalDate,
+          timezoneSnapshot: "Asia/Taipei",
+          claimDeadlineAt: past,
+        })),
+      )
+      .returning({ id: schema.treasureBoxRewardCycleTable.id });
+    const limitedExpiration = await expireCollectingRewardCycles(2);
+    assert.equal(limitedExpiration.length, 2);
+    const [{ remainingLimitedCycles }] = await db
+      .select({ remainingLimitedCycles: sql<number>`count(*)` })
+      .from(schema.treasureBoxRewardCycleTable)
+      .where(
+        and(
+          inArray(
+            schema.treasureBoxRewardCycleTable.id,
+            limitedCycles.map((cycle) => cycle.id),
+          ),
+          eq(schema.treasureBoxRewardCycleTable.status, "collecting"),
+        ),
+      );
+    assert.equal(Number(remainingLimitedCycles), 1);
+
+    const lockConnection = await client.reserve();
+    try {
+      await lockConnection`
+        select pg_advisory_lock(
+          hashtextextended('waterdrop:coin-ledger-maintenance', 0)
+        )
+      `;
+      const overlappingResult = await runCoinLedgerMaintenanceJob();
+      assert.equal(overlappingResult.skipped, true);
+    } finally {
+      await lockConnection`
+        select pg_advisory_unlock(
+          hashtextextended('waterdrop:coin-ledger-maintenance', 0)
+        )
+      `;
+      lockConnection.release();
+    }
+
     const result = await runCoinLedgerMaintenanceJob();
     assert.equal(result.skipped, false);
     if (!result.skipped) {
@@ -278,6 +328,150 @@ async function run() {
       .from(schema.coinLedgerJobRunTable)
       .where(eq(schema.coinLedgerJobRunTable.jobName, "coin-ledger-maintenance"));
     assert.equal(jobRun.status, "completed");
+
+    const cleanupLockConnection = await client.reserve();
+    try {
+      await cleanupLockConnection`
+        select pg_advisory_lock(
+          hashtextextended('waterdrop:cleanup:integration-test', 0)
+        )
+      `;
+      const overlappingCleanup = await withPostgresAdvisoryLock(
+        "waterdrop:cleanup:integration-test",
+        async () => true,
+      );
+      assert.equal(overlappingCleanup.acquired, false);
+    } finally {
+      await cleanupLockConnection`
+        select pg_advisory_unlock(
+          hashtextextended('waterdrop:cleanup:integration-test', 0)
+        )
+      `;
+      cleanupLockConnection.release();
+    }
+
+    const staleDeviceTokens = await db
+      .insert(schema.deviceTokenTable)
+      .values(
+        [0, 1, 2].map((index) => ({
+          userId: users[0].id,
+          deviceId: `cleanup-stale-${suffix}-${index}`,
+          fcmToken: `cleanup-stale-token-${suffix}-${index}`,
+          lastUsedAt: new Date(Date.now() - 70 * 24 * 60 * 60 * 1_000),
+        })),
+      )
+      .returning({ id: schema.deviceTokenTable.id });
+    const [freshDeviceToken] = await db
+      .insert(schema.deviceTokenTable)
+      .values({
+        userId: users[0].id,
+        deviceId: `cleanup-fresh-${suffix}`,
+        fcmToken: `cleanup-fresh-token-${suffix}`,
+      })
+      .returning({ id: schema.deviceTokenTable.id });
+    const deletedDeviceTokens = await deleteUnusedDeviceTokens(
+      60 * 24 * 60 * 60 * 1_000,
+      2,
+    );
+    assert.equal(deletedDeviceTokens.length, 2);
+    const remainingDeviceTokens = await db
+      .select({ id: schema.deviceTokenTable.id })
+      .from(schema.deviceTokenTable)
+      .where(
+        inArray(schema.deviceTokenTable.id, [
+          ...staleDeviceTokens.map((token) => token.id),
+          freshDeviceToken.id,
+        ]),
+      );
+    assert.equal(remainingDeviceTokens.length, 2);
+    assert.ok(
+      remainingDeviceTokens.some((token) => token.id === freshDeviceToken.id),
+    );
+
+    const staleIdempotencyKeys = await db
+      .insert(schema.idempotencyKeyTable)
+      .values(
+        [0, 1, 2].map((index) => ({
+          key: `cleanup-stale-${suffix}-${index}`,
+          requestPath: "/cleanup-test",
+          requestData: {},
+          status: "completed" as const,
+          updatedAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1_000),
+        })),
+      )
+      .returning({ id: schema.idempotencyKeyTable.id });
+    const [freshIdempotencyKey] = await db
+      .insert(schema.idempotencyKeyTable)
+      .values({
+        key: `cleanup-fresh-${suffix}`,
+        requestPath: "/cleanup-test",
+        requestData: {},
+        status: "completed",
+      })
+      .returning({ id: schema.idempotencyKeyTable.id });
+    const deletedIdempotencyKeys = await deleteIdempotencyKeys(
+      3 * 24 * 60 * 60 * 1_000,
+      2,
+    );
+    assert.equal(deletedIdempotencyKeys.length, 2);
+    const remainingIdempotencyKeys = await db
+      .select({ id: schema.idempotencyKeyTable.id })
+      .from(schema.idempotencyKeyTable)
+      .where(
+        inArray(schema.idempotencyKeyTable.id, [
+          ...staleIdempotencyKeys.map((key) => key.id),
+          freshIdempotencyKey.id,
+        ]),
+      );
+    assert.equal(remainingIdempotencyKeys.length, 2);
+    assert.ok(
+      remainingIdempotencyKeys.some(
+        (key) => key.id === freshIdempotencyKey.id,
+      ),
+    );
+
+    const staleJobRuns = await db
+      .insert(schema.coinLedgerJobRunTable)
+      .values(
+        [0, 1, 2].map((index) => ({
+          jobName: "cleanup-test",
+          scopeKey: `${suffix}-stale-${index}`,
+          status: "completed" as const,
+          scheduledFor: new Date(
+            Date.now() - 100 * 24 * 60 * 60 * 1_000,
+          ),
+          completedAt: new Date(
+            Date.now() - 100 * 24 * 60 * 60 * 1_000,
+          ),
+        })),
+      )
+      .returning({ id: schema.coinLedgerJobRunTable.id });
+    const [freshJobRun] = await db
+      .insert(schema.coinLedgerJobRunTable)
+      .values({
+        jobName: "cleanup-test",
+        scopeKey: `${suffix}-fresh`,
+        status: "completed",
+        scheduledFor: new Date(),
+        completedAt: new Date(),
+      })
+      .returning({ id: schema.coinLedgerJobRunTable.id });
+    const deletedJobRuns = await deleteCoinLedgerJobRuns(
+      90 * 24 * 60 * 60 * 1_000,
+      2,
+    );
+    assert.equal(deletedJobRuns.length, 2);
+    const remainingJobRuns = await db
+      .select({ id: schema.coinLedgerJobRunTable.id })
+      .from(schema.coinLedgerJobRunTable)
+      .where(
+        inArray(schema.coinLedgerJobRunTable.id, [
+          ...staleJobRuns.map((run) => run.id),
+          freshJobRun.id,
+        ]),
+      );
+    assert.equal(remainingJobRuns.length, 2);
+    assert.ok(remainingJobRuns.some((run) => run.id === freshJobRun.id));
 
     const retry = await runCoinLedgerMaintenanceJob();
     assert.equal(retry.skipped, true);

@@ -31,6 +31,8 @@ The update endpoint is `PATCH`, not `PUT`.
 - `refundAmount` must be greater than zero and cannot exceed the historical
   `unitPriceAtSale`.
 - Refund financial values are rounded to two decimal places by the backend.
+- The combined cash value is paid in whole TWD. Any fractional TWD is converted
+  to coins at `NT$1 = 10 coins` when the refund completes.
 - Product price and coin calculations use purchase snapshots. Current product
   price and current user level do not affect the refund.
 - Coin fields are backend-calculated and read-only for frontend clients.
@@ -38,27 +40,39 @@ The update endpoint is `PATCH`, not `PUT`.
 - Quantity and unit refund amount can be changed in the same request that marks
   a refund `completed`.
 
-## Current Cash-Refund Limitation
+## Cash Refund and Fractional-TWD Conversion
 
 Changing a refund to `completed` does **not** currently call ECPay or transfer
 cash automatically.
 
-The backend calculates and stores `paidRefundAmount`, restores inventory, and
-returns eligible coins. Any actual cash payment/refund process is currently
-outside this API.
+The backend calculates and stores `paidRefundAmount`, `cashRefundAmount`, and
+`cashRemainderCoins`, restores inventory, and returns eligible coins. Any actual
+cash payment/refund process is currently outside this API.
 
-`extraRefundAmount` is also stored separately. It is not included in
-`paidRefundAmount`, does not affect coins, and is not sent to ECPay.
-
-If the UI needs to display an expected total cash refund, the current fields
-would normally be presented as:
+`extraRefundAmount` is stored separately and is not included in
+`paidRefundAmount`. It is included when calculating the whole-TWD cash payout
+and fractional remainder. Nothing is sent to ECPay by these APIs.
 
 ```text
-expected cash refund = paidRefundAmount + extraRefundAmount
+raw cash refund = paidRefundAmount + extraRefundAmount
+cashRefundAmount = floor(raw cash refund)
+cashRemainderCoins = (raw cash refund - cashRefundAmount) * 10
 ```
 
-This is a display calculation only; the backend does not expose a combined
-cash-total field or execute that payment.
+`cashRefundAmount` is the authoritative whole-TWD payout field. The conversion
+coins are issued only when the refund becomes `completed`. They are funded by
+the product seller, expire at the end of the next month in the user's timezone,
+and are returned to that product seller's accounting ledger if unused.
+
+For example:
+
+```text
+paidRefundAmount:    NT$94.53
+extraRefundAmount:   NT$0.72
+raw cash refund:     NT$95.25
+cashRefundAmount:    NT$95
+cashRemainderCoins:  2.5 coins
+```
 
 ## Refund Data Model
 
@@ -76,8 +90,14 @@ type RefundCoinMonthSummary = {
 };
 
 type RefundSummary = {
+  // Original order coins reversed by this refund.
   totalCoin: number;
+  // Total coins credited, including cash-remainder conversion coins.
   returnableCoin: number;
+  originalReturnableCoin: number;
+  cashRemainderCoin: number;
+  cashRemainderExpiresAt: string | null;
+  cashRemainderSourceSellerId: string | null;
   coinByMonth: Record<string, RefundCoinMonthSummary>;
 };
 
@@ -98,10 +118,16 @@ type RefundItem = {
   // Separate cash adjustment; not included in paidRefundAmount.
   extraRefundAmount: number;
 
+  // Whole-TWD payout after combining the two cash components.
+  cashRefundAmount: number | null;
+
+  // Fractional TWD converted at NT$1 = 10 coins.
+  cashRemainderCoins: number;
+
   // Proportional coin amount associated with this refund.
   coins: number;
 
-  // Coins actually eligible to return when completed.
+  // Total coins actually credited when completed.
   returnableCoins: number | null;
 
   metadata: Record<string, unknown> | null;
@@ -118,9 +144,11 @@ type RefundItem = {
 | `quantity` | Number of purchased units covered by this refund | Yes, before terminal status |
 | `refundAmount` | Per-unit product refund amount | Yes, before terminal status |
 | `paidRefundAmount` | Total product cash portion after coin deduction | No |
-| `extraRefundAmount` | Additional separate adjustment | Yes |
+| `extraRefundAmount` | Additional separate adjustment | Yes, before terminal status |
+| `cashRefundAmount` | Whole-TWD cash payout after combining both cash components | No |
+| `cashRemainderCoins` | Fractional cash value converted at 10 coins per TWD | No |
 | `coins` | Proportional coins associated with the refund | No |
-| `returnableCoins` | Non-expired coins actually returned on completion | No |
+| `returnableCoins` | Total coins actually credited on completion | No |
 | `summary` | Completion-time coin breakdown | No |
 
 `paidRefundAmount` already includes `quantity`. Do not multiply it by quantity
@@ -173,6 +201,15 @@ paidRefundAmount =
 
 coins =
   order.discountCoin * refund subtotal ratio
+
+raw cash refund =
+  paidRefundAmount + extraRefundAmount
+
+cashRefundAmount =
+  floor(raw cash refund)
+
+cashRemainderCoins =
+  (raw cash refund - cashRefundAmount) * 10
 ```
 
 Negative cash-paid ratios are clamped to zero. Persisted refund and coin values
@@ -217,14 +254,22 @@ Separate extra adjustment:
 
 Expected cash display, if needed:
   NT$400 + NT$60 = NT$460
+
+Whole-TWD cash payout:
+  NT$460
+
+Cash-remainder conversion:
+  0 coins
 ```
 
 When completed:
 
 - stock is increased by `2`;
 - up to `1,000` coins are returned;
+- any fractional TWD is issued as a separate product-seller-funded coin lot;
 - expired source-month coins are not added back to the user's live balance;
-- `returnableCoins` records the amount actually returned;
+- `returnableCoins` records original coins restored plus newly issued
+  cash-remainder coins;
 - `summary.coinByMonth` explains returned versus expired coins.
 
 ### Multiple partial refunds
@@ -270,10 +315,13 @@ When status actually changes to `completed`, one database transaction:
 3. restocks the purchased product variant;
 4. calculates the proportional coin allocation from order snapshots;
 5. returns non-expired coins to the user;
-6. reverses corresponding monthly `coinsSpent` values;
-7. saves `returnableCoins` and `summary`;
-8. updates the refund status;
-9. inserts a refund log.
+6. floors the combined cash refund to whole TWD;
+7. issues the fractional cash remainder as a product-seller-funded coin lot;
+8. reverses corresponding monthly `coinsSpent` values;
+9. saves `cashRefundAmount`, `cashRemainderCoins`, `returnableCoins`, and
+   `summary`;
+10. updates the refund status;
+11. inserts a refund log.
 
 Push/in-app notification work is triggered after the transaction. No
 status-change email is sent.
@@ -489,12 +537,12 @@ type UpdateAdminRefundBody = {
 | `reason` | Non-empty when supplied |
 | `note` | Refund-level note; independent from logs |
 | `message` | Non-empty refund-log message; does not update `note` |
-| `extraRefundAmount` | Non-negative separate adjustment, rounded to two decimals |
+| `extraRefundAmount` | Non-negative separate adjustment, rounded to two decimals; mutable only while current status is pending or processing |
 | `metadata` | JSON object or `null` |
 
-The backend currently allows `reason`, `note`, `extraRefundAmount`, and
-`metadata` to be edited even after a refund is terminal. Quantity,
-`refundAmount`, and status cannot be changed after `completed` or `cancelled`.
+The backend allows `reason`, `note`, and `metadata` to be edited even after a
+refund is terminal. Quantity, `refundAmount`, `extraRefundAmount`, and status
+cannot be changed after `completed` or `cancelled`.
 
 ### Complete and change quantity atomically
 
@@ -604,7 +652,7 @@ Common business error reasons include:
 - `Refund amount exceeds unit price at sale`
 - `Cannot change status once refund is completed`
 - `Cannot change status once refund is cancelled`
-- `Cannot change quantity or refund amount once refund is completed or cancelled`
+- `Cannot change quantity, refund amount, or extra refund amount once refund is completed or cancelled`
 
 ## Recommended Frontend Behavior
 
@@ -612,11 +660,13 @@ Common business error reasons include:
 - Display a calculated product refund total as
   `refundAmount * quantity` only when useful; do not confuse it with
   `paidRefundAmount`.
-- Treat `paidRefundAmount`, `coins`, `returnableCoins`, and `summary` as
-  read-only.
+- Treat `paidRefundAmount`, `cashRefundAmount`, `cashRemainderCoins`, `coins`,
+  `returnableCoins`, and `summary` as read-only.
 - Show `returnableCoins` only after completion; before completion it may be
   `null`.
-- Display `extraRefundAmount` separately.
+- Display `paidRefundAmount` and `extraRefundAmount` as calculation components,
+  but use `cashRefundAmount` as the actual whole-TWD cash payout.
+- Display `cashRemainderCoins` separately from restored order coins.
 - Use `variantAtSale.price` for purchased price and `variantAtSale.name` for
   historical variant display.
 - Do not use the current product price for refund limits or historical display.

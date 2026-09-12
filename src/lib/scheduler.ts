@@ -28,8 +28,27 @@ import path from "path";
 import { existsSync } from "fs";
 import { isCoinLedgerEnabled } from "./coinAccounting";
 import { runCoinLedgerMaintenanceJob } from "./coinLedgerMaintenanceJob";
+import { deleteCoinLedgerJobRuns } from "../repository/coinLedger";
+import { withPostgresAdvisoryLock } from "./postgresAdvisoryLock";
 
 const RESET_BATCH_SIZE = 100; // Process 100 users at a time. Adjust as needed.
+const DAY_MS = 24 * 60 * 60 * 1_000;
+
+function positiveIntegerEnv(name: string, fallback: number) {
+  const value = Number(process.env[name] ?? fallback);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer.`);
+  }
+  return value;
+}
+
+function cleanupBatchSize() {
+  return positiveIntegerEnv("DATABASE_CLEANUP_BATCH_SIZE", 5_000);
+}
+
+function retentionMs(name: string, fallbackDays: number) {
+  return positiveIntegerEnv(name, fallbackDays) * DAY_MS;
+}
 
 // Schedule a task to run every hour to check for users in timezones at midnight.
 export const dailyResetTask = cron.schedule(
@@ -318,12 +337,24 @@ export const deleteUnusedDeviceTokensTask = cron.schedule(
     );
 
     try {
-      const result = await deleteUnusedDeviceTokens(60 * 24 * 60 * 60 * 1000); // 2 months ago
-      console.log(`Deleted ${result.length} unused device tokens.`);
+      const cleanup = await withPostgresAdvisoryLock(
+        "waterdrop:cleanup:device-tokens",
+        () =>
+          deleteUnusedDeviceTokens(
+            retentionMs("DEVICE_TOKEN_RETENTION_DAYS", 60),
+            cleanupBatchSize(),
+          ),
+      );
+      if (!cleanup.acquired) {
+        console.log("Device-token cleanup skipped because another instance is running it.");
+        return;
+      }
+      console.log(`Deleted ${cleanup.value.length} unused device tokens.`);
     } catch (error) {
       console.error(`Error during deleteUnusedDeviceTokensTask:`, error);
     }
   },
+  { noOverlap: true },
 );
 
 export const expireOrdersTask = cron.schedule(
@@ -353,7 +384,7 @@ export const expireOrdersTask = cron.schedule(
 // settlement uses Asia/Taipei dates, and old terminal assignments are purged
 // according to their configured audit-retention periods.
 export const coinLedgerMaintenanceTask = cron.schedule(
-  "*/10 * * * *",
+  "*/30 * * * *",
   async () => {
     if (process.env.NO_CRON === "true" || !isCoinLedgerEnabled()) return;
     try {
@@ -362,7 +393,32 @@ export const coinLedgerMaintenanceTask = cron.schedule(
       console.error("Error during coin ledger maintenance:", error);
     }
   },
-  { timezone: "Asia/Taipei" },
+  { timezone: "Asia/Taipei", noOverlap: true },
+);
+
+export const deleteCoinLedgerJobRunsTask = cron.schedule(
+  "15 3 * * *",
+  async () => {
+    if (process.env.NO_CRON === "true" || !isCoinLedgerEnabled()) return;
+    try {
+      const cleanup = await withPostgresAdvisoryLock(
+        "waterdrop:cleanup:coin-ledger-job-runs",
+        () =>
+          deleteCoinLedgerJobRuns(
+            retentionMs("COIN_LEDGER_JOB_RUN_RETENTION_DAYS", 90),
+            cleanupBatchSize(),
+          ),
+      );
+      if (!cleanup.acquired) {
+        console.log("Coin-ledger job-run cleanup skipped because another instance is running it.");
+        return;
+      }
+      console.log(`Deleted ${cleanup.value.length} old coin-ledger job runs.`);
+    } catch (error) {
+      console.error("Error during coin-ledger job-run cleanup:", error);
+    }
+  },
+  { timezone: "Asia/Taipei", noOverlap: true },
 );
 
 export const pollLogisticsTradeInfoTask = cron.schedule(
@@ -445,10 +501,22 @@ export const deleteIdempotencyKeysTask = cron.schedule(
     );
 
     try {
-      await deleteIdempotencyKeys(3 * 24 * 60 * 60 * 1000); // 3 days ago
-      console.log("Expired idempotency keys deleted.");
+      const cleanup = await withPostgresAdvisoryLock(
+        "waterdrop:cleanup:idempotency-keys",
+        () =>
+          deleteIdempotencyKeys(
+            retentionMs("IDEMPOTENCY_KEY_RETENTION_DAYS", 3),
+            cleanupBatchSize(),
+          ),
+      );
+      if (!cleanup.acquired) {
+        console.log("Idempotency-key cleanup skipped because another instance is running it.");
+        return;
+      }
+      console.log(`Deleted ${cleanup.value.length} expired idempotency keys.`);
     } catch (error) {
       console.error(`Error during deleteIdempotencyKeysTask:`, error);
     }
   },
+  { noOverlap: true },
 );

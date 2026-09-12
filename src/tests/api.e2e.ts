@@ -9,6 +9,7 @@ import * as schema from "../db/schema";
 import { getLocalDate, getLocalMonth } from "../lib/coinAccounting";
 import db, { client } from "../lib/initDB";
 import { generateToken } from "../lib/token";
+import { expireUserCoinLots } from "../repository/coinLedger";
 import ecpayService from "../services/ecpay";
 
 type ApiEnvelope = {
@@ -687,10 +688,15 @@ async function run() {
           orderItemId: order.items[0].id,
           accountId: seller.id,
           quantity: 1,
+          refundAmount: 99.5,
+          extraRefundAmount: 0.72,
           reason: "API refund coin restoration test",
         },
       }),
     );
+    assert.equal(refund.paidRefundAmount, 94.53);
+    assert.equal(refund.cashRefundAmount, 95);
+    assert.equal(refund.cashRemainderCoins, 2.5);
     await waitFor(async () => {
       const chatRoom = await db.query.chatRoomTable.findFirst({
         where: eq(schema.chatRoomTable.orderId, order.id),
@@ -698,6 +704,20 @@ async function run() {
       });
       return Boolean(chatRoom?.messages.length);
     }, "refund chat message");
+    const refundChatRoom = await db.query.chatRoomTable.findFirst({
+      where: eq(schema.chatRoomTable.orderId, order.id),
+      with: { messages: true },
+    });
+    const refundMessages = refundChatRoom?.messages ?? [];
+    const refundChatContent =
+      refundMessages[refundMessages.length - 1]?.content ?? "";
+    assert.match(refundChatContent, /退款金額：NT\$ 95/);
+    assert.match(refundChatContent, /退還金幣：52\.25/);
+    assert.match(
+      refundChatContent,
+      /退款金額的小數部分將依 NT\$1 = 10 金幣轉換/,
+    );
+    assert.doesNotMatch(refundChatContent, /原始現金退款|實際現金退款/);
     const completedRefund = expectSuccess(
       await request(`/api/admin/refund/${refund.id}/status`, {
         method: "PATCH",
@@ -708,15 +728,70 @@ async function run() {
         },
       }),
     );
-    assert.equal(completedRefund.returnableCoins, 50);
+    assert.equal(completedRefund.paidRefundAmount, 94.53);
+    assert.equal(completedRefund.extraRefundAmount, 0.72);
+    assert.equal(completedRefund.cashRefundAmount, 95);
+    assert.equal(completedRefund.cashRemainderCoins, 2.5);
+    assert.equal(completedRefund.coins, 49.75);
+    assert.equal(completedRefund.returnableCoins, 52.25);
+    assert.equal(completedRefund.summary.originalReturnableCoin, 49.75);
+    assert.equal(completedRefund.summary.cashRemainderCoin, 2.5);
+    assert.equal(
+      completedRefund.summary.cashRemainderSourceSellerId,
+      seller.id,
+    );
     assert.deepEqual(completedRefund.summary.coinByMonth, {
       [previousMonth]: { coin: 2, expired: false, returnedCoin: 2 },
-      [currentMonth]: { coin: 48, expired: false, returnedCoin: 48 },
+      [currentMonth]: { coin: 47.75, expired: false, returnedCoin: 47.75 },
     });
+    const terminalExtraUpdate = await request(
+      `/api/admin/refund/${refund.id}/status`,
+      {
+        method: "PATCH",
+        token: sellerToken,
+        body: { extraRefundAmount: 1 },
+      },
+    );
+    assert.equal(terminalExtraUpdate.status, 400);
+    const [conversionLot] = await db
+      .select()
+      .from(schema.userCoinLotTable)
+      .where(eq(schema.userCoinLotTable.sourceRefundId, refund.id));
+    assert.ok(conversionLot);
+    assert.equal(conversionLot.sourceSellerId, seller.id);
+    assert.equal(conversionLot.originalAmount, "2.50");
+    const [conversionTransaction] = await db
+      .select()
+      .from(schema.userCoinTransactionTable)
+      .where(eq(schema.userCoinTransactionTable.lotId, conversionLot.id));
+    assert.equal(conversionTransaction.type, "cash_refund_conversion");
     const refundedUser = expectSuccess(
       await request("/api/auth/profile", { token: orderUser.token }),
     ) as schema.User;
-    assert.equal(refundedUser.coins, 50);
+    assert.equal(refundedUser.coins, 52.25);
+
+    await db
+      .update(schema.userCoinLotTable)
+      .set({ expiresAt: new Date(Date.now() - 1_000) })
+      .where(eq(schema.userCoinLotTable.id, conversionLot.id));
+    const expiredConversionLots = await expireUserCoinLots();
+    assert.ok(expiredConversionLots.includes(conversionLot.id));
+    const [sellerReturn] = await db
+      .select()
+      .from(schema.productSellerCoinReturnTransactionTable)
+      .where(
+        eq(
+          schema.productSellerCoinReturnTransactionTable.userCoinLotId,
+          conversionLot.id,
+        ),
+      );
+    assert.equal(sellerReturn.sourceSellerId, seller.id);
+    assert.equal(sellerReturn.reason, "expired_unused");
+    assert.equal(sellerReturn.coinAmount, "2.50");
+    const userAfterConversionExpiry = expectSuccess(
+      await request("/api/auth/profile", { token: orderUser.token }),
+    ) as schema.User;
+    assert.equal(userAfterConversionExpiry.coins, 49.75);
 
     console.log("API end-to-end tests passed");
   } finally {

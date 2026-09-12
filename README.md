@@ -114,12 +114,27 @@ Advertisement-assignment cleanup accepts these optional environment settings:
 ```txt
 ADVERTISEMENT_ASSIGNMENT_COMPLETED_RETENTION_DAYS=365
 ADVERTISEMENT_ASSIGNMENT_EXPIRED_RETENTION_DAYS=7
+COIN_LEDGER_MAINTENANCE_CONCURRENCY=5
+DATABASE_CLEANUP_BATCH_SIZE=5000
+DEVICE_TOKEN_RETENTION_DAYS=60
+IDEMPOTENCY_KEY_RETENTION_DAYS=3
+COIN_LEDGER_JOB_RUN_RETENTION_DAYS=90
 ```
 
 The completed retention is the audit window. Leftover `issued` assignments are
 first marked `expired` after their snapshotted user-local date ends, then use the
 shorter expired retention before physical deletion. Both values are
 non-negative whole days.
+
+Coin-ledger maintenance uses bounded concurrency for independent records. Set
+`COIN_LEDGER_MAINTENANCE_CONCURRENCY` to a positive whole number that does not
+exceed the available PostgreSQL connection capacity.
+
+Operational cleanup deletes at most `DATABASE_CLEANUP_BATCH_SIZE` rows per
+table and run. Device tokens and idempotency keys retain their existing 60-day
+and 3-day defaults. Coin-ledger job-run records are diagnostic rather than
+financial data and default to 90 days. Cleanup jobs use both in-process overlap
+protection and PostgreSQL advisory locks across server instances.
 
 ## Essential Commands
 

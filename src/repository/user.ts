@@ -1,5 +1,6 @@
 import {
   and,
+  asc,
   count,
   eq,
   getTableColumns,
@@ -232,15 +233,31 @@ export async function clearDeviceToken({
   return deletedByUserAndDevice;
 }
 
-export async function deleteUnusedDeviceTokens(unusedInMs: number) {
+export async function deleteUnusedDeviceTokens(
+  unusedInMs: number,
+  limit = 5_000,
+) {
+  if (!Number.isInteger(limit) || limit <= 0) {
+    throw new Error("Device-token cleanup limit must be a positive integer.");
+  }
   const cutoffTime = new Date(Date.now() - unusedInMs);
-
-  const deletedTokens = await db
-    .delete(schema.deviceTokenTable)
+  const candidates = await db
+    .select({ id: schema.deviceTokenTable.id })
+    .from(schema.deviceTokenTable)
     .where(lt(schema.deviceTokenTable.lastUsedAt, cutoffTime))
-    .returning();
+    .orderBy(asc(schema.deviceTokenTable.lastUsedAt))
+    .limit(limit);
+  if (candidates.length === 0) return [];
 
-  return deletedTokens;
+  return db
+    .delete(schema.deviceTokenTable)
+    .where(
+      inArray(
+        schema.deviceTokenTable.id,
+        candidates.map((candidate) => candidate.id),
+      ),
+    )
+    .returning();
 }
 
 export async function setMonthlyCoinExpire(userIds: string[], month: string) {

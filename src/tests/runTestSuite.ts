@@ -51,6 +51,7 @@ function runNpmScript(script: string, databaseUrl: string) {
         NODE_ENV: "test",
         NO_CRON: "true",
         COIN_LEDGER_ENABLED: "true",
+        COIN_LEDGER_MAINTENANCE_CONCURRENCY: "2",
         DATABASE_URL: databaseUrl,
         TEST_DATABASE_MANAGED: "true",
       },

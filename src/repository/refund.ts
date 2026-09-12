@@ -25,7 +25,10 @@ import db from "../lib/initDB";
 import { isAccountAdmin } from "./account";
 import { minimumVariantPrice } from "./utils/product";
 import { isCoinLedgerEnabled } from "../lib/coinAccounting";
-import { refundOrderCoinsWithTx } from "./coinLedger";
+import {
+  issueRefundCashRemainderCoinsWithTx,
+  refundOrderCoinsWithTx,
+} from "./coinLedger";
 import {
   compactConditions,
   getPagination,
@@ -241,6 +244,20 @@ function calculateRefundFinancials(
   };
 }
 
+function calculateCashRefundBreakdown(
+  paidRefundAmount: number,
+  extraRefundAmount: number,
+) {
+  const rawCashRefundAmount = roundToTwoDecimals(
+    paidRefundAmount + extraRefundAmount,
+  );
+  const cashRefundAmount = Math.floor(rawCashRefundAmount + Number.EPSILON);
+  const cashRemainderCoins = roundToTwoDecimals(
+    (rawCashRefundAmount - cashRefundAmount) * 10,
+  );
+  return { rawCashRefundAmount, cashRefundAmount, cashRemainderCoins };
+}
+
 function validateRefundQuantityAndAmount({
   orderItem,
   refundedQuantity,
@@ -305,7 +322,8 @@ function formatRefundChatMessage({
   productName,
   variantName,
   quantity,
-  paidRefundAmount,
+  cashRefundAmount,
+  cashRemainderCoins,
   coins,
   reason,
   note,
@@ -314,7 +332,8 @@ function formatRefundChatMessage({
   productName: string;
   variantName?: string | null;
   quantity: number;
-  paidRefundAmount: number | null;
+  cashRefundAmount: number | null;
+  cashRemainderCoins: number;
   coins: number;
   reason?: string | null;
   note?: string | null;
@@ -328,6 +347,9 @@ function formatRefundChatMessage({
     minute: "2-digit",
     hour12: false,
   });
+  const displayedRefundCoins = roundToTwoDecimals(
+    coins + cashRemainderCoins,
+  ).toLocaleString("en-US", { maximumFractionDigits: 2 });
 
   return [
     "【退貨申請】",
@@ -337,10 +359,11 @@ function formatRefundChatMessage({
       ? [`• 商品規格：${variantName.trim()}`]
       : []),
     `• 退貨數量：${quantity}`,
-    `• 退款金額：NT$ ${formatInteger(paidRefundAmount)}`,
-    `• 退還金幣：${formatInteger(coins)}`,
+    `• 退款金額：NT$ ${formatInteger(cashRefundAmount)}`,
+    `• 退還金幣：${displayedRefundCoins}`,
     `• 退貨原因：${reason || "無"}`,
     `• 備註：${note || "無"}`,
+    "※ 退款金額的小數部分將依 NT$1 = 10 金幣轉換，並合併計入退還金幣。",
     "※ 以上為退貨申請草稿資訊，後續可能調整，請至訂單記錄查詢最新退款內容。",
   ].join("\n");
 }
@@ -580,6 +603,11 @@ export async function createRefundWithChatContext(
       item.quantity,
       refundAmount,
     );
+    const extraRefundAmount = roundToTwoDecimals(item.extraRefundAmount ?? 0);
+    const cashBreakdown = calculateCashRefundBreakdown(
+      refundFinancials.paidRefundAmount,
+      extraRefundAmount,
+    );
 
     const refundItem = {
       orderItemId: item.orderItemId,
@@ -588,7 +616,9 @@ export async function createRefundWithChatContext(
       note: item.note,
       refundAmount,
       paidRefundAmount: refundFinancials.paidRefundAmount,
-      extraRefundAmount: roundToTwoDecimals(item.extraRefundAmount ?? 0),
+      extraRefundAmount,
+      cashRefundAmount: cashBreakdown.cashRefundAmount,
+      cashRemainderCoins: cashBreakdown.cashRemainderCoins,
       coins: refundFinancials.coins,
       metadata: item.metadata,
     };
@@ -635,7 +665,8 @@ export async function createRefundWithChatContext(
               productName: product.name,
               variantName: orderItem.variantNameAtSale,
               quantity: newRefundItem.quantity,
-              paidRefundAmount: newRefundItem.paidRefundAmount,
+              cashRefundAmount: newRefundItem.cashRefundAmount,
+              cashRemainderCoins: newRefundItem.cashRemainderCoins,
               coins: newRefundItem.coins,
               reason: newRefundItem.reason,
               note: newRefundItem.note,
@@ -741,6 +772,8 @@ export async function updateRefundItemStatus(
       updates.status !== undefined && refundItem.status !== updates.status;
     const financialChanged =
       updates.quantity !== undefined || updates.refundAmount !== undefined;
+    const cashBreakdownChanged =
+      financialChanged || updates.extraRefundAmount !== undefined;
     const latestLog =
       updates.message !== undefined
         ? await tx.query.refundLogTable.findFirst({
@@ -772,11 +805,11 @@ export async function updateRefundItemStatus(
     }
 
     if (
-      financialChanged &&
+      cashBreakdownChanged &&
       (refundItem.status === "completed" || refundItem.status === "cancelled")
     ) {
       throw new CustomError(
-        "Cannot change quantity or refund amount once refund is completed or cancelled",
+        "Cannot change quantity, refund amount, or extra refund amount once refund is completed or cancelled",
         400,
       );
     }
@@ -825,11 +858,13 @@ export async function updateRefundItemStatus(
           quantity: number;
           refundAmount: number;
           paidRefundAmount: number;
+          cashRefundAmount: number;
+          cashRemainderCoins: number;
           coins: number;
         }
       | undefined;
 
-    if (financialChanged) {
+    if (cashBreakdownChanged) {
       const context = await getLockedOrderContext();
       const quantity = updates.quantity ?? refundItem.quantity;
       const refundAmount = roundToTwoDecimals(
@@ -838,34 +873,49 @@ export async function updateRefundItemStatus(
           context.orderItem.unitPriceAtSale,
       );
 
-      const [refundedRow] = await tx
-        .select({
-          quantity: sql<number>`coalesce(sum(${schema.refundItemTable.quantity}), 0)`,
-        })
-        .from(schema.refundItemTable)
-        .where(
-          and(
-            eq(schema.refundItemTable.orderItemId, refundItem.orderItemId),
-            ne(schema.refundItemTable.id, refundItem.id),
-            ne(schema.refundItemTable.status, "cancelled"),
-          ),
-        );
+      if (financialChanged) {
+        const [refundedRow] = await tx
+          .select({
+            quantity: sql<number>`coalesce(sum(${schema.refundItemTable.quantity}), 0)`,
+          })
+          .from(schema.refundItemTable)
+          .where(
+            and(
+              eq(schema.refundItemTable.orderItemId, refundItem.orderItemId),
+              ne(schema.refundItemTable.id, refundItem.id),
+              ne(schema.refundItemTable.status, "cancelled"),
+            ),
+          );
 
-      const errors = validateRefundQuantityAndAmount({
-        orderItem: context.orderItem,
-        refundedQuantity: Number(refundedRow.quantity),
-        quantity,
-        refundAmount,
-      });
+        const errors = validateRefundQuantityAndAmount({
+          orderItem: context.orderItem,
+          refundedQuantity: Number(refundedRow.quantity),
+          quantity,
+          refundAmount,
+        });
 
-      if (errors.length > 0) {
-        throw new CustomError(JSON.stringify({ error: errors }), 400);
+        if (errors.length > 0) {
+          throw new CustomError(JSON.stringify({ error: errors }), 400);
+        }
       }
 
+      const refundFinancials = calculateRefundFinancials(
+        context.order,
+        quantity,
+        refundAmount,
+      );
+      const cashBreakdown = calculateCashRefundBreakdown(
+        refundFinancials.paidRefundAmount,
+        roundToTwoDecimals(
+          updates.extraRefundAmount ?? refundItem.extraRefundAmount,
+        ),
+      );
       financialUpdates = {
         quantity,
         refundAmount,
-        ...calculateRefundFinancials(context.order, quantity, refundAmount),
+        ...refundFinancials,
+        cashRefundAmount: cashBreakdown.cashRefundAmount,
+        cashRemainderCoins: cashBreakdown.cashRemainderCoins,
       };
     }
 
@@ -878,6 +928,10 @@ export async function updateRefundItemStatus(
     const summary: {
       totalCoin: number;
       returnableCoin: number;
+      originalReturnableCoin: number;
+      cashRemainderCoin: number;
+      cashRemainderExpiresAt: string | null;
+      cashRemainderSourceSellerId: string | null;
       coinByMonth: Record<
         string,
         {
@@ -889,8 +943,15 @@ export async function updateRefundItemStatus(
     } = {
       totalCoin: 0,
       returnableCoin: 0,
+      originalReturnableCoin: 0,
+      cashRemainderCoin: 0,
+      cashRemainderExpiresAt: null,
+      cashRemainderSourceSellerId: null,
       coinByMonth: {},
     };
+    let completionCashBreakdown:
+      | ReturnType<typeof calculateCashRefundBreakdown>
+      | undefined;
 
     if (statusChanged && updates.status === "completed") {
       // 4.1 Find the refunded order item.
@@ -899,6 +960,19 @@ export async function updateRefundItemStatus(
         financialUpdates?.quantity ?? refundItem.quantity;
       const effectiveRefundAmount = roundToTwoDecimals(
         financialUpdates?.refundAmount ?? refundItem.refundAmount ?? 0,
+      );
+      const effectiveFinancials = calculateRefundFinancials(
+        context.order,
+        effectiveQuantity,
+        effectiveRefundAmount,
+      );
+      completionCashBreakdown = calculateCashRefundBreakdown(
+        financialUpdates?.paidRefundAmount ??
+          refundItem.paidRefundAmount ??
+          effectiveFinancials.paidRefundAmount,
+        roundToTwoDecimals(
+          updates.extraRefundAmount ?? refundItem.extraRefundAmount,
+        ),
       );
 
       if (!context.orderItem.productVariantId) {
@@ -914,6 +988,12 @@ export async function updateRefundItemStatus(
       if (!variant || variant.productId !== context.orderItem.productId) {
         throw new CustomError("Product variant not found", 404);
       }
+      const [product] = await tx
+        .select({ sellerId: schema.productTable.sellerId })
+        .from(schema.productTable)
+        .where(eq(schema.productTable.id, context.orderItem.productId))
+        .for("update");
+      if (!product) throw new CustomError("Product not found", 404);
 
       await tx
         .update(schema.productVariantTable)
@@ -942,6 +1022,7 @@ export async function updateRefundItemStatus(
           });
           summary.totalCoin = ledgerSummary.totalCoin;
           summary.returnableCoin = ledgerSummary.returnableCoin;
+          summary.originalReturnableCoin = ledgerSummary.returnableCoin;
           summary.coinByMonth = ledgerSummary.coinByMonth;
         } else {
         // 4.4 Build the coin refund amount by month.
@@ -1026,6 +1107,7 @@ export async function updateRefundItemStatus(
           // 4.8 Save a detailed refund coin summary for future reference.
           summary.totalCoin = coinSum;
           summary.returnableCoin = returnableCoinSum;
+          summary.originalReturnableCoin = returnableCoinSum;
           summary.coinByMonth = Object.fromEntries(
             Object.entries(coinUpdates).map(([month, coins]) => {
               const expired = expiredByMonth.get(month) !== false;
@@ -1080,6 +1162,28 @@ export async function updateRefundItemStatus(
         }
         }
       }
+
+      if (completionCashBreakdown.cashRemainderCoins > 0) {
+        if (!isCoinLedgerEnabled()) {
+          throw new CustomError(
+            "Coin ledger must be enabled to convert fractional TWD refunds to coins",
+            503,
+          );
+        }
+        const conversion = await issueRefundCashRemainderCoinsWithTx(tx, {
+          refundId: refundItem.id,
+          userId: context.order.userId,
+          sourceSellerId: product.sellerId,
+          amount: completionCashBreakdown.cashRemainderCoins,
+        });
+        summary.cashRemainderCoin = conversion.creditedCoin;
+        summary.cashRemainderExpiresAt =
+          conversion.lot?.expiresAt.toISOString() ?? null;
+        summary.cashRemainderSourceSellerId = product.sellerId;
+        summary.returnableCoin = roundToTwoDecimals(
+          summary.returnableCoin + conversion.creditedCoin,
+        );
+      }
     }
 
     // 5. Status, reason, note, and extra refund amount are mutable.
@@ -1095,6 +1199,8 @@ export async function updateRefundItemStatus(
                 quantity: financialUpdates.quantity,
                 refundAmount: financialUpdates.refundAmount,
                 paidRefundAmount: financialUpdates.paidRefundAmount,
+                cashRefundAmount: financialUpdates.cashRefundAmount,
+                cashRemainderCoins: financialUpdates.cashRemainderCoins,
                 coins: financialUpdates.coins,
               }
             : {}),
@@ -1111,7 +1217,16 @@ export async function updateRefundItemStatus(
             ? { metadata: updates.metadata }
             : {}),
           ...(statusChanged && updates.status === "completed"
-            ? { returnableCoins: summary.returnableCoin, summary }
+            ? {
+                cashRefundAmount:
+                  completionCashBreakdown?.cashRefundAmount ??
+                  refundItem.cashRefundAmount,
+                cashRemainderCoins:
+                  completionCashBreakdown?.cashRemainderCoins ??
+                  refundItem.cashRemainderCoins,
+                returnableCoins: summary.returnableCoin,
+                summary,
+              }
             : {}),
           updatedAt: new Date(),
         })

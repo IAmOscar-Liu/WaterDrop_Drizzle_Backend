@@ -12,7 +12,7 @@ const router = Router();
  *   post:
  *     tags: [Refund]
  *     summary: Create a refund request for the authenticated user
- *     description: A successful request automatically creates an initial pending refund log with message 申請退貨, then sends a fire-and-forget push notification and email linked to the order detail page.
+ *     description: A successful request automatically creates an initial pending refund log with message 申請退貨, then sends a fire-and-forget push notification and email linked to the order detail page. The response includes cashRefundAmount, the whole-TWD cash payout, and cashRemainderCoins, the fractional TWD remainder converted at NT$1 = 10 coins. Conversion coins are credited only after the refund is completed.
  *     security:
  *       - bearerAuth: []
  *     requestBody:

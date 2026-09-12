@@ -235,76 +235,60 @@ export async function listAdvertisements({
       : undefined,
   ]);
 
-  // Query for total count
-  const totalResult = await db
-    .select({ total: count() })
-    .from(schema.advertisementTable)
-    .leftJoin(
-      schema.productTable,
-      eq(schema.advertisementTable.productId, schema.productTable.id),
-    )
-    .leftJoin(
-      schema.advertisementStatsTable,
-      eq(
-        schema.advertisementTable.id,
-        schema.advertisementStatsTable.advertisementId,
-      ),
-    )
-    .where(whereClause);
+  const [totalResult, results] = await Promise.all([
+    db
+      .select({ total: count() })
+      .from(schema.advertisementTable)
+      .leftJoin(
+        schema.productTable,
+        eq(schema.advertisementTable.productId, schema.productTable.id),
+      )
+      .leftJoin(
+        schema.advertisementStatsTable,
+        eq(
+          schema.advertisementTable.id,
+          schema.advertisementStatsTable.advertisementId,
+        ),
+      )
+      .where(whereClause),
+    db
+      .select()
+      .from(schema.advertisementTable)
+      .leftJoin(
+        schema.productTable,
+        eq(schema.advertisementTable.productId, schema.productTable.id),
+      )
+      .leftJoin(
+        schema.advertisementStatsTable,
+        eq(
+          schema.advertisementTable.id,
+          schema.advertisementStatsTable.advertisementId,
+        ),
+      )
+      .where(whereClause)
+      .limit(pagination.limit)
+      .offset(pagination.offset)
+      .orderBy(() => sql`random()`),
+  ]);
 
   const total = totalResult[0].total;
   const totalPages = getTotalPages(total, pagination.limit);
 
-  // Query for the paginated advertisements with their related product
-  const results = await db
-    .select()
-    .from(schema.advertisementTable)
-    .leftJoin(
-      schema.productTable,
-      eq(schema.advertisementTable.productId, schema.productTable.id),
-    )
-    .leftJoin(
-      schema.advertisementStatsTable,
-      eq(
-        schema.advertisementTable.id,
-        schema.advertisementStatsTable.advertisementId,
-      ),
-    )
-    .where(whereClause)
-    .limit(pagination.limit)
-    .offset(pagination.offset)
-    .orderBy(() => sql`random()`);
-
   const productIds = results
     .map((result) => result.products?.id)
     .filter((productId): productId is string => Boolean(productId));
-  const variants = productIds.length
-    ? await db.query.productVariantTable.findMany({
+  const variantsPromise = productIds.length
+    ? db.query.productVariantTable.findMany({
         where: and(
           inArray(schema.productVariantTable.productId, productIds),
           eq(schema.productVariantTable.status, "active"),
         ),
         orderBy: (variants, { asc }) => [asc(variants.sortOrder)],
       })
-    : [];
-  const variantsByProductId = new Map<string, typeof variants>();
-  variants.forEach((variant) => {
-    const productVariants = variantsByProductId.get(variant.productId) ?? [];
-    productVariants.push(variant);
-    variantsByProductId.set(variant.productId, productVariants);
-  });
+    : Promise.resolve([] as schema.ProductVariant[]);
+  const assignmentPromise = (async () => {
+    if (!userId || results.length === 0 || !isCoinLedgerEnabled()) return;
 
-  const advertisements = results.map((r) => ({
-    ...r.advertisements,
-    product: r.products
-      ? withProductVariantAggregates({
-          ...r.products,
-          variants: variantsByProductId.get(r.products.id) ?? [],
-        })
-      : r.products,
-  }));
-
-  if (userId && advertisements.length > 0 && isCoinLedgerEnabled()) {
     const [user] = await db
       .select({ timezone: schema.userTable.timezone })
       .from(schema.userTable)
@@ -333,7 +317,24 @@ export async function listAdvertisements({
         .values(values)
         .onConflictDoNothing();
     }
-  }
+  })();
+  const [variants] = await Promise.all([variantsPromise, assignmentPromise]);
+  const variantsByProductId = new Map<string, typeof variants>();
+  variants.forEach((variant) => {
+    const productVariants = variantsByProductId.get(variant.productId) ?? [];
+    productVariants.push(variant);
+    variantsByProductId.set(variant.productId, productVariants);
+  });
+
+  const advertisements = results.map((r) => ({
+    ...r.advertisements,
+    product: r.products
+      ? withProductVariantAggregates({
+          ...r.products,
+          variants: variantsByProductId.get(r.products.id) ?? [],
+        })
+      : r.products,
+  }));
 
   return {
     advertisements,
@@ -365,45 +366,44 @@ export async function listAdminAdvertisements({
     ? undefined
     : eq(schema.productTable.sellerId, sellerId);
 
-  // Query for total count
-  const totalResult = await db
-    .select({ total: count() })
-    .from(schema.advertisementTable)
-    .leftJoin(
-      schema.productTable,
-      eq(schema.advertisementTable.productId, schema.productTable.id),
-    )
-    .leftJoin(
-      schema.advertisementStatsTable,
-      eq(
-        schema.advertisementTable.id,
-        schema.advertisementStatsTable.advertisementId,
-      ),
-    )
-    .where(whereClause);
+  const [totalResult, results] = await Promise.all([
+    db
+      .select({ total: count() })
+      .from(schema.advertisementTable)
+      .leftJoin(
+        schema.productTable,
+        eq(schema.advertisementTable.productId, schema.productTable.id),
+      )
+      .leftJoin(
+        schema.advertisementStatsTable,
+        eq(
+          schema.advertisementTable.id,
+          schema.advertisementStatsTable.advertisementId,
+        ),
+      )
+      .where(whereClause),
+    db
+      .select()
+      .from(schema.advertisementTable)
+      .leftJoin(
+        schema.productTable,
+        eq(schema.advertisementTable.productId, schema.productTable.id),
+      )
+      .leftJoin(
+        schema.advertisementStatsTable,
+        eq(
+          schema.advertisementTable.id,
+          schema.advertisementStatsTable.advertisementId,
+        ),
+      )
+      .where(whereClause)
+      .limit(pagination.limit)
+      .offset(pagination.offset)
+      .orderBy(() => [sql`${schema.advertisementTable.createdAt} desc`]),
+  ]);
 
   const total = totalResult[0].total;
   const totalPages = getTotalPages(total, pagination.limit);
-
-  // Query for the paginated advertisements with their related product
-  const results = await db
-    .select()
-    .from(schema.advertisementTable)
-    .leftJoin(
-      schema.productTable,
-      eq(schema.advertisementTable.productId, schema.productTable.id),
-    )
-    .leftJoin(
-      schema.advertisementStatsTable,
-      eq(
-        schema.advertisementTable.id,
-        schema.advertisementStatsTable.advertisementId,
-      ),
-    )
-    .where(whereClause)
-    .limit(pagination.limit)
-    .offset(pagination.offset)
-    .orderBy(() => [sql`${schema.advertisementTable.createdAt} desc`]);
 
   const productIds = results
     .map((result) => result.products?.id)
