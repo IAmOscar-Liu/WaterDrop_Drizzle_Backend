@@ -1,0 +1,41 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1789148065492,
+      "tag": "0000_test_baseline",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789148370017,
+      "tag": "0001_coin_ledger_expand",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789148464550,
+      "tag": "0002_coin_ledger_expand_controls",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789149677086,
+      "tag": "0003_special_human_torch",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789162023757,
+      "tag": "0004_noisy_shadow_king",
+      "breakpoints": true
+    }
+  ]
+}

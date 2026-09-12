@@ -4,8 +4,11 @@ import {
   eq,
   getTableColumns,
   inArray,
+  isNull,
   isNotNull,
   lt,
+  notInArray,
+  or,
   sql,
 } from "drizzle-orm";
 import fs from "fs";
@@ -93,10 +96,21 @@ export async function getUsers() {
 }
 
 export async function getUserIdsInTimezones(timezones: string[]) {
+  const timezoneCondition = timezones.includes("Asia/Taipei")
+    ? or(
+        inArray(schema.userTable.timezone, timezones),
+        isNull(schema.userTable.timezone),
+        eq(schema.userTable.timezone, ""),
+        notInArray(
+          schema.userTable.timezone,
+          (Intl as any).supportedValuesOf("timeZone") as string[],
+        ),
+      )
+    : inArray(schema.userTable.timezone, timezones);
   const users = await db
     .select({ id: schema.userTable.id })
     .from(schema.userTable)
-    .where(inArray(schema.userTable.timezone, timezones));
+    .where(timezoneCondition);
 
   return users.map((u) => u.id);
 }

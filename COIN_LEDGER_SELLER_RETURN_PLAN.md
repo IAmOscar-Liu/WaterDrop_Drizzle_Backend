@@ -5,8 +5,9 @@
 Revised on 2026-09-11 after reviewing the treasure-box, order, refund,
 advertisement, and scheduled-job implementations.
 
-This is an implementation plan only. No schema, migration, or runtime behavior
-has been changed.
+Implementation is in progress on the test branch. The schema, APIs, accounting
+repositories, maintenance jobs, and disposable-database test suite described
+below have begun landing; deployment/backfill steps remain gated by test review.
 
 ## Confirmed Business Decisions
 
@@ -78,6 +79,12 @@ The following points are now treated as requirements rather than open questions.
 25. Treat a missing or invalid user timezone as `Asia/Taipei`. Snapshot the
     effective timezone onto every newly created reward cycle, box, and coin lot;
     a later profile change affects only newly created assets.
+26. Reuse one advertisement assignment per user, advertisement, and user-local
+    date. Repeated get-ad-list requests do not replace it. `/video-complete`
+    accepts only an `issued` assignment whose snapshotted local date is still
+    current. Maintenance marks leftovers `expired` after local midnight,
+    retains completed assignments for a configurable audit period, and purges
+    expired/cancelled assignments on a separately configurable shorter period.
 
 The design therefore has two related levels:
 
@@ -383,7 +390,9 @@ At archive time:
    later than `archiveGraceEndsAt`.
 4. Shorten each already-created box involving this ad to
    `min(existing deadline, archiveGraceEndsAt)`; never extend it.
-5. After the grace deadline, expire every remaining incomplete assignment.
+5. Expire an incomplete assignment at the earlier of its user-local midnight or
+   the archive grace deadline. Completion always enforces both deadlines even
+   before cleanup has updated the row.
 
 The user's ad count and reward cycle are assigned to the user's local calendar
 day at completion. Archive grace does not prevent the normal user-local daily
@@ -751,6 +760,9 @@ id
 userId
 advertisementId
 sourceSellerId
+assignmentBatchId
+userLocalDate
+timezoneSnapshot
 assignmentTokenHash
 status                             -- issued/completed/expired/cancelled
 assignedAt
@@ -760,10 +772,22 @@ createdAt
 updatedAt
 ```
 
-At completion, validate `assignedAt < advertisements.archivedAt` and
-`completedAt <= advertisements.archiveGraceEndsAt` for an archived ad. The token
-must be user-bound, single-use, unguessable, and covered by an idempotency unique
-constraint. Do not accept a raw ad ID as proof of a pre-archive assignment.
+The unique key is `(userId, advertisementId, userLocalDate)`, so requesting the
+list again on the same local date reuses the original row instead of replacing
+its issue time. At completion, the server uses the submitted advertisement ID
+only to locate this user-bound persisted assignment; the raw ID is not proof by
+itself. Validate the assignment's snapshotted local date, single-use status,
+`assignedAt < advertisements.archivedAt`, and
+`completedAt <= advertisements.archiveGraceEndsAt` for an archived ad. An
+expired completion fails without changing daily counters or financial records.
+
+The maintenance job marks leftover `issued` rows `expired` on its first run
+after their snapshotted local midnight. Defaults are 365 days for completed
+audit rows and seven days for expired/cancelled rows, configurable through
+`ADVERTISEMENT_ASSIGNMENT_COMPLETED_RETENTION_DAYS` and
+`ADVERTISEMENT_ASSIGNMENT_EXPIRED_RETENTION_DAYS`. Purging a completed
+assignment clears the optional `ad_view_counts.assignmentId` reference but
+retains the immutable ad-view and financial ledgers.
 
 ### G. `treasure_box_reward_cycles`
 
@@ -1118,14 +1142,9 @@ These are implementation gaps, not unresolved product rules.
 
 ### Treasure box
 
-- `/video-complete` accepts an optional, unvalidated `advertisementId`. A missing
-  ID advances the reward counters without charging or funding an ad.
-- There is no completion idempotency key or server-side proof that the submitted
-  ad was assigned to the user. This is especially risky with unlimited platform
-  advances.
-- Get-ad-list does not persist issued assignments. Therefore the current API
-  cannot implement “issued before archive, complete within 24 hours” securely;
-  a user could submit only an ad ID after archive with no proof of issue time.
+- `/video-complete` now requires an `advertisementId` and resolves it against a
+  persisted, user-bound, current-local-date assignment. Assignment completion
+  and the resulting ad view use unique idempotency keys.
 - Neither `ad_view_counts` nor `treasure_boxes` identifies which two views formed
   the box, so an equal split cannot be reconstructed reliably.
 - Reward value uses group-wide prior-day view count, while source attribution is
@@ -1289,6 +1308,8 @@ hand-edit generated snapshots.
 - archiving removes the ad from new list responses immediately;
 - a pre-archive assignment can complete through exactly `archivedAt + 24 hours`;
 - an assignment issued at/after archive or completed after grace is rejected;
+- an expired assignment changes no user counters, box state, ad balance, or
+  funding ledger;
 - issuing an assignment does not debit or reserve advertisement currency;
 - one completed view deducts `$1.50` and funds exactly 15 coins;
 - retrying a completion creates no duplicate view, debit, or funding;

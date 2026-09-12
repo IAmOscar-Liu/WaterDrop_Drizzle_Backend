@@ -6,7 +6,8 @@ Express + TypeScript API server for Waterdrop.
 
 ```txt
 src/
-  index.ts              App entry point: middleware, Swagger, routers, jobs
+  app.ts                Express middleware, Swagger, and routers
+  index.ts              Runtime entry point: starts jobs and HTTP listener
   routers/              Public and user-facing route definitions
   routers/admin/        Admin route definitions and Swagger docs
   controller/           Parses request data and calls services
@@ -92,6 +93,7 @@ Migration output folders are environment-specific:
 ```txt
 drizzle_local/
 drizzle_dev/
+drizzle_test/
 drizzle_stg/
 drizzle_prod/
 ```
@@ -103,7 +105,21 @@ drizzle_prod/
 - the database URL
 - the schema path
 
-Important: when changing environments for Drizzle commands, check `drizzle.config.ts`. The current config uses a hardcoded `env` value.
+Select the environment explicitly with the matching `db:generate:*`,
+`db:migrate:*`, or `db:studio:*` command. The unsuffixed command defaults to
+local.
+
+Advertisement-assignment cleanup accepts these optional environment settings:
+
+```txt
+ADVERTISEMENT_ASSIGNMENT_COMPLETED_RETENTION_DAYS=365
+ADVERTISEMENT_ASSIGNMENT_EXPIRED_RETENTION_DAYS=7
+```
+
+The completed retention is the audit window. Leftover `issued` assignments are
+first marked `expired` after their snapshotted user-local date ends, then use the
+shorter expired retention before physical deletion. Both values are
+non-negative whole days.
 
 ## Essential Commands
 
@@ -178,12 +194,61 @@ Generate DBML:
 npm run generate-dbml
 ```
 
+## Automated Tests
+
+Run the complete pre-push suite with:
+
+```bash
+npm test
+```
+
+The command first type-checks/builds the project, then reads the PostgreSQL
+server from `.env.test`, creates a new temporary `*_test` database, applies
+every migration in `drizzle_test`, and runs:
+
+- coin/timezone unit tests;
+- real HTTP API end-to-end tests against the Express app;
+- repository/PostgreSQL coin-ledger integration tests;
+- coin-ledger maintenance cron integration tests.
+
+The temporary database is dropped in a `finally` cleanup whether the suite
+passes or fails. The configured `waterdrop_coin_test` database is only used as
+the connection template and is not populated or reset. The configured
+PostgreSQL user must have `CREATE DATABASE` and `DROP DATABASE` privileges.
+
+Smaller disposable-database suites are available while developing:
+
+```bash
+npm run test:api
+npm run test:coin-ledger
+npm run test:cron
+npm run test:coin-accounting
+```
+
+Tests import `src/app.ts`, so they exercise the real routers, middleware,
+controllers, services, and repositories without starting cron jobs or calling
+the normal server entry point. Add new HTTP scenarios to
+`src/tests/api.e2e.ts` as API coverage grows.
+
+The API suite creates a virtual-item order and sends a locally generated,
+validly signed mock ECPay payment webhook. No request is sent to ECPay. It
+verifies that payment records coin usage by earning month, completes the refund
+flow, and confirms that non-expired coins return to the original user lots and
+monthly totals. Email delivery is a no-op in the test environment.
+
+The cron suite invokes the same coin-ledger maintenance job used by the
+scheduler. It verifies unclaimed treasure-box expiration, unused acquired-coin
+expiration, seller returns, Taipei cohort settlement, assignment expiration and
+retention cleanup, user balances, and job-run idempotency. ECPay logistics
+polling and other external network jobs are not invoked.
+
 ## Validation Before Handoff
 
 At minimum, run:
 
 ```bash
 npm run build
+npm test
 ```
 
 For API changes, also check the relevant Swagger block in `src/routers/admin` and test the route manually or through Swagger UI at:

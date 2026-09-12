@@ -24,6 +24,8 @@ import {
 import db from "../lib/initDB";
 import { isAccountAdmin } from "./account";
 import { minimumVariantPrice } from "./utils/product";
+import { isCoinLedgerEnabled } from "../lib/coinAccounting";
+import { refundOrderCoinsWithTx } from "./coinLedger";
 import {
   compactConditions,
   getPagination,
@@ -929,6 +931,19 @@ export async function updateRefundItemStatus(
         context.order.subTotal > 0 ? refundTotal / context.order.subTotal : 0;
 
       if (refundPercentage > 0) {
+        if (isCoinLedgerEnabled()) {
+          const ledgerSummary = await refundOrderCoinsWithTx(tx, {
+            orderId: context.order.id,
+            userId: context.order.userId,
+            refundId: refundItem.id,
+            amount: roundToTwoDecimals(
+              (context.order.discountCoin ?? 0) * refundPercentage,
+            ),
+          });
+          summary.totalCoin = ledgerSummary.totalCoin;
+          summary.returnableCoin = ledgerSummary.returnableCoin;
+          summary.coinByMonth = ledgerSummary.coinByMonth;
+        } else {
         // 4.4 Build the coin refund amount by month.
         const coinUpdates: Record<string, number> = {};
 
@@ -1062,6 +1077,7 @@ export async function updateRefundItemStatus(
 
           // 4.11 Apply all coin updates atomically within the transaction.
           await Promise.all(promises);
+        }
         }
       }
     }

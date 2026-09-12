@@ -13,6 +13,9 @@ export async function sendEmail({
   subject: string;
   html: string;
 }): Promise<{ success: true } | { success: false; error: any }> {
+  if (process.env.NODE_ENV === "test") {
+    return { success: true };
+  }
   const msg = {
     to,
     from: from || process.env.SENDGRID_FROM_EMAIL!,

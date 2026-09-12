@@ -3,7 +3,9 @@ import { handleServiceError } from "../lib/error";
 import {
   createAdvertisement,
   depositAdBalance,
+  financiallyCloseAdvertisement,
   getAdvertisement,
+  getAdvertisementCoinLedger,
   getAdViewCount,
   listAdminAdvertisements,
   ListAdminAdvertisementsParams,
@@ -12,6 +14,7 @@ import {
   listAdViewCount,
   ListAdViewCountParams,
   setAdStatus,
+  transferArchivedAdvertisementBalance,
   updateAdvertisementById,
 } from "../repository/advertisement";
 import { ServiceResponse } from "../type/general";
@@ -56,6 +59,18 @@ class AdvertisementService {
         };
       }
       return { success: true, data: advertisement };
+    } catch (error) {
+      return handleServiceError(error);
+    }
+  }
+
+  async getAdvertisementCoinLedger(advertisementId: string, requesterId: string) {
+    try {
+      const result = await getAdvertisementCoinLedger(
+        advertisementId,
+        requesterId,
+      );
+      return { success: true as const, data: result };
     } catch (error) {
       return handleServiceError(error);
     }
@@ -144,6 +159,32 @@ class AdvertisementService {
     try {
       const result = await setAdStatus(advertisementId, status);
       return { success: true, data: result };
+    } catch (error) {
+      return handleServiceError(error);
+    }
+  }
+
+  async financiallyCloseAdvertisement(
+    advertisementId: string,
+    requesterId: string,
+  ) {
+    try {
+      const result = await financiallyCloseAdvertisement(
+        advertisementId,
+        requesterId,
+      );
+      return { success: true as const, data: result };
+    } catch (error) {
+      return handleServiceError(error);
+    }
+  }
+
+  async transferArchivedAdvertisementBalance(
+    params: Parameters<typeof transferArchivedAdvertisementBalance>[0],
+  ) {
+    try {
+      const result = await transferArchivedAdvertisementBalance(params);
+      return { success: true as const, data: result };
     } catch (error) {
       return handleServiceError(error);
     }

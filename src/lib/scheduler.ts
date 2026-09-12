@@ -26,6 +26,8 @@ import { pollEcPayLogisticsTradeInfo } from "./polling";
 import { Worker } from "worker_threads";
 import path from "path";
 import { existsSync } from "fs";
+import { isCoinLedgerEnabled } from "./coinAccounting";
+import { runCoinLedgerMaintenanceJob } from "./coinLedgerMaintenanceJob";
 
 const RESET_BATCH_SIZE = 100; // Process 100 users at a time. Adjust as needed.
 
@@ -193,7 +195,11 @@ export const monthlyCoinStatExpirationTask = cron.schedule(
 
       // For these users, expire all their monthly stats. The logic to keep the current month active
       // is handled by creating a new entry when coins are earned/spent.
-      await setMonthlyCoinExpire(userIds, yearMonthString);
+      if (isCoinLedgerEnabled()) {
+        await runCoinLedgerMaintenanceJob();
+      } else {
+        await setMonthlyCoinExpire(userIds, yearMonthString);
+      }
 
       console.log(
         `✅ Monthly coin stat expiration complete for ${userIds.length} users.`,
@@ -339,6 +345,24 @@ export const expireOrdersTask = cron.schedule(
       console.error(`Error during expireOrdersTask:`, error);
     }
   },
+);
+
+// Deadlines are stored as UTC instants computed from each user's timezone.
+// Advertisement assignments use a snapshotted timezone/local date and become
+// expired on the first maintenance pass after that local date ends. Cohort
+// settlement uses Asia/Taipei dates, and old terminal assignments are purged
+// according to their configured audit-retention periods.
+export const coinLedgerMaintenanceTask = cron.schedule(
+  "*/10 * * * *",
+  async () => {
+    if (process.env.NO_CRON === "true" || !isCoinLedgerEnabled()) return;
+    try {
+      await runCoinLedgerMaintenanceJob();
+    } catch (error) {
+      console.error("Error during coin ledger maintenance:", error);
+    }
+  },
+  { timezone: "Asia/Taipei" },
 );
 
 export const pollLogisticsTradeInfoTask = cron.schedule(

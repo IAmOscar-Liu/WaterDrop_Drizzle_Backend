@@ -501,6 +501,35 @@ router.get(
 
 /**
  * @swagger
+ * /api/admin/advertisement/{id}/coin-ledger:
+ *   get:
+ *     tags: [Advertisement]
+ *     summary: Get advertisement coin funding and seller-return ledger
+ *     description: Returns the funding account plus the latest settlement cohorts, seller returns, and funding transactions. Monetary coin fields are exact decimal strings.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       '200':
+ *         description: Advertisement coin-ledger details.
+ *       '404':
+ *         description: Funding account not found.
+ */
+router.get(
+  "/:id/coin-ledger",
+  isAuth,
+  validateZod({ params: adminValidation.advertisement.idParams }),
+  AdvertisementController.getAdvertisementCoinLedger,
+);
+
+/**
+ * @swagger
  * /api/admin/advertisement/deposit/{id}:
  *   put:
  *     tags: [Advertisement]
@@ -596,6 +625,83 @@ router.put(
     body: adminValidation.advertisement.statusBody,
   }),
   AdvertisementController.setAdStatus,
+);
+
+/**
+ * @swagger
+ * /api/admin/advertisement/{id}/financial-close:
+ *   post:
+ *     tags: [Advertisement]
+ *     summary: Financially close an archived advertisement
+ *     description: Returns settled seller surplus, writes any remaining platform advance off as promotional expense, and permanently closes the funding account. The archive grace period must have ended and no treasure-box claims may remain.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       '200':
+ *         description: The financially closed advertisement.
+ *       '409':
+ *         description: The ad is not archived, grace is active, claims remain, or the ledger is disabled.
+ */
+router.post(
+  "/:id/financial-close",
+  isAuth,
+  validateZod({ params: adminValidation.advertisement.idParams }),
+  AdvertisementController.financiallyCloseAdvertisement,
+);
+
+/**
+ * @swagger
+ * /api/admin/advertisement/{id}/balance-transfer:
+ *   post:
+ *     tags: [Advertisement]
+ *     summary: Transfer archived ad balance to its replacement
+ *     description: Moves available currency from a financially closed source ad to its direct replacement for the same product and seller. Neither ad is automatically activated. Reusing the same idempotencyKey returns the original transfer.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [destinationAdvertisementId, amount, idempotencyKey]
+ *             properties:
+ *               destinationAdvertisementId:
+ *                 type: string
+ *                 format: uuid
+ *               amount:
+ *                 type: number
+ *                 exclusiveMinimum: 0
+ *               idempotencyKey:
+ *                 type: string
+ *     responses:
+ *       '200':
+ *         description: Immutable balance-transfer record.
+ *       '409':
+ *         description: Ads are not a valid source/replacement pair.
+ */
+router.post(
+  "/:id/balance-transfer",
+  isAuth,
+  validateZod({
+    params: adminValidation.advertisement.idParams,
+    body: adminValidation.advertisement.balanceTransferBody,
+  }),
+  AdvertisementController.transferArchivedAdvertisementBalance,
 );
 
 export default router;

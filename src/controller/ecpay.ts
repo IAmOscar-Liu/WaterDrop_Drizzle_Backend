@@ -151,7 +151,9 @@ class EcPayController {
 
   async handleReturn(req: Request, res: Response): Promise<any> {
     const data = req.body;
-    console.log("交易結果:", data);
+    if (process.env.NODE_ENV !== "test") {
+      console.log("交易結果:", data);
+    }
 
     if (
       !ecpayService.validateCheckMacValue(data, {

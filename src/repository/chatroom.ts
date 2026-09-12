@@ -128,8 +128,7 @@ export async function findOrCreateChatRoom({
     const [user] = await tx
       .select({ id: schema.userTable.id })
       .from(schema.userTable)
-      .where(eq(schema.userTable.id, userId))
-      .for("update");
+      .where(eq(schema.userTable.id, userId));
 
     if (!user) {
       throw new CustomError("User not found", 404);
@@ -142,8 +141,7 @@ export async function findOrCreateChatRoom({
           productId: schema.productVariantTable.productId,
         })
         .from(schema.productVariantTable)
-        .where(eq(schema.productVariantTable.id, lookup.productVariantId))
-        .for("update");
+        .where(eq(schema.productVariantTable.id, lookup.productVariantId));
 
       if (!variant || variant.productId !== lookup.productId) {
         throw new CustomError("Product variant not found", 404);

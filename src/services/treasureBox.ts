@@ -25,7 +25,7 @@ class TreasureBoxService {
     advertisementId,
   }: {
     userId: string;
-    advertisementId?: string;
+    advertisementId: string;
   }): Promise<
     ServiceResponse<Awaited<ReturnType<typeof processVideoCompletion>>>
   > {

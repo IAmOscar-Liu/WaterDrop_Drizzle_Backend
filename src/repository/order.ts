@@ -17,6 +17,12 @@ import { isPlainObject } from "../lib/general";
 import db from "../lib/initDB";
 import { isAccountAdmin } from "./account";
 import { minimumVariantPrice } from "./utils/product";
+import { isCoinLedgerEnabled } from "../lib/coinAccounting";
+import {
+  allocateOrderCoinsWithTx,
+  consumeOrderReservationsWithTx,
+  releaseOrderReservationsWithTx,
+} from "./coinLedger";
 import {
   compactConditions,
   getPagination,
@@ -287,6 +293,11 @@ export async function updateOrderStatus({
   paymentInfo?: schema.NewOrder["paymentInfo"];
 }) {
   return db.transaction(async (tx) => {
+    await tx
+      .select({ id: schema.orderTable.id })
+      .from(schema.orderTable)
+      .where(eq(schema.orderTable.id, orderId))
+      .for("update");
     // First, get the order to access its items and user ID
     const order = await tx.query.orderTable.findFirst({
       where: eq(schema.orderTable.id, orderId),
@@ -310,6 +321,15 @@ export async function updateOrderStatus({
     // If the new status is "paid", remove the corresponding items from the cart
     if (status === "paid") {
       const promises: Promise<any>[] = [];
+      if (
+        isCoinLedgerEnabled() &&
+        order.orderStatus === "payment-processing"
+      ) {
+        Object.assign(
+          coinInfo,
+          await consumeOrderReservationsWithTx(tx, order.id),
+        );
+      }
       if (order.items.length > 0) {
         for (let item of order.items) {
           if (!item.productVariantId) {
@@ -357,6 +377,17 @@ export async function updateOrderStatus({
         order.discountCoin &&
         order.discountCoin > 0
       ) {
+        if (isCoinLedgerEnabled()) {
+          Object.assign(
+            coinInfo,
+            await allocateOrderCoinsWithTx(tx, {
+              orderId: order.id,
+              userId: order.userId,
+              amount: order.discountCoin,
+              mode: "consume",
+            }),
+          );
+        } else {
         // Deduct the used discount coins from the user's balance
         promises.push(
           tx
@@ -406,6 +437,7 @@ export async function updateOrderStatus({
             remainingDiscountCoins -= amountToSpendInThisMonth;
             coinInfo[stat.month] = amountToSpendInThisMonth;
           }
+        }
         }
       }
       await Promise.all(promises);
@@ -437,6 +469,14 @@ export async function updateOrderStatus({
         order.discountCoin &&
         order.discountCoin > 0
       ) {
+        if (isCoinLedgerEnabled()) {
+          await allocateOrderCoinsWithTx(tx, {
+            orderId: order.id,
+            userId: order.userId,
+            amount: order.discountCoin,
+            mode: "reserve",
+          });
+        } else {
         // Deduct the used discount coins from the user's balance
         promises.push(
           tx
@@ -486,6 +526,7 @@ export async function updateOrderStatus({
             remainingDiscountCoins -= amountToSpendInThisMonth;
             coinInfo[stat.month] = amountToSpendInThisMonth;
           }
+        }
         }
       }
       await Promise.all(promises);
@@ -518,6 +559,7 @@ export async function updateOrderStatus({
         }
       }
       if (
+        !isCoinLedgerEnabled() &&
         order.orderStatus === "payment-processing" &&
         isPlainObject(order.coinInfo) &&
         Object.keys(order.coinInfo as Record<string, number>).length > 0
@@ -549,6 +591,15 @@ export async function updateOrderStatus({
             })
             .where(eq(schema.userTable.id, order.userId)),
         );
+      }
+      if (
+        isCoinLedgerEnabled() &&
+        order.orderStatus === "payment-processing"
+      ) {
+        await releaseOrderReservationsWithTx(tx, {
+          orderId: order.id,
+          userId: order.userId,
+        });
       }
       await Promise.all(promises);
     }

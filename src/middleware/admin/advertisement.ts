@@ -42,4 +42,9 @@ export const advertisementValidation = {
   statusBody: z.object({
     status: advertisementStatus,
   }),
+  balanceTransferBody: z.object({
+    destinationAdvertisementId: uuid,
+    amount: nonNegativeNumber.gt(0),
+    idempotencyKey: z.string().min(8).max(200),
+  }),
 };

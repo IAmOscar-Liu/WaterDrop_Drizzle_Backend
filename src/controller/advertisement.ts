@@ -33,6 +33,17 @@ class AdvertisementController {
     sendJsonResponse(res, result);
   }
 
+  async getAdvertisementCoinLedger(
+    req: RequestWithId,
+    res: Response,
+  ): Promise<any> {
+    const result = await advertisementService.getAdvertisementCoinLedger(
+      req.params.id,
+      req.userId ?? "",
+    );
+    sendJsonResponse(res, result);
+  }
+
   async createAdvertisement(req: Request, res: Response): Promise<any> {
     const advertisementData = req.body;
     const result =
@@ -99,6 +110,32 @@ class AdvertisementController {
       advertisementId: id,
       status,
     });
+    sendJsonResponse(res, result);
+  }
+
+  async financiallyCloseAdvertisement(
+    req: RequestWithId,
+    res: Response,
+  ): Promise<any> {
+    const result = await advertisementService.financiallyCloseAdvertisement(
+      req.params.id,
+      req.userId ?? "",
+    );
+    sendJsonResponse(res, result);
+  }
+
+  async transferArchivedAdvertisementBalance(
+    req: RequestWithId,
+    res: Response,
+  ): Promise<any> {
+    const result =
+      await advertisementService.transferArchivedAdvertisementBalance({
+        sourceAdvertisementId: req.params.id,
+        destinationAdvertisementId: req.body.destinationAdvertisementId,
+        amount: req.body.amount,
+        idempotencyKey: req.body.idempotencyKey,
+        requesterId: req.userId ?? "",
+      });
     sendJsonResponse(res, result);
   }
 }
