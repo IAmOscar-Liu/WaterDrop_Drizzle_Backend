@@ -743,6 +743,13 @@
       "when": 1786797395081,
       "tag": "0105_crazy_madame_hydra",
       "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1789237882711,
+      "tag": "0106_lovely_malice",
+      "breakpoints": true
     }
   ]
 }

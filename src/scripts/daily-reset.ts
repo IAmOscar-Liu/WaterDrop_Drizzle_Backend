@@ -1,11 +1,11 @@
-import "./lib/env";
+import "../lib/env";
 
-import { CustomError } from "./lib/error";
-import { resetDailyStats } from "./repository/treasureBox";
+import { CustomError } from "../lib/error";
+import { resetDailyStats } from "../repository/treasureBox";
 import {
   getUserIdsInTimezones,
   updateGroupAdViewsCountYesterday,
-} from "./repository/user";
+} from "../repository/user";
 
 const RESET_BATCH_SIZE = 100;
 

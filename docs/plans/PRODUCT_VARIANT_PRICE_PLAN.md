@@ -45,7 +45,7 @@ Implement the work as two sequential branches:
    - Add nullable variant `price` and `images` fields plus all compatible API/application changes.
    - Add the price and first-product-image backfill script.
    - Generate and run the expansion migration.
-   - Run `src/back-fill.ts` and verify that no variant price remains null.
+   - Run the one-time product-variant backfill and verify that no variant price remains null. This completed script has since been retired.
 2. **Phase 2 — follow-up branch created after Phase 1 is complete**
    - Make variant price required.
    - Remove `products.price` and all transitional dependencies on it.
@@ -170,7 +170,7 @@ Also update the existing product-variant frontend handoff documentation if it re
 
 ### Backfill variant prices and initial images
 
-Replace the current contents of `src/back-fill.ts` with a focused, rerunnable variant price and initial-image backfill. Preserve the user's environment choice in `package.json`; do not silently switch the script to another database environment.
+At implementation time, use a focused, rerunnable variant price and initial-image backfill. Preserve the user's environment choice and do not silently switch the script to another database environment. This one-time script has since completed and been retired.
 
 Required behavior:
 
@@ -228,7 +228,7 @@ After the Phase 1 code is ready:
 3. Run `npm run build`.
 4. Commit/deploy the Phase 1 application and migration as appropriate for the target environment.
 5. The user runs `npm run db:migrate` to add nullable `product_variants.price` and `product_variants.images`.
-6. The user runs `npm run back-fill`.
+6. The user ran the former one-time product-variant backfill command.
 7. Verify that `product_variants.price is null` returns zero rows before creating or deploying Phase 2.
 
 ## Phase 2: Follow-up Constraint and Product-Price Removal Branch
@@ -325,7 +325,7 @@ Keep `product_variants.images` nullable.
 - [x] Move product price filters to minimum eligible variant price.
 - [x] Add `variantAtSale.price` from `unitPriceAtSale` in order, delivery, and refund serializers.
 - [x] Update all affected Swagger schemas and frontend handoff documentation.
-- [x] Implement the idempotent variant price and first-product-image `src/back-fill.ts` script.
+- [x] Implement and run the now-retired idempotent variant price and first-product-image backfill.
 - [x] Generate the first migration.
 - [x] Run `npm run build`.
 - [ ] Run focused Phase 1 API checks.

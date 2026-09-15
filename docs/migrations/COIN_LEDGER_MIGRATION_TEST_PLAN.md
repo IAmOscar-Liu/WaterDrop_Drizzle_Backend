@@ -4,7 +4,7 @@
 
 Prepared on 2026-09-12 for branch `feat/coin-log-test`.
 
-This document turns `COIN_LEDGER_SELLER_RETURN_PLAN.md` into a staged database,
+This document turns `../plans/COIN_LEDGER_SELLER_RETURN_PLAN.md` into a staged database,
 application, backfill, testing, and environment-rollout procedure. It is a plan
 with live progress tracking. Completed changes are listed below; no
 `local`/`development`/`stg` database has been changed from this branch.
@@ -97,7 +97,7 @@ The implementation includes:
 - historical `legacy_unattributed` handling;
 - a disposable PostgreSQL test environment and complete automated test suite.
 
-The business rules remain defined in `COIN_LEDGER_SELLER_RETURN_PLAN.md`. If the
+The business rules remain defined in `../plans/COIN_LEDGER_SELLER_RETURN_PLAN.md`. If the
 two documents ever disagree, resolve the disagreement before generating a
 migration.
 
@@ -108,8 +108,8 @@ migration.
 2. The backend must nevertheless validate it as a required UUID and must verify
    that the authenticated user received that advertisement before accepting a
    completion.
-3. Historical cutoff is configured independently per environment using
-   `COIN_LEDGER_CUTOVER_AT`.
+3. Each environment uses a bounded write-stopped migration window. Its completed
+   backfill checkpoint and subsequent ledger enablement define the transition.
 4. Missing or invalid user timezone means `Asia/Taipei`.
 5. Test migration and behavior must pass before changing `local`,
    `development`, or `stg`.
@@ -292,9 +292,9 @@ FALLBACK_TIMEZONE = Asia/Taipei
 SYSTEM_ACCOUNTING_TIMEZONE = Asia/Taipei
 ```
 
-Use database time for cutover comparisons and persistent deadlines. Do not let
-clock differences between application replicas decide which side of the cutoff
-owns an event.
+Use database time for persistent deadlines. Stop all application writers during
+the migration window so clock differences between replicas cannot blur the
+transition boundary.
 
 ## Phase 1: Add the Disposable `test` Environment
 
@@ -326,7 +326,6 @@ NODE_ENV=test
 DATABASE_URL=<test-only PostgreSQL URL>
 NO_CRON=true
 COIN_LEDGER_ENABLED=false
-COIN_LEDGER_CUTOVER_AT=<valid UTC ISO-8601 instant>
 ```
 
 Add explicit test values or mocks for email, push notification, payment,
@@ -591,21 +590,20 @@ System jobs:
 Every API write must enforce the exact deadline even if the 30-minute cleanup
 cron has not run.
 
-### 3.8 Feature and cutover controls
+### 3.8 Feature and migration controls
 
 Use explicit controls such as:
 
 ```text
 COIN_LEDGER_ENABLED
-COIN_LEDGER_CUTOVER_AT
 ADVERTISEMENT_ASSIGNMENT_COMPLETED_RETENTION_DAYS
 ADVERTISEMENT_ASSIGNMENT_EXPIRED_RETENTION_DAYS
 ```
 
-Before the cutoff, old balances are migrated as `legacy_unattributed`. At or
-after the cutoff, every new qualifying event must have exact provenance or fail
-atomically. Use the database timestamp, not an application-server timestamp, for
-the boundary.
+During the write-stopped migration window, old balances are migrated as
+`legacy_unattributed`. After the completed checkpoint is reconciled and the
+ledger is enabled, every new qualifying event must have exact provenance or fail
+atomically.
 
 ## Phase 4: Historical Backfill
 
@@ -616,7 +614,7 @@ output.
 ### 4.1 Create the legacy source
 
 Create a clearly identified platform-funded `legacy_unattributed` source for
-pre-cutoff value. Do not infer a seller or advertisement when the exact source
+pre-migration value. Do not infer a seller or advertisement when the exact source
 cannot be proved.
 
 ### 4.2 Normalize effective timezones
@@ -652,25 +650,22 @@ For each user:
 
 Never silently change the user's displayed balance to make old aggregates fit.
 
-### 4.5 Backfill in-flight and refundable orders
+### 4.5 Finalize in-flight orders and preserve historical refunds
 
-Orders need historical allocations so later failure/refund has a deterministic
-path:
-
-- `payment-processing`: create legacy reserved allocations matching `coinInfo`;
-- paid but still refundable: create legacy consumed allocations matching
-  `coinInfo`/`discountCoin`;
-- missing or inconsistent `coinInfo`: create an exception and use only the
-  approved `legacy_unattributed` fallback;
-- never attribute these historical allocations to a real ad/seller without a
-  provable chain.
-
-Synthetic consumed lots must not increase the user's current available balance.
+- finalize every stale `payment-processing` order through the legacy workflow
+  before balance backfill, restoring its reserved coins and inventory normally;
+- block backfill if any `payment-processing` order remains;
+- do not invent consumed allocations for historical paid orders;
+- when a paid historical order has `coinInfo` but no ledger allocations, use the
+  legacy refund calculation; any still-valid returned coins become new
+  platform-funded `legacy_unattributed` lots;
+- never attribute historical order value to a real ad/seller without a provable
+  chain.
 
 ### 4.6 Backfill active treasure boxes
 
 Historical boxes do not contain their exact two advertisements. For boxes still
-claimable at cutoff:
+claimable during migration:
 
 - preserve reward amount and effective user-local expiry;
 - mark reward provenance as `legacy_unattributed` platform-funded;
@@ -695,18 +690,18 @@ payment-processing discountCoin
 paid refundable historical discountCoin
   = sum(legacy consumed allocations)
 
-new ledger entries before cutoff
+new ledger entries before enablement
   = only explicit migration/opening entries
 ```
 
-Any unexplained discrepancy blocks cutover. Do not “fix” it with a real seller
+Any unexplained discrepancy blocks enablement. Do not “fix” it with a real seller
 source.
 
 ## Phase 5: Contract and Constraint Migration
 
 Run this only after backfill, dual-write comparison, and full tests pass.
 
-- Make required post-cutover provenance fields `NOT NULL` where historical
+- Make required post-enablement provenance fields `NOT NULL` where historical
   exceptions are represented explicitly.
 - Validate foreign keys/check constraints that were initially added without full
   validation if that technique was needed for lock control.
@@ -913,18 +908,18 @@ Required:
 ### Gate 2: `local`
 
 1. Back up/local snapshot.
-2. Set `.env.local` cutoff and feature flag intentionally.
-3. Apply expansion migration.
-4. Deploy compatible dual-write code with cron disabled initially.
-5. Run backfill and reconciliation.
-6. Enable ledger writes at the agreed cutoff.
+2. Apply the environment-specific expansion migration.
+3. Stop application writers and keep the ledger disabled.
+4. Finalize legacy payment-processing orders.
+5. Run the idempotent backfill and require zero reconciliation differences.
+6. Set `COIN_LEDGER_ENABLED=true` and restart application writers.
 7. Run smoke and full relevant tests.
 8. Observe before promotion.
 
 ### Gate 3: `development`
 
-Repeat the same sequence using `.env.development` and its own tested migration
-history. Do not reuse the local cutoff value automatically.
+Repeat the same write-stopped sequence using `.env.development` and its own
+tested migration history and backfill checkpoint.
 
 ### Gate 4: `stg`
 
@@ -956,8 +951,8 @@ API regression.
 - Restore a database backup only when the full environment and all subsequent
   writes are intentionally discarded.
 
-The environment-specific cutoff must not be moved backward or forward after
-ledger data exists without an audited migration.
+Do not delete or rerun a completed environment backfill checkpoint after ledger
+data exists without an audited migration.
 
 ## Implementation Sequence Checklist
 

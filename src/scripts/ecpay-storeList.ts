@@ -1,8 +1,8 @@
-import "./lib/env";
+import "../lib/env";
 import path from "path";
 import { promises as fs } from "fs";
 import { Worker, isMainThread, parentPort, workerData } from "worker_threads";
-import ecPayService from "./services/ecpay";
+import ecPayService from "../services/ecpay";
 
 async function getStore(outDirFromWorker?: string) {
   let tmpPath: string | undefined;

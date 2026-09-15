@@ -91,7 +91,7 @@ router.post(
  *           application/json:
  *             schema:
  *               type: object
-               properties:
+ *               properties:
  *                 success:
  *                   type: boolean
  *                 data:

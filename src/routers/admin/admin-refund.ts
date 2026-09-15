@@ -16,7 +16,18 @@ const router = Router();
  *   schemas:
  *     RefundSummary:
  *       type: object
- *       example: {}
+ *       example:
+ *         totalCoin: 142.66
+ *         returnableCoin: 143.26
+ *         originalReturnableCoin: 142.66
+ *         cashRemainderCoin: 0.6
+ *         cashRemainderExpiresAt: "2026-10-31T16:00:00.000Z"
+ *         cashRemainderSourceSellerId: 33333333-3333-4333-8333-333333333333
+ *         coinByMonth:
+ *           2026-09:
+ *             coin: 142.66
+ *             expired: false
+ *             returnedCoin: 142.66
  *       properties:
  *         totalCoin:
  *           type: number
@@ -40,6 +51,13 @@ const router = Router();
  *           type: object
  *           additionalProperties:
  *             type: object
+ *             properties:
+ *               coin:
+ *                 type: number
+ *               expired:
+ *                 type: boolean
+ *               returnedCoin:
+ *                 type: number
  *
  *     RefundItem:
  *       type: object
@@ -88,9 +106,15 @@ const router = Router();
  *           type: object
  *           nullable: true
  *         summary:
- *           type: object
+ *           allOf:
+ *             - $ref: '#/components/schemas/RefundSummary'
  *           nullable: true
- *           example: {}
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *         updatedAt:
+ *           type: string
+ *           format: date-time
  *
  *     RefundLog:
  *       type: object
@@ -367,6 +391,39 @@ router.get(
  *     responses:
  *       '200':
  *         description: The created refund item.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/RefundItem'
+ *             example:
+ *               success: true
+ *               data:
+ *                 id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+ *                 orderItemId: cccccccc-cccc-4ccc-8ccc-cccccccccccc
+ *                 quantity: 1
+ *                 status: pending
+ *                 reason: Partial refund
+ *                 note: null
+ *                 refundAmount: 71.33
+ *                 paidRefundAmount: 57.06
+ *                 extraRefundAmount: 0
+ *                 cashRefundAmount: 57
+ *                 cashRemainderCoins: 0.6
+ *                 coins: 142.66
+ *                 returnableCoins: null
+ *                 metadata: null
+ *                 summary: null
+ *                 createdAt: "2026-09-13T04:51:21.827Z"
+ *                 updatedAt: "2026-09-13T04:51:21.827Z"
+ *       '400':
+ *         description: Invalid quantity, refund amount, order, or delivery state.
+ *       '404':
+ *         description: Order item, order, or product not found.
  */
 router.post(
   "/",
@@ -427,6 +484,52 @@ router.post(
  *     responses:
  *       '200':
  *         description: The updated refund item.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/RefundItem'
+ *             example:
+ *               success: true
+ *               data:
+ *                 id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+ *                 orderItemId: cccccccc-cccc-4ccc-8ccc-cccccccccccc
+ *                 quantity: 1
+ *                 status: completed
+ *                 reason: Partial refund
+ *                 note: null
+ *                 refundAmount: 71.33
+ *                 paidRefundAmount: 57.06
+ *                 extraRefundAmount: 0
+ *                 cashRefundAmount: 57
+ *                 cashRemainderCoins: 0.6
+ *                 coins: 142.66
+ *                 returnableCoins: 143.26
+ *                 metadata: null
+ *                 summary:
+ *                   totalCoin: 142.66
+ *                   returnableCoin: 143.26
+ *                   originalReturnableCoin: 142.66
+ *                   cashRemainderCoin: 0.6
+ *                   cashRemainderExpiresAt: "2026-10-31T16:00:00.000Z"
+ *                   cashRemainderSourceSellerId: 33333333-3333-4333-8333-333333333333
+ *                   coinByMonth:
+ *                     2026-09:
+ *                       coin: 142.66
+ *                       expired: false
+ *                       returnedCoin: 142.66
+ *                 createdAt: "2026-09-13T04:51:21.827Z"
+ *                 updatedAt: "2026-09-13T04:55:55.875Z"
+ *       '400':
+ *         description: Invalid transition, quantity, or refund amount.
+ *       '404':
+ *         description: Refund item, order item, order, product, or user not found.
+ *       '503':
+ *         description: Coin ledger is required to complete a fractional-cash refund.
  */
 router.patch(
   "/:refundItemId/status",

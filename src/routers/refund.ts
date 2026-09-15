@@ -51,8 +51,39 @@ const router = Router();
  *     responses:
  *       '200':
  *         description: The created refund item. Its initial log is available through order detail.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/RefundItem'
+ *             example:
+ *               success: true
+ *               data:
+ *                 id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+ *                 orderItemId: cccccccc-cccc-4ccc-8ccc-cccccccccccc
+ *                 quantity: 1
+ *                 status: pending
+ *                 reason: Partial refund
+ *                 note: null
+ *                 refundAmount: 71.33
+ *                 paidRefundAmount: 57.06
+ *                 extraRefundAmount: 0
+ *                 cashRefundAmount: 57
+ *                 cashRemainderCoins: 0.6
+ *                 coins: 142.66
+ *                 returnableCoins: null
+ *                 metadata: null
+ *                 summary: null
+ *                 createdAt: "2026-09-13T04:51:21.827Z"
+ *                 updatedAt: "2026-09-13T04:51:21.827Z"
  *       '400':
  *         description: Invalid quantity, refund amount, order, delivery, or ownership state.
+ *       '404':
+ *         description: Order item, order, or product not found.
  */
 router.post(
   "/",

@@ -1,26 +1,26 @@
-import "./lib/env";
+import "../lib/env";
 
 import {
   getTreasureBoxesByUserId,
   openTreasureBox,
   processVideoCompletion,
-} from "./repository/treasureBox";
+} from "../repository/treasureBox";
 import {
   createUser,
   getDailyStatByUserId,
   getUserByOauthProviderAndOauthId,
   getUsers,
   joinGroupByReferralCode,
-} from "./repository/user";
-import { listProducts } from "./repository/product";
-import { client } from "./lib/initDB";
-import { listAdvertisements } from "./repository/advertisement";
-import { upsertCartItem, listCartItems } from "./repository/cart";
+} from "../repository/user";
+import { listProducts } from "../repository/product";
+import { client } from "../lib/initDB";
+import { listAdvertisements } from "../repository/advertisement";
+import { upsertCartItem, listCartItems } from "../repository/cart";
 import {
   findOrCreateChatRoom,
   sendChatMessage,
   getChatHistory,
-} from "./repository/chatroom";
+} from "../repository/chatroom";
 
 // createUser({
 //   name: "test_from_local2",

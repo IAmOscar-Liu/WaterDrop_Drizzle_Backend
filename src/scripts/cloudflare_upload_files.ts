@@ -1,8 +1,8 @@
 import dotenv from "dotenv";
-import { uploadFile } from "./lib/cloudflare";
+import { uploadFile } from "../lib/cloudflare";
 import path from "path";
 import fs from "fs/promises";
-import { updateAdvertisementById } from "./repository/advertisement";
+import { updateAdvertisementById } from "../repository/advertisement";
 
 const env = process.env.NODE_ENV ?? "local";
 dotenv.config({

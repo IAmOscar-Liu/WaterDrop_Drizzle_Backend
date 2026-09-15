@@ -15,6 +15,7 @@ import {
   transferArchivedAdvertisementBalance,
 } from "../repository/advertisement";
 import {
+  creditManualUserCoins,
   expireUnclaimedTreasureBoxes,
   expireUserCoinLots,
   refundOrderCoinsWithTx,
@@ -55,6 +56,86 @@ async function run() {
     userId: user.id,
     groupAdViewsCountYesterday: 20,
   });
+
+  const [manualCreditUser] = await db
+    .insert(schema.userTable)
+    .values({
+      email: `manual-credit-user-${suffix}@example.test`,
+      oauthProvider: "other",
+      oauthId: `manual-credit-${suffix}`,
+      referralCode: `manual-${suffix}`,
+      timezone: "Asia/Taipei",
+    })
+    .returning();
+  const manualCreditParams = {
+    userId: manualCreditUser.id,
+    amount: "12.34",
+    reason: "Coin-ledger integration test",
+    idempotencyKey: `integration-${suffix}`,
+    operator: "test-suite",
+  };
+  const manualCredit = await creditManualUserCoins(manualCreditParams);
+  assert.equal(manualCredit.alreadyApplied, false);
+  assert.equal(manualCredit.creditedCoin, 12.34);
+  assert.equal(Number(manualCredit.balance), 12.34);
+  assert.equal(manualCredit.lot.currentFunderType, "platform");
+  assert.equal(manualCredit.lot.legacySource, "manual_adjustment");
+  assert.equal(manualCredit.lot.fundingAccountId, null);
+  assert.equal(manualCredit.lot.advertisementId, null);
+  assert.equal(manualCredit.lot.sourceSellerId, null);
+  assert.equal(manualCredit.transaction.type, "manual");
+  assert.equal(manualCredit.transaction.direction, "credit");
+
+  const manualCreditRetry = await creditManualUserCoins(manualCreditParams);
+  assert.equal(manualCreditRetry.alreadyApplied, true);
+  assert.equal(manualCreditRetry.transaction.id, manualCredit.transaction.id);
+  await assert.rejects(
+    () => creditManualUserCoins({ ...manualCreditParams, amount: "12.35" }),
+    /idempotency key was already used with different data/,
+  );
+  await assert.rejects(
+    () =>
+      creditManualUserCoins({
+        ...manualCreditParams,
+        idempotencyKey: `invalid-precision-${suffix}`,
+        amount: "1.001",
+      }),
+    /at most 2 decimal places/,
+  );
+
+  const [manualMonthlyStat] = await db
+    .select()
+    .from(schema.userMonthlyCoinStatTable)
+    .where(
+      eq(schema.userMonthlyCoinStatTable.userId, manualCreditUser.id),
+    );
+  assert.equal(Number(manualMonthlyStat.coinsEarned), 12.34);
+  await db
+    .update(schema.userCoinLotTable)
+    .set({ expiresAt: new Date(Date.now() - 1000) })
+    .where(eq(schema.userCoinLotTable.id, manualCredit.lot.id));
+  await expireUserCoinLots();
+  const [expiredManualLot] = await db
+    .select()
+    .from(schema.userCoinLotTable)
+    .where(eq(schema.userCoinLotTable.id, manualCredit.lot.id));
+  const [expiredManualUser] = await db
+    .select({ coins: schema.userTable.coins })
+    .from(schema.userTable)
+    .where(eq(schema.userTable.id, manualCreditUser.id));
+  const [{ manualSellerReturnCount }] = await db
+    .select({ manualSellerReturnCount: sql<number>`count(*)` })
+    .from(schema.sellerCoinReturnTransactionTable)
+    .where(
+      eq(
+        schema.sellerCoinReturnTransactionTable.userCoinLotId,
+        manualCredit.lot.id,
+      ),
+    );
+  assert.equal(expiredManualLot.status, "expired");
+  assert.equal(Number(expiredManualLot.expiredAmount), 12.34);
+  assert.equal(Number(expiredManualUser.coins), 0);
+  assert.equal(Number(manualSellerReturnCount), 0);
 
   const products = await db
     .insert(schema.productTable)

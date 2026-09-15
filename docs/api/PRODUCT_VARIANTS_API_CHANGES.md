@@ -799,7 +799,7 @@ image of the selected variant and is `null` when it has no image.
 - Order/refund history UI should prefer `variant*AtSale` snapshots over live variant values.
 - Phase 5 database constraints have been run locally.
 - Development/staging rollout order:
-  1. Merge `feat/migration/backfill`, run the additive schema migration, then run `src/back-fill.ts`.
+  1. Merge `feat/migration/backfill` and run the additive schema migration. The one-time product-variant backfill has already completed and its script has been retired.
   2. Merge `feat/constraints`, then run the constraint migration.
   3. Merge `feat/cleanup`, then run the cleanup migration.
-- Chatroom migration note: after adding nullable `chat_rooms.productVariantId`, rerun `src/back-fill.ts`. It fills product-specific chat rooms from the matching order item variant when possible, otherwise from the product default variant. General support rooms remain null.
+- Chatroom migration note: the completed one-time backfill populated product-specific `chat_rooms.productVariantId` from the matching order item variant when possible, otherwise from the product default variant. General support rooms remain null. The script has since been retired.

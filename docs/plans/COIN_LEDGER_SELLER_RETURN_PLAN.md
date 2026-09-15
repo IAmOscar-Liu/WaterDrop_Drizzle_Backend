@@ -74,9 +74,10 @@ The following points are now treated as requirements rather than open questions.
     existing minimum ad-balance eligibility buffer and charge only at successful
     completion. A valid pre-archive assignment remains completable during its
     grace window.
-24. Configure the historical-ledger cutoff independently per runtime environment
-    through `COIN_LEDGER_CUTOVER_AT` in `.env.local`, `.env.development`,
-    `.env.stg`, and `.env.production` as applicable.
+24. Migrate each environment during a bounded write-stopped window: finalize
+    payment-processing orders, backfill existing balances as platform-funded
+    `legacy_unattributed` lots, reconcile to zero difference, enable the ledger,
+    and restart application writes. No runtime cutoff variable is required.
 25. Treat a missing or invalid user timezone as `Asia/Taipei`. Snapshot the
     effective timezone onto every newly created reward cycle, box, and coin lot;
     a later profile change affects only newly created assets.
@@ -1292,25 +1293,17 @@ advertisement. Do not invent attribution.
 
 Confirmed migration rule:
 
-- start exact seller attribution at the environment-specific
-  `COIN_LEDGER_CUTOVER_AT` instant;
-- put pre-deployment coins into `legacy_unattributed` platform-funded lots;
-- capture opening control totals;
-- reconstruct only records with a provable view-to-advertisement chain.
+- stop application writes before transitioning an environment;
+- finalize every payment-processing order through the legacy workflow;
+- put existing balances into fresh `legacy_unattributed` platform-funded lots;
+- capture opening control totals and require zero reconciliation difference;
+- enable exact attribution only after the idempotent backfill checkpoint is
+  `completed`;
+- require exact advertisement/seller provenance for every new qualifying event
+  after restart.
 
-Set `COIN_LEDGER_CUTOVER_AT` independently in the applicable environment file:
-
-```text
-.env.local
-.env.development
-.env.stg
-.env.production
-```
-
-Use an unambiguous UTC ISO-8601 value such as `2026-10-01T00:00:00.000Z` and
-validate it at application startup. Once an environment has written ledger data,
-changing its cutoff requires an explicit audited migration rather than an
-ordinary configuration edit.
+The completed backfill checkpoint and subsequent feature enablement define the
+transition boundary. `COIN_LEDGER_CUTOVER_AT` is not used.
 
 ### Rollout phases
 
@@ -1402,12 +1395,12 @@ hand-edit generated snapshots.
 
 ### Configuration and migration
 
-- each environment rejects a missing or invalid `COIN_LEDGER_CUTOVER_AT` when
-  exact attribution is enabled;
-- events immediately before and at the cutoff are classified on opposite sides
-  without a timezone-dependent comparison;
-- pre-cutoff balances remain `legacy_unattributed` and post-cutoff events require
-  exact provenance.
+- the backfill is idempotent and records a completed checkpoint;
+- reconciliation requires user balances to equal active available lot balances;
+- application writes remain stopped between final legacy-order handling and
+  ledger enablement;
+- migrated balances remain `legacy_unattributed`; all new qualifying events
+  after enablement require exact provenance.
 
 ### Advertisement lifecycle
 
@@ -1433,15 +1426,15 @@ hand-edit generated snapshots.
 
 ## Remaining Inputs Before Implementation
 
-No business-policy decisions remain from the current list. Deployment must set a
-valid `COIN_LEDGER_CUTOVER_AT` value in each environment before enabling exact
-attribution there.
+No business-policy decisions remain from the current list. Each deployment must
+complete its write-stopped backfill and zero-difference reconciliation before
+enabling exact attribution.
 
 ```text
-event created before COIN_LEDGER_CUTOVER_AT
+balance present during the offline backfill
   -> legacy_unattributed/platform-funded
 
-event created at/after COIN_LEDGER_CUTOVER_AT
+qualifying event created after ledger enablement
   -> exact advertisement/seller attribution required
 ```
 
@@ -1481,7 +1474,8 @@ The implementation is complete when:
 - archive excludes an ad from new assignments immediately, yet honors valid
   pre-archive completions and box opens only through their effective deadlines;
 - missing/invalid user timezones consistently use the `Asia/Taipei` fallback;
-- every environment uses its validated `COIN_LEDGER_CUTOVER_AT` boundary;
+- every environment completes and reconciles its idempotent legacy backfill
+  before enabling the ledger;
 - fractional coins remain exact through acquisition, reservation, spending,
   refund, expiry, and return;
 - payment-processing reserves coins until its bounded terminal result;

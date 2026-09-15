@@ -1,23 +1,23 @@
-import "./lib/env";
+import "../lib/env";
 
 import dotenv from "dotenv";
 import path from "path";
 import { eq, sql } from "drizzle-orm";
-import { createNotification } from "./repository/notification";
+import { createNotification } from "../repository/notification";
 import {
   getFcmTokensInUserIds,
   getUserIdsInTimezones,
   getUserMonthlyCoinStatsInUserIds,
   setMonthlyCoinExpire,
   updateGroupAdViewsCountYesterday,
-} from "./repository/user";
-import { getCurrentLocalDateTime, getLastMonthYYYYMM } from "./lib/general";
-import { sendMulticastPushNotification } from "./lib/sendNotification";
+} from "../repository/user";
+import { getCurrentLocalDateTime, getLastMonthYYYYMM } from "../lib/general";
+import { sendMulticastPushNotification } from "../lib/sendNotification";
 import bcrypt from "bcrypt";
-import db from "./lib/initDB";
-import * as schema from "./db/schema";
-import { resetDailyStats } from "./repository/treasureBox";
-import { CustomError } from "./lib/error";
+import db from "../lib/initDB";
+import * as schema from "../db/schema";
+import { resetDailyStats } from "../repository/treasureBox";
+import { CustomError } from "../lib/error";
 
 const FCM_MAX_BATCH_SIZE = 100; // Process 100 users at a time. Adjust as needed.
 const RESET_BATCH_SIZE = 100;

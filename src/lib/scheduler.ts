@@ -446,7 +446,10 @@ export const fetchEcPayStoreListTask = cron.schedule(
     );
 
     try {
-      const tsFile = path.resolve(process.cwd(), "src/ecpay-storeList.ts");
+      const tsFile = path.resolve(
+        process.cwd(),
+        "src/scripts/ecpay-storeList.ts",
+      );
       const jsFile = path.resolve(process.cwd(), "dist/ecpay-storeList.js");
 
       const workerFile = existsSync(jsFile) ? jsFile : tsFile;

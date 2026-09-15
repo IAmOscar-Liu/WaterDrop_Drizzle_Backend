@@ -26,6 +26,8 @@ import { isAccountAdmin } from "./account";
 import { minimumVariantPrice } from "./utils/product";
 import { isCoinLedgerEnabled } from "../lib/coinAccounting";
 import {
+  createLegacyRefundCoinLotsWithTx,
+  hasOrderCoinAllocationsWithTx,
   issueRefundCashRemainderCoinsWithTx,
   refundOrderCoinsWithTx,
 } from "./coinLedger";
@@ -1011,7 +1013,10 @@ export async function updateRefundItemStatus(
         context.order.subTotal > 0 ? refundTotal / context.order.subTotal : 0;
 
       if (refundPercentage > 0) {
-        if (isCoinLedgerEnabled()) {
+        const hasLedgerAllocations = isCoinLedgerEnabled()
+          ? await hasOrderCoinAllocationsWithTx(tx, context.order.id)
+          : false;
+        if (isCoinLedgerEnabled() && hasLedgerAllocations) {
           const ledgerSummary = await refundOrderCoinsWithTx(tx, {
             orderId: context.order.id,
             userId: context.order.userId,
@@ -1127,6 +1132,17 @@ export async function updateRefundItemStatus(
 
           // 4.9 Return non-expired coins to the user's live coin balance.
           if (returnableCoinSum > 0) {
+            if (isCoinLedgerEnabled()) {
+              await createLegacyRefundCoinLotsWithTx(tx, {
+                userId: context.order.userId,
+                refundId: refundItem.id,
+                coinByMonth: Object.fromEntries(
+                  Object.entries(coinUpdates).filter(
+                    ([month]) => expiredByMonth.get(month) === false,
+                  ),
+                ),
+              });
+            }
             promises.push(
               tx
                 .update(schema.userTable)

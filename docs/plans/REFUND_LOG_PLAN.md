@@ -213,8 +213,8 @@ Update Swagger for:
 - admin order detail: `refundItems[].logs`;
 - Flutter order detail: `refundItems[].logs`.
 
-Update `PRODUCT_VARIANTS_API_CHANGES.md` and
-`PRODUCT_VARIANTS_FRONTEND_API_CHANGES.md` only where their refund/order detail
+Update `../api/PRODUCT_VARIANTS_API_CHANGES.md` and
+`../api/PRODUCT_VARIANTS_FRONTEND_API_CHANGES.md` only where their refund/order detail
 handoff shapes need the new `logs` property. If this feature receives a
 separate frontend handoff document, keep the shared files concise and link to
 it.

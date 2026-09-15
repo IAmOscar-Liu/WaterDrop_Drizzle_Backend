@@ -464,7 +464,7 @@ Service should:
 
 For development and staging, apply the branches step by step:
 
-1. Merge `feat/migration/backfill`, run the additive schema migration, then run `src/back-fill.ts`.
+1. Merge `feat/migration/backfill` and run the additive schema migration. The one-time backfill has already completed and its script has been retired.
 2. Merge `feat/constraints`, then run the constraint migration.
 3. Merge `feat/cleanup`, then run the cleanup migration.
 
@@ -497,12 +497,12 @@ Use this section to track implementation progress. Keep each phase buildable and
   - [x] Generate migration for additive schema.
   - [x] Generate migration for nullable `chat_rooms.productVariantId`.
 - [x] Phase 2: Backfill
-  - [x] Write `src/back-fill.ts` backfill script.
+  - [x] Run the now-retired one-time product-variant backfill.
   - [x] Create one default variant for every existing product.
   - [x] Backfill `cart_items.productVariantId`.
   - [x] Backfill `order_items.productVariantId`.
   - [x] Backfill order item variant snapshot fields.
-  - [x] Update `src/back-fill.ts` to backfill product-specific `chat_rooms.productVariantId`.
+  - [x] Backfill product-specific `chat_rooms.productVariantId` before retiring the script.
   - [x] Run chat room variant backfill.
   - [x] Backfill `merchant_trades.variantIds`.
   - [x] Verify every product/cart item/order item has a variant.

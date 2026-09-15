@@ -948,6 +948,163 @@ export async function issueRefundCashRemainderCoinsWithTx(
   return { creditedCoin: coinUnits / 100, lot };
 }
 
+export async function creditManualUserCoins(params: {
+  userId: string;
+  amount: number | string;
+  reason: string;
+  idempotencyKey: string;
+  operator?: string;
+}) {
+  const environment = process.env.NODE_ENV ?? "";
+  const allowedEnvironment =
+    environment === "local" ||
+    environment === "development" ||
+    (environment === "test" && process.env.TEST_DATABASE_MANAGED === "true");
+  if (!allowedEnvironment) {
+    throw new Error(
+      "Manual coin credits are only allowed in local, development, and managed test environments.",
+    );
+  }
+  if (!isCoinLedgerEnabled()) {
+    throw new Error("COIN_LEDGER_ENABLED must be true for manual coin credits.");
+  }
+
+  const numericAmount = Number(params.amount);
+  const coinUnits = toCoinUnits(params.amount);
+  if (coinUnits <= 0) {
+    throw new Error("Manual coin credit amount must be greater than zero.");
+  }
+  if (!Number.isSafeInteger(coinUnits)) {
+    throw new Error("Manual coin credit amount is too large.");
+  }
+  if (Math.abs(numericAmount - coinUnits / 100) > Number.EPSILON * 10) {
+    throw new Error("Manual coin credit amount supports at most 2 decimal places.");
+  }
+
+  const reason = params.reason.trim();
+  if (!reason) throw new Error("Manual coin credit reason is required.");
+  const providedIdempotencyKey = params.idempotencyKey.trim();
+  if (!providedIdempotencyKey) {
+    throw new Error("Manual coin credit idempotency key is required.");
+  }
+  const idempotencyKey = `manual-credit:${providedIdempotencyKey}`;
+  const amount = fromCoinUnits(coinUnits);
+
+  return db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${idempotencyKey}, 0))`,
+    );
+
+    const [existingTransaction] = await tx
+      .select()
+      .from(schema.userCoinTransactionTable)
+      .where(
+        eq(schema.userCoinTransactionTable.idempotencyKey, idempotencyKey),
+      );
+    if (existingTransaction) {
+      if (
+        existingTransaction.type !== "manual" ||
+        existingTransaction.direction !== "credit" ||
+        existingTransaction.userId !== params.userId ||
+        toCoinUnits(existingTransaction.amount) !== coinUnits ||
+        !existingTransaction.lotId
+      ) {
+        throw new Error(
+          "Manual coin credit idempotency key was already used with different data.",
+        );
+      }
+      const [existingLot] = await tx
+        .select()
+        .from(schema.userCoinLotTable)
+        .where(eq(schema.userCoinLotTable.id, existingTransaction.lotId));
+      const [existingUser] = await tx
+        .select({ coins: schema.userTable.coins })
+        .from(schema.userTable)
+        .where(eq(schema.userTable.id, params.userId));
+      if (!existingLot || !existingUser) {
+        throw new Error("Existing manual coin credit is incomplete.");
+      }
+      return {
+        creditedCoin: coinUnits / 100,
+        balance: existingUser.coins,
+        lot: existingLot,
+        transaction: existingTransaction,
+        alreadyApplied: true,
+      };
+    }
+
+    const [user] = await tx
+      .select({ timezone: schema.userTable.timezone })
+      .from(schema.userTable)
+      .where(eq(schema.userTable.id, params.userId))
+      .for("update");
+    if (!user) throw new Error("Manual coin credit user not found.");
+
+    const now = new Date();
+    const timezone = effectiveTimezone(user.timezone);
+    const earningLocalMonth = getLocalMonth(now, timezone);
+    const [lot] = await tx
+      .insert(schema.userCoinLotTable)
+      .values({
+        userId: params.userId,
+        legacySource: "manual_adjustment",
+        currentFunderType: "platform",
+        originalAmount: amount,
+        availableAmount: amount,
+        timezoneSnapshot: timezone,
+        earningLocalMonth,
+        expiresAt: getEndOfNextLocalMonth(now, timezone),
+      })
+      .returning();
+    const [manualTransaction] = await tx
+      .insert(schema.userCoinTransactionTable)
+      .values({
+        userId: params.userId,
+        lotId: lot.id,
+        type: "manual",
+        direction: "credit",
+        amount,
+        idempotencyKey,
+        metadata: {
+          source: "manual_credit",
+          reason,
+          operator: params.operator?.trim() || "unspecified",
+          environment,
+        },
+      })
+      .returning();
+    const [updatedUser] = await tx
+      .update(schema.userTable)
+      .set({ coins: sql`${schema.userTable.coins} + ${amount}` })
+      .where(eq(schema.userTable.id, params.userId))
+      .returning({ coins: schema.userTable.coins });
+    await tx
+      .insert(schema.userMonthlyCoinStatTable)
+      .values({
+        userId: params.userId,
+        month: earningLocalMonth,
+        coinsEarned: Number(amount),
+      })
+      .onConflictDoUpdate({
+        target: [
+          schema.userMonthlyCoinStatTable.userId,
+          schema.userMonthlyCoinStatTable.month,
+        ],
+        set: {
+          coinsEarned: sql`${schema.userMonthlyCoinStatTable.coinsEarned} + ${amount}`,
+        },
+      });
+
+    return {
+      creditedCoin: coinUnits / 100,
+      balance: updatedUser.coins,
+      lot,
+      transaction: manualTransaction,
+      alreadyApplied: false,
+    };
+  });
+}
+
 export async function allocateOrderCoinsWithTx(
   tx: DbTransaction,
   params: {
@@ -1059,6 +1216,76 @@ export async function allocateOrderCoinsWithTx(
     .set({ coins: sql`${schema.userTable.coins} - ${fromCoinUnits(requiredUnits)}` })
     .where(eq(schema.userTable.id, params.userId));
   return coinInfo;
+}
+
+export async function hasOrderCoinAllocationsWithTx(
+  tx: DbTransaction,
+  orderId: string,
+) {
+  const [allocation] = await tx
+    .select({ id: schema.orderCoinAllocationTable.id })
+    .from(schema.orderCoinAllocationTable)
+    .where(eq(schema.orderCoinAllocationTable.orderId, orderId))
+    .limit(1);
+  return Boolean(allocation);
+}
+
+export async function createLegacyRefundCoinLotsWithTx(
+  tx: DbTransaction,
+  params: {
+    userId: string;
+    refundId: string;
+    coinByMonth: Record<string, number>;
+  },
+) {
+  const [user] = await tx
+    .select({ timezone: schema.userTable.timezone })
+    .from(schema.userTable)
+    .where(eq(schema.userTable.id, params.userId))
+    .for("update");
+  if (!user) throw new Error("Refund user not found.");
+
+  const timezone = effectiveTimezone(user.timezone);
+  const lots: schema.UserCoinLot[] = [];
+  for (const [earningLocalMonth, coin] of Object.entries(params.coinByMonth)) {
+    const coinUnits = toCoinUnits(coin);
+    if (coinUnits <= 0) continue;
+    const [yearText, monthText] = earningLocalMonth.split("-");
+    const year = Number(yearText);
+    const month = Number(monthText);
+    if (!Number.isInteger(year) || month < 1 || month > 12) {
+      throw new Error(`Invalid legacy earning month: ${earningLocalMonth}`);
+    }
+    const earningMonthReference = new Date(
+      Date.UTC(year, month - 1, 15, 12, 0, 0),
+    );
+    const amount = fromCoinUnits(coinUnits);
+    const [lot] = await tx
+      .insert(schema.userCoinLotTable)
+      .values({
+        userId: params.userId,
+        legacySource: "legacy_unattributed",
+        currentFunderType: "platform",
+        originalAmount: amount,
+        availableAmount: amount,
+        timezoneSnapshot: timezone,
+        earningLocalMonth,
+        expiresAt: getEndOfNextLocalMonth(earningMonthReference, timezone),
+      })
+      .returning();
+    await tx.insert(schema.userCoinTransactionTable).values({
+      userId: params.userId,
+      lotId: lot.id,
+      refundId: params.refundId,
+      type: "refund",
+      direction: "credit",
+      amount,
+      idempotencyKey: `legacy-refund:${params.refundId}:${earningLocalMonth}`,
+      metadata: { source: "historical_order_coin_info" },
+    });
+    lots.push(lot);
+  }
+  return lots;
 }
 
 export async function consumeOrderReservationsWithTx(

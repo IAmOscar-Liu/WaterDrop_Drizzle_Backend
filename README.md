@@ -21,7 +21,16 @@ src/
   type/                 Shared TypeScript request/response types
   assets/               Static assets and local JSON data
   seed/                 Seed scripts
+  scripts/              Operational, migration, and development scripts
+docs/
+  api/                  API and frontend integration references
+  plans/                Feature and refactoring plans
+  migrations/           Database migration and rollout notes
+  operations/            Operational command guides
+  legal/                Terms and agreements
 ```
+
+See [`docs/README.md`](docs/README.md) for the documentation index.
 
 ## Admin APIs For Frontend
 

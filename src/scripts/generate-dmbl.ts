@@ -1,13 +1,13 @@
-import "./lib/env";
+import "../lib/env";
 
 import path from "path";
 import { pgGenerate } from "drizzle-dbml-generator";
-import * as schema from "./db/schema";
+import * as schema from "../db/schema";
 
 async function generateDbml() {
   const dbml = pgGenerate({
     schema,
-    out: path.join(__dirname, "../schema.dbml"), // Optional: specify output file path
+    out: path.resolve(process.cwd(), "schema.dbml"), // Optional: specify output file path
     // other options like 'createReferencesFromRelations' can be added here
   });
 
