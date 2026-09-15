@@ -59,7 +59,7 @@
     "generate-dbml": "ts-node src/scripts/generate-dmbl.ts",
     "daily-reset": "NODE_ENV=stg ts-node src/scripts/daily-reset.ts",
     "getStoreList": "NODE_ENV=stg ts-node src/scripts/ecpay-storeList.ts",
-    "back-fill": "NODE_ENV=local COIN_LEDGER_ENABLED=false tsx src/scripts/coinLedgerMigration.ts backfill --apply",
+    "back-fill": "NODE_ENV=development COIN_LEDGER_ENABLED=false tsx src/scripts/coinLedgerMigration.ts backfill --apply",
     "test-script": "NODE_ENV=stg ts-node src/scripts/test_script.ts"
   },
   "keywords": [],

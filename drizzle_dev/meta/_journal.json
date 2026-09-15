@@ -421,6 +421,13 @@
       "when": 1786804050555,
       "tag": "0059_wild_frog_thor",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1789454414218,
+      "tag": "0060_lowly_midnight",
+      "breakpoints": true
     }
   ]
 }
