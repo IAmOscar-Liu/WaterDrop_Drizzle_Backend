@@ -1398,30 +1398,266 @@ async function run() {
         optionValues: {},
       })
       .returning();
+
+    expectSuccess(
+      await request("/api/collection", {
+        method: "POST",
+        token: orderUser.token,
+        body: { productId: virtualProduct.id },
+      }),
+    );
+    expectSuccess(
+      await request("/api/cart/item", {
+        method: "POST",
+        token: orderUser.token,
+        body: {
+          productId: virtualProduct.id,
+          productVariantId: virtualVariant.id,
+          quantity: 1,
+        },
+      }),
+    );
+    expectSuccess(
+      await request(`/api/admin/product/${virtualProduct.id}`, {
+        method: "PUT",
+        token: sellerToken,
+        body: { status: "inactive" },
+      }),
+    );
+    const cartAfterProductDeactivation = expectSuccess(
+      await request("/api/cart/list", { token: orderUser.token }),
+    ) as schema.CartItem[];
+    assert.equal(
+      cartAfterProductDeactivation.some(
+        (item) => item.productId === virtualProduct.id,
+      ),
+      false,
+    );
+    const collectionsAfterProductDeactivation = expectSuccess(
+      await request("/api/collection/list", { token: orderUser.token }),
+    );
+    assert.equal(
+      collectionsAfterProductDeactivation.collections.some(
+        (collection: schema.Collection) =>
+          collection.productId === virtualProduct.id,
+      ),
+      false,
+    );
+    const [preservedInactiveCollection] = await db
+      .select()
+      .from(schema.collectionTable)
+      .where(
+        and(
+          eq(schema.collectionTable.userId, orderUser.user.id),
+          eq(schema.collectionTable.productId, virtualProduct.id),
+        ),
+      );
+    assert.ok(preservedInactiveCollection);
+    const addInactiveProductToCart = await request("/api/cart/item", {
+      method: "POST",
+      token: orderUser.token,
+      body: {
+        productId: virtualProduct.id,
+        productVariantId: virtualVariant.id,
+        quantity: 1,
+      },
+    });
+    assert.equal(addInactiveProductToCart.status, 400);
+    assert.match(
+      String(addInactiveProductToCart.json.message),
+      /Product is unavailable/,
+    );
+    const collectInactiveProduct = await request("/api/collection", {
+      method: "POST",
+      token: orderUser.token,
+      body: { productId: virtualProduct.id },
+    });
+    assert.equal(collectInactiveProduct.status, 400);
+    assert.match(
+      String(collectInactiveProduct.json.message),
+      /Product is unavailable/,
+    );
+    expectSuccess(
+      await request(`/api/admin/product/${virtualProduct.id}`, {
+        method: "PUT",
+        token: sellerToken,
+        body: { status: "active" },
+      }),
+    );
+    const collectionsAfterProductReactivation = expectSuccess(
+      await request("/api/collection/list", { token: orderUser.token }),
+    );
+    assert.equal(
+      collectionsAfterProductReactivation.collections.some(
+        (collection: schema.Collection) =>
+          collection.productId === virtualProduct.id,
+      ),
+      true,
+    );
+
+    const [variantCartProduct] = await db
+      .insert(schema.productTable)
+      .values({
+        sellerId: seller.id,
+        name: `API Variant Cart Product ${suffix}`,
+        description: "Cart cleanup API fixture",
+        type: "virtual",
+      })
+      .returning();
+    const variantCartVariants = await db
+      .insert(schema.productVariantTable)
+      .values(
+        ["Small", "Medium", "Large"].map((name, index) => ({
+          productId: variantCartProduct.id,
+          name,
+          sku: `api-cart-${index}-${suffix}`,
+          price: 100 + index,
+          stock: 10,
+          sortOrder: index,
+          optionValues: { size: name },
+        })),
+      )
+      .returning();
+    expectSuccess(
+      await request("/api/collection", {
+        method: "POST",
+        token: orderUser.token,
+        body: { productId: variantCartProduct.id },
+      }),
+    );
+    for (const variant of variantCartVariants.slice(0, 2)) {
+      expectSuccess(
+        await request("/api/cart/item", {
+          method: "POST",
+          token: orderUser.token,
+          body: {
+            productId: variantCartProduct.id,
+            productVariantId: variant.id,
+            quantity: 1,
+          },
+        }),
+      );
+    }
+    expectSuccess(
+      await request(`/api/admin/product/${variantCartProduct.id}`, {
+        method: "PUT",
+        token: sellerToken,
+        body: {
+          variants: [{ id: variantCartVariants[0].id, status: "inactive" }],
+        },
+      }),
+    );
+    const cartAfterVariantDeactivation = expectSuccess(
+      await request("/api/cart/list", { token: orderUser.token }),
+    ) as schema.CartItem[];
+    assert.equal(
+      cartAfterVariantDeactivation.some(
+        (item) => item.productVariantId === variantCartVariants[0].id,
+      ),
+      false,
+    );
+    assert.equal(
+      cartAfterVariantDeactivation.some(
+        (item) => item.productVariantId === variantCartVariants[1].id,
+      ),
+      true,
+    );
+    const collectionsAfterVariantDeactivation = expectSuccess(
+      await request("/api/collection/list", { token: orderUser.token }),
+    );
+    assert.equal(
+      collectionsAfterVariantDeactivation.collections.some(
+        (collection: schema.Collection) =>
+          collection.productId === variantCartProduct.id,
+      ),
+      true,
+    );
+    expectSuccess(
+      await request(`/api/admin/product/${variantCartProduct.id}`, {
+        method: "DELETE",
+        token: sellerToken,
+      }),
+    );
+    const cartAfterProductSoftDelete = expectSuccess(
+      await request("/api/cart/list", { token: orderUser.token }),
+    ) as schema.CartItem[];
+    assert.equal(
+      cartAfterProductSoftDelete.some(
+        (item) => item.productId === variantCartProduct.id,
+      ),
+      false,
+    );
+    const [deletedProductCollection] = await db
+      .select()
+      .from(schema.collectionTable)
+      .where(
+        and(
+          eq(schema.collectionTable.userId, orderUser.user.id),
+          eq(schema.collectionTable.productId, variantCartProduct.id),
+        ),
+      );
+    assert.equal(deletedProductCollection, undefined);
+
+    const virtualOrderBody = (idempotencyKey: string) => ({
+      idempotencyKey,
+      items: [
+        {
+          productId: virtualProduct.id,
+          productVariantId: virtualVariant.id,
+          quantity: 1,
+          unitPriceAtSale: 100,
+          productNameAtSale: virtualProduct.name,
+        },
+      ],
+      subTotal: 100,
+      totalAmount: 95,
+      discountCoin: 50,
+      shippingCost: 0,
+      shippingCostDeduction: 0,
+      transactionFee: 0,
+      orderPayment: "Credit",
+    });
+
+    await db
+      .update(schema.productTable)
+      .set({ status: "inactive" })
+      .where(eq(schema.productTable.id, virtualProduct.id));
+    const inactiveProductOrder = await request("/api/order", {
+      method: "POST",
+      token: orderUser.token,
+      body: virtualOrderBody(`api-order-inactive-product-${suffix}`),
+    });
+    assert.equal(inactiveProductOrder.status, 400);
+    assert.match(
+      String(inactiveProductOrder.json.message),
+      /Product inactive/,
+    );
+
+    await db
+      .update(schema.productTable)
+      .set({ status: "active", deletedAt: new Date() })
+      .where(eq(schema.productTable.id, virtualProduct.id));
+    const deletedProductOrder = await request("/api/order", {
+      method: "POST",
+      token: orderUser.token,
+      body: virtualOrderBody(`api-order-deleted-product-${suffix}`),
+    });
+    assert.equal(deletedProductOrder.status, 400);
+    assert.match(
+      String(deletedProductOrder.json.message),
+      /Product deleted/,
+    );
+
+    await db
+      .update(schema.productTable)
+      .set({ deletedAt: null })
+      .where(eq(schema.productTable.id, virtualProduct.id));
     const orderIdempotencyKey = `api-order-${suffix}`;
     const order = expectSuccess(
       await request("/api/order", {
         method: "POST",
         token: orderUser.token,
-        body: {
-          idempotencyKey: orderIdempotencyKey,
-          items: [
-            {
-              productId: virtualProduct.id,
-              productVariantId: virtualVariant.id,
-              quantity: 1,
-              unitPriceAtSale: 100,
-              productNameAtSale: virtualProduct.name,
-            },
-          ],
-          subTotal: 100,
-          totalAmount: 95,
-          discountCoin: 50,
-          shippingCost: 0,
-          shippingCostDeduction: 0,
-          transactionFee: 0,
-          orderPayment: "Credit",
-        },
+        body: virtualOrderBody(orderIdempotencyKey),
       }),
     );
     assert.equal(order.orderStatus, "pending");

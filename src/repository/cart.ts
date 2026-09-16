@@ -21,6 +21,23 @@ export async function upsertCartItem(
   quantity: number,
 ) {
   return db.transaction(async (tx) => {
+    const [product] = await tx
+      .select({
+        status: schema.productTable.status,
+        deletedAt: schema.productTable.deletedAt,
+      })
+      .from(schema.productTable)
+      .where(eq(schema.productTable.id, productId))
+      .for("update");
+
+    if (!product) {
+      throw new CustomError("Product not found", 404);
+    }
+
+    if (product.status !== "active" || product.deletedAt) {
+      throw new CustomError("Product is unavailable", 400);
+    }
+
     const [variant] = await tx
       .select()
       .from(schema.productVariantTable)
@@ -121,6 +138,41 @@ export async function updateCartItemVariant({
   productVariantId: string;
 }) {
   return db.transaction(async (tx) => {
+    const cartItemSnapshot = await tx.query.cartItemTable.findFirst({
+      where: and(
+        eq(schema.cartItemTable.id, cartItemId),
+        eq(schema.cartItemTable.userId, userId),
+      ),
+    });
+
+    if (!cartItemSnapshot) {
+      throw new CustomError("Cart item not found", 404);
+    }
+
+    const [product] = await tx
+      .select()
+      .from(schema.productTable)
+      .where(eq(schema.productTable.id, cartItemSnapshot.productId))
+      .for("update");
+
+    if (!product || product.status !== "active" || product.deletedAt) {
+      throw new CustomError("Product is unavailable", 400);
+    }
+
+    const [variant] = await tx
+      .select()
+      .from(schema.productVariantTable)
+      .where(eq(schema.productVariantTable.id, productVariantId))
+      .for("update");
+
+    if (!variant || variant.productId !== cartItemSnapshot.productId) {
+      throw new CustomError("Product variant not found", 404);
+    }
+
+    if (variant.status !== "active") {
+      throw new CustomError("Product variant is inactive", 400);
+    }
+
     const [cartItem] = await tx
       .select()
       .from(schema.cartItemTable)
@@ -128,6 +180,7 @@ export async function updateCartItemVariant({
         and(
           eq(schema.cartItemTable.id, cartItemId),
           eq(schema.cartItemTable.userId, userId),
+          eq(schema.cartItemTable.productId, cartItemSnapshot.productId),
         ),
       )
       .for("update");
@@ -138,20 +191,6 @@ export async function updateCartItemVariant({
 
     if (cartItem.productVariantId === productVariantId) {
       return cartItem;
-    }
-
-    const [variant] = await tx
-      .select()
-      .from(schema.productVariantTable)
-      .where(eq(schema.productVariantTable.id, productVariantId))
-      .for("update");
-
-    if (!variant || variant.productId !== cartItem.productId) {
-      throw new CustomError("Product variant not found", 404);
-    }
-
-    if (variant.status !== "active") {
-      throw new CustomError("Product variant is inactive", 400);
     }
 
     const [targetCartItem] = await tx

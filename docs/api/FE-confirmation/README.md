@@ -1,6 +1,6 @@
 # FE confirmation package
 
-Date: 2026-09-16
+Last updated: 2026-09-17
 
 This folder is the frontend handoff package for the current backend changes.
 It includes both admin-web contracts and the app/Flutter coin-ledger changes so
@@ -44,10 +44,13 @@ at `docs/plans/ADMIN_SECTION_3_WITHDRAWAL_PLAN.md`.
 
 ## Flutter/app FE
 
-1. [Flutter coin-ledger API changes](FLUTTER_COIN_LEDGER_API_CHANGES.md) — ad
+1. [Inactive product and variant update](FLUTTER_INACTIVE_PRODUCT_VARIANT_UPDATE_2026-09-17.md) —
+   product availability, automatic cart cleanup, collection behavior, and
+   checkout error handling.
+2. [Flutter coin-ledger API changes](FLUTTER_COIN_LEDGER_API_CHANGES.md) — ad
    assignment, video completion, treasure-box deadlines, order coin use, and
    refund behavior.
-2. [Flutter API enums](FLUTTER_API_ENUMS.md) — shared enum values and client
+3. [Flutter API enums](FLUTTER_API_ENUMS.md) — shared enum values and client
    model guidance.
 
 ## Important boundaries

@@ -536,6 +536,16 @@ Response body change:
 Behavior change:
 
 - Collection product payload includes active variant object list so the app can add directly when only one variant is available, or open variant selection when multiple variants are available.
+- Temporarily inactive products are hidden from this response, but the saved collection row is preserved so it can reappear after reactivation.
+- Inactivating one product variant does not remove the product-level collection.
+- Soft-deleting a product permanently removes it from every user's collection.
+
+### `POST /api/collection`
+
+Validation:
+
+- Product must exist, be active, and not be soft-deleted.
+- An inactive or soft-deleted product returns `400` with `Product is unavailable`.
 
 ### `GET /api/cart/list`
 
@@ -573,8 +583,16 @@ Request body change:
 Validation:
 
 - `productVariantId` is required now.
+- Product must be active and not soft-deleted.
 - Variant must belong to `productId`.
 - Variant must be active and have enough available stock.
+
+Cart lifecycle:
+
+- Changing a product to `inactive` removes every variant of that product from every user's cart.
+- Changing a product variant to `inactive` removes that variant from every user's cart while leaving the product's other active variants untouched.
+- Soft-deleting a product also removes all of its cart rows.
+- These removals happen in the same database transaction as the product/variant status change, so Flutter should refresh the cart and must not assume a previously loaded cart item still exists.
 
 Response body:
 

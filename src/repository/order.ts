@@ -117,17 +117,33 @@ export async function createOrder({
       throw new CustomError("Duplicate productVariantId in order items", 400);
     }
 
+    const productMap = new Map<string, schema.Product>();
     const variantMap = new Map<string, schema.ProductVariant>();
 
     if (items.length > 0) {
+      const sortedProductIds = [
+        ...new Set(items.map((item) => item.productId)),
+      ].sort();
       const sortedVariantIds = [
         ...new Set(items.map((item) => item.productVariantId!)),
       ].sort();
+
+      const products = await tx
+        .select()
+        .from(schema.productTable)
+        .where(inArray(schema.productTable.id, sortedProductIds))
+        .orderBy(schema.productTable.id)
+        .for("update");
+
+      products.forEach((product) => {
+        productMap.set(product.id, product);
+      });
 
       const variants = await tx
         .select()
         .from(schema.productVariantTable)
         .where(inArray(schema.productVariantTable.id, sortedVariantIds))
+        .orderBy(schema.productVariantTable.id)
         .for("update");
 
       variants.forEach((variant) => {
@@ -136,6 +152,37 @@ export async function createOrder({
 
       const errors = [];
       for (const item of items) {
+        const product = productMap.get(item.productId);
+        if (!product) {
+          errors.push({
+            productId: item.productId,
+            productVariantId: item.productVariantId,
+            productName: item.productNameAtSale,
+            reason: "Product not found",
+          });
+          continue;
+        }
+
+        if (product.deletedAt) {
+          errors.push({
+            productId: item.productId,
+            productVariantId: item.productVariantId,
+            productName: item.productNameAtSale,
+            reason: "Product deleted",
+          });
+          continue;
+        }
+
+        if (product.status !== "active") {
+          errors.push({
+            productId: item.productId,
+            productVariantId: item.productVariantId,
+            productName: item.productNameAtSale,
+            reason: "Product inactive",
+          });
+          continue;
+        }
+
         const variant = variantMap.get(item.productVariantId!);
         if (!variant || variant.productId !== item.productId) {
           errors.push({

@@ -552,6 +552,7 @@ router.post(
  *   put:
  *     tags: [Product]
  *     summary: Update an existing product
+ *     description: Setting the product to inactive removes all of its variants from every user's cart. Setting an individual variant to inactive removes only that variant from every user's cart. The status update and cart cleanup are atomic.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -669,7 +670,7 @@ router.put(
  *   delete:
  *     tags: [Product]
  *     summary: Soft-delete a product
- *     description: The owning seller or platform admin may deactivate the product and all variants. Non-archived ads are paused and business history is preserved. Employees cannot delete products.
+ *     description: The owning seller or platform admin may deactivate the product and all variants. The product is removed from every user's cart and collection in the same transaction. Non-archived ads are paused and business history is preserved. Employees cannot delete products.
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: path

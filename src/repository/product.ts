@@ -313,6 +313,16 @@ export async function softDeleteProduct(
         entityId: productId,
       });
     }
+    // Keep cart availability consistent with the product lifecycle. This also
+    // makes a repeated soft-delete repair any stale cart rows left by older
+    // application versions.
+    await tx
+      .delete(schema.cartItemTable)
+      .where(eq(schema.cartItemTable.productId, productId));
+    await tx
+      .delete(schema.collectionTable)
+      .where(eq(schema.collectionTable.productId, productId));
+
     return tx.query.productTable.findFirst({
       where: eq(schema.productTable.id, productId),
       with: { variants: true, advertisement: { with: { stats: true } } },
@@ -584,6 +594,7 @@ export async function updateProduct(
       }
     }
 
+    let persistedVariants: schema.ProductVariant[] | undefined;
     if (variants) {
       const existingVariants = await tx
         .select()
@@ -641,10 +652,31 @@ export async function updateProduct(
         }
       }
 
-      const persistedVariants = await tx.query.productVariantTable.findMany({
+      persistedVariants = await tx.query.productVariantTable.findMany({
         where: eq(schema.productVariantTable.productId, productId),
       });
       validateProductVariantMode(persistedVariants);
+    }
+
+    if (updatedProduct.status === "inactive") {
+      await tx
+        .delete(schema.cartItemTable)
+        .where(eq(schema.cartItemTable.productId, productId));
+    } else if (persistedVariants) {
+      const inactiveVariantIds = persistedVariants
+        .filter((variant) => variant.status === "inactive")
+        .map((variant) => variant.id);
+
+      if (inactiveVariantIds.length > 0) {
+        await tx
+          .delete(schema.cartItemTable)
+          .where(
+            inArray(
+              schema.cartItemTable.productVariantId,
+              inactiveVariantIds,
+            ),
+          );
+      }
     }
 
     // 3. Return the fully updated product with its relations
