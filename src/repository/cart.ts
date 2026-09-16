@@ -21,6 +21,22 @@ export async function upsertCartItem(
   quantity: number,
 ) {
   return db.transaction(async (tx) => {
+    // Removing the user's own row must remain possible even when its product
+    // or variant has since become unavailable. This also cleans legacy stale
+    // rows created before automatic lifecycle cleanup was introduced.
+    if (quantity <= 0) {
+      await tx
+        .delete(schema.cartItemTable)
+        .where(
+          and(
+            eq(schema.cartItemTable.userId, userId),
+            eq(schema.cartItemTable.productId, productId),
+            eq(schema.cartItemTable.productVariantId, productVariantId),
+          ),
+        );
+      return;
+    }
+
     const [product] = await tx
       .select({
         status: schema.productTable.status,
@@ -54,19 +70,6 @@ export async function upsertCartItem(
 
     if (quantity > variant.stock - variant.reserve) {
       throw new CustomError("Insufficient stock", 400);
-    }
-
-    // If quantity is 0 or less, remove the item from the cart.
-    if (quantity <= 0) {
-      await tx
-        .delete(schema.cartItemTable)
-        .where(
-          and(
-            eq(schema.cartItemTable.userId, userId),
-            eq(schema.cartItemTable.productVariantId, productVariantId),
-          ),
-        );
-      return;
     }
 
     const existingCartItem = await tx.query.cartItemTable.findFirst({

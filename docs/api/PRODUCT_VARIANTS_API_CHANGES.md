@@ -586,6 +586,7 @@ Validation:
 - Product must be active and not soft-deleted.
 - Variant must belong to `productId`.
 - Variant must be active and have enough available stock.
+- Exception: `quantity <= 0` is an idempotent removal operation and remains allowed when the referenced product or variant is inactive, so clients can clean legacy stale cart rows.
 
 Cart lifecycle:
 

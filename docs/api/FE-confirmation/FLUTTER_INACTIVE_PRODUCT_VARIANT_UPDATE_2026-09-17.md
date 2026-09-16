@@ -95,6 +95,21 @@ New/confirmed availability failures:
 The endpoint may also return `404` with `Product not found` or
 `Product variant not found`.
 
+To manually remove a stale cart row, send the same product and variant IDs with
+`quantity: 0`:
+
+```json
+{
+  "productId": "product-uuid",
+  "productVariantId": "variant-uuid",
+  "quantity": 0
+}
+```
+
+Removal does not require the product or variant to still be active. It is
+idempotent: the request also succeeds when the cart row has already been
+removed by backend lifecycle cleanup.
+
 ### `PUT /api/cart/item/{cartItemId}/variant`
 
 Changing a cart item's variant now also verifies that the parent product is
@@ -148,6 +163,23 @@ The product must be active and not soft-deleted. An unavailable product returns:
 ```
 
 A missing product returns `404` with `Product not found`.
+
+### `DELETE /api/collection`
+
+Flutter can manually remove a saved inactive product when it still knows the
+product ID:
+
+```json
+{
+  "productId": "product-uuid"
+}
+```
+
+Deletion does not require the product to be active. Because inactive products
+are hidden from `GET /api/collection/list`, Flutter must use the product ID from
+its previously loaded/cached state if it offers this manual action. A collection
+already removed by product soft-delete returns `404` with
+`Collection not found`.
 
 ## Order creation
 

@@ -1467,6 +1467,33 @@ async function run() {
       String(addInactiveProductToCart.json.message),
       /Product is unavailable/,
     );
+    await db.insert(schema.cartItemTable).values({
+      userId: orderUser.user.id,
+      productId: virtualProduct.id,
+      productVariantId: virtualVariant.id,
+      quantity: 1,
+    });
+    expectSuccess(
+      await request("/api/cart/item", {
+        method: "POST",
+        token: orderUser.token,
+        body: {
+          productId: virtualProduct.id,
+          productVariantId: virtualVariant.id,
+          quantity: 0,
+        },
+      }),
+    );
+    const [manuallyRemovedInactiveProductCartItem] = await db
+      .select()
+      .from(schema.cartItemTable)
+      .where(
+        and(
+          eq(schema.cartItemTable.userId, orderUser.user.id),
+          eq(schema.cartItemTable.productVariantId, virtualVariant.id),
+        ),
+      );
+    assert.equal(manuallyRemovedInactiveProductCartItem, undefined);
     const collectInactiveProduct = await request("/api/collection", {
       method: "POST",
       token: orderUser.token,
@@ -1493,6 +1520,37 @@ async function run() {
           collection.productId === virtualProduct.id,
       ),
       true,
+    );
+    expectSuccess(
+      await request(`/api/admin/product/${virtualProduct.id}`, {
+        method: "PUT",
+        token: sellerToken,
+        body: { status: "inactive" },
+      }),
+    );
+    expectSuccess(
+      await request("/api/collection", {
+        method: "DELETE",
+        token: orderUser.token,
+        body: { productId: virtualProduct.id },
+      }),
+    );
+    expectSuccess(
+      await request(`/api/admin/product/${virtualProduct.id}`, {
+        method: "PUT",
+        token: sellerToken,
+        body: { status: "active" },
+      }),
+    );
+    const collectionsAfterManualInactiveRemoval = expectSuccess(
+      await request("/api/collection/list", { token: orderUser.token }),
+    );
+    assert.equal(
+      collectionsAfterManualInactiveRemoval.collections.some(
+        (collection: schema.Collection) =>
+          collection.productId === virtualProduct.id,
+      ),
+      false,
     );
 
     const [variantCartProduct] = await db
@@ -1562,6 +1620,36 @@ async function run() {
       ),
       true,
     );
+    await db.insert(schema.cartItemTable).values({
+      userId: orderUser.user.id,
+      productId: variantCartProduct.id,
+      productVariantId: variantCartVariants[0].id,
+      quantity: 1,
+    });
+    expectSuccess(
+      await request("/api/cart/item", {
+        method: "POST",
+        token: orderUser.token,
+        body: {
+          productId: variantCartProduct.id,
+          productVariantId: variantCartVariants[0].id,
+          quantity: 0,
+        },
+      }),
+    );
+    const [manuallyRemovedInactiveVariantCartItem] = await db
+      .select()
+      .from(schema.cartItemTable)
+      .where(
+        and(
+          eq(schema.cartItemTable.userId, orderUser.user.id),
+          eq(
+            schema.cartItemTable.productVariantId,
+            variantCartVariants[0].id,
+          ),
+        ),
+      );
+    assert.equal(manuallyRemovedInactiveVariantCartItem, undefined);
     const collectionsAfterVariantDeactivation = expectSuccess(
       await request("/api/collection/list", { token: orderUser.token }),
     );
