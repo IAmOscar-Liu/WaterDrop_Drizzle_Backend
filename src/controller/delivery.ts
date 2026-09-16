@@ -66,9 +66,13 @@ class DeliveryController {
     sendJsonResponse(res, result);
   }
 
-  async updateDelivery(req: Request, res: Response): Promise<any> {
+  async updateDelivery(req: RequestWithId, res: Response): Promise<any> {
     const { deliveryId } = req.params;
-    const result = await deliveryService.updateDelivery(deliveryId, req.body);
+    const result = await deliveryService.updateDelivery(
+      deliveryId,
+      req.body,
+      req.userId,
+    );
     sendJsonResponse(res, result);
   }
 

@@ -362,7 +362,7 @@ async function run() {
       timezoneSnapshot: "Asia/Taipei",
     })),
   );
-  await setAdStatus(advertisements[0].id, "archived");
+  await setAdStatus(advertisements[0].id, "archived", sellers[0].id);
   const afterArchiveList = await listAdvertisements({
     userId: secondUser.id,
     limit: 1000,

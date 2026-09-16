@@ -139,3 +139,53 @@ export async function deleteNotifications(notificationIds: string[]) {
 
   return deletedCount;
 }
+
+export async function resolveAppPushAudience({
+  userIds = [],
+  groupIds = [],
+}: {
+  userIds?: string[];
+  groupIds?: string[];
+}) {
+  const targetUserIds = new Set<string>();
+
+  if (userIds.length > 0) {
+    const users = await db
+      .select({ id: schema.userTable.id })
+      .from(schema.userTable)
+      .where(inArray(schema.userTable.id, userIds));
+    users.forEach(({ id }) => targetUserIds.add(id));
+  }
+
+  if (groupIds.length > 0) {
+    const [members, owners] = await Promise.all([
+      db
+        .select({ id: schema.userTable.id })
+        .from(schema.userTable)
+        .where(inArray(schema.userTable.groupId, groupIds)),
+      db
+        .select({ id: schema.groupTable.ownerId })
+        .from(schema.groupTable)
+        .where(inArray(schema.groupTable.id, groupIds)),
+    ]);
+
+    members.forEach(({ id }) => targetUserIds.add(id));
+    owners.forEach(({ id }) => targetUserIds.add(id));
+  }
+
+  if (targetUserIds.size === 0) {
+    return { userIds: [], tokens: [] };
+  }
+
+  const tokens = await db
+    .select({ token: schema.deviceTokenTable.fcmToken })
+    .from(schema.deviceTokenTable)
+    .where(
+      inArray(schema.deviceTokenTable.userId, Array.from(targetUserIds)),
+    );
+
+  return {
+    userIds: Array.from(targetUserIds),
+    tokens: Array.from(new Set(tokens.map(({ token }) => token))),
+  };
+}

@@ -6,6 +6,7 @@ import {
   nonEmptyString,
   nonNegativeNumber,
   paginationQuery,
+  positiveCurrencyAmount,
   requireAtLeastOneField,
   uuid,
 } from "./common";
@@ -18,7 +19,7 @@ const advertisementStatus = z.enum([
 ]);
 
 export const advertisementValidation = {
-  listQuery: paginationQuery,
+  listQuery: paginationQuery.extend({ sellerId: uuid.optional() }),
   idParams,
   createBody: z.object({
     productId: uuid,
@@ -34,9 +35,26 @@ export const advertisementValidation = {
     }),
   ),
   viewCountListQuery: paginationQuery.merge(dateRangeQuery),
+  platformViewCountListQuery: paginationQuery.merge(dateRangeQuery).extend({
+    sellerId: uuid.optional(),
+  }),
+  metricsQuery: paginationQuery.merge(dateRangeQuery).extend({
+    sellerId: uuid.optional(),
+    productId: uuid.optional(),
+    status: advertisementStatus.optional(),
+  }),
+  productDashboardParams: z.object({ productId: uuid }),
+  productDashboardQuery: dateRangeQuery,
   viewCountQuery: dateRangeQuery,
   depositBody: z.object({
-    amount: nonNegativeNumber.gt(0),
+    amount: positiveCurrencyAmount,
+    idempotencyKey: z.string().trim().min(8).max(200),
+    metadata: jsonObject.optional(),
+  }),
+  budgetBody: z.object({
+    operation: z.enum(["increase", "decrease", "set"]),
+    amount: positiveCurrencyAmount,
+    idempotencyKey: z.string().trim().min(8).max(200),
     metadata: jsonObject.optional(),
   }),
   statusBody: z.object({

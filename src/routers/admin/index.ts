@@ -1,5 +1,6 @@
 import { Router } from "express";
 import AccountRouter from "./admin-account";
+import AccountWalletRouter from "./admin-account-wallet";
 import AdvertisementRouter from "./admin-advertisement";
 import ChatroomRouter from "./admin-chatroom";
 import DeliveryRouter from "./admin-delivery";
@@ -8,10 +9,15 @@ import OrderRouter from "./admin-order";
 import ProductRouter from "./admin-product";
 import RefundRouter from "./admin-refund";
 import SystemRouter from "./admin-system";
+import DashboardRouter from "./admin-dashboard";
+import SidebarNotificationRouter from "./admin-sidebar-notification";
 
 const router = Router();
 
 router.use("/account", AccountRouter);
+router.use("/account-wallet", AccountWalletRouter);
+router.use("/dashboard", DashboardRouter);
+router.use("/sidebar-notifications", SidebarNotificationRouter);
 router.use("/product", ProductRouter);
 router.use("/advertisement", AdvertisementRouter);
 router.use("/order", OrderRouter);

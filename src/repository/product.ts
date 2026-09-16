@@ -6,7 +6,9 @@ import {
   ilike,
   inArray,
   isNotNull,
+  isNull,
   lte,
+  ne,
   or,
   sql,
   SQL,
@@ -17,6 +19,8 @@ import { getEcpayLength, hasSpecialChars } from "../lib/ecpayValidation";
 import { CustomError } from "../lib/error";
 import db from "../lib/initDB";
 import { isAccountAdmin } from "./account";
+import { recordAdminActivityWithTx } from "./adminActivity";
+import { getActiveAdminAccount, resolveAdminSellerScope } from "./adminScope";
 import {
   compactConditions,
   getPagination,
@@ -110,6 +114,10 @@ function validateProductVariantMode(
   }
 }
 
+function isUniqueViolation(error: any) {
+  return error?.code === "23505" || error?.cause?.code === "23505";
+}
+
 // --- Category Functions ---
 
 /**
@@ -118,11 +126,96 @@ function validateProductVariantMode(
  * @returns The newly created category.
  */
 export async function createCategory(categoryData: schema.NewCategory) {
-  const [newCategory] = await db
-    .insert(schema.categoryTable)
-    .values(categoryData)
-    .returning();
-  return newCategory;
+  try {
+    const [newCategory] = await db
+      .insert(schema.categoryTable)
+      .values({ ...categoryData, name: categoryData.name.trim() })
+      .returning();
+    return newCategory;
+  } catch (error: any) {
+    if (isUniqueViolation(error)) {
+      throw new CustomError("A category with this name already exists", 409);
+    }
+    throw error;
+  }
+}
+
+export async function updateCategory(
+  categoryId: string,
+  name: string,
+  actorAccountId: string,
+) {
+  try {
+    return await db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(schema.categoryTable)
+        .set({ name: name.trim(), updatedAt: new Date() })
+        .where(eq(schema.categoryTable.id, categoryId))
+        .returning();
+      if (!updated) throw new CustomError("Category not found", 404);
+      await recordAdminActivityWithTx(tx, {
+        actorAccountId,
+        eventType: "category.renamed",
+        entityType: "category",
+        entityId: categoryId,
+        metadata: { name: updated.name },
+      });
+      return updated;
+    });
+  } catch (error: any) {
+    if (isUniqueViolation(error)) {
+      throw new CustomError("A category with this name already exists", 409);
+    }
+    throw error;
+  }
+}
+
+export async function deleteCategory(
+  categoryId: string,
+  actorAccountId: string,
+) {
+  return db.transaction(async (tx) => {
+    const [category] = await tx
+      .select()
+      .from(schema.categoryTable)
+      .where(eq(schema.categoryTable.id, categoryId))
+      .for("update");
+    if (!category) throw new CustomError("Category not found", 404);
+
+    const detachedProducts = await tx
+      .delete(schema.productsToCategoriesTable)
+      .where(eq(schema.productsToCategoriesTable.categoryId, categoryId))
+      .returning({ productId: schema.productsToCategoriesTable.productId });
+    const detachedProductIds = [
+      ...new Set(detachedProducts.map(({ productId }) => productId)),
+    ];
+
+    if (detachedProductIds.length > 0) {
+      await tx
+        .update(schema.productTable)
+        .set({ updatedAt: new Date() })
+        .where(inArray(schema.productTable.id, detachedProductIds));
+    }
+
+    await tx
+      .delete(schema.categoryTable)
+      .where(eq(schema.categoryTable.id, categoryId));
+    await recordAdminActivityWithTx(tx, {
+      actorAccountId,
+      eventType: "category.deleted",
+      entityType: "category",
+      entityId: categoryId,
+      metadata: {
+        name: category.name,
+        detachedProductCount: detachedProductIds.length,
+      },
+    });
+    return {
+      id: categoryId,
+      deleted: true,
+      detachedProductCount: detachedProductIds.length,
+    };
+  });
 }
 
 /**
@@ -137,7 +230,7 @@ export async function listCategory() {
 
 // --- Product Functions ---
 
-export async function getProductById(productId: string) {
+export async function getProductById(productId: string, requesterId?: string) {
   const product = await db.query.productTable.findFirst({
     where: eq(schema.productTable.id, productId),
     with: {
@@ -153,7 +246,132 @@ export async function getProductById(productId: string) {
     },
   });
 
+  if (product && requesterId) {
+    const scope = await resolveAdminSellerScope(requesterId);
+    if (scope.sellerId && scope.sellerId !== product.sellerId) {
+      throw new CustomError("You cannot view another seller's product", 403);
+    }
+  }
   return product ? withProductVariantAggregates(product, "all") : product;
+}
+
+export async function softDeleteProduct(
+  productId: string,
+  actorAccountId: string,
+) {
+  const actor = await getActiveAdminAccount(actorAccountId);
+  if (actor.role === "employee") {
+    throw new CustomError("Employees cannot delete products", 403);
+  }
+  return db.transaction(async (tx) => {
+    const [product] = await tx
+      .select()
+      .from(schema.productTable)
+      .where(eq(schema.productTable.id, productId))
+      .for("update");
+    if (!product) throw new CustomError("Product not found", 404);
+    if (actor.role !== "admin" && product.sellerId !== actor.id) {
+      throw new CustomError("You cannot delete another seller's product", 403);
+    }
+    if (!product.deletedAt) {
+      await tx
+        .update(schema.productTable)
+        .set({
+          status: "inactive",
+          deletedAt: new Date(),
+          deletedByAccountId: actorAccountId,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.productTable.id, productId));
+      await tx
+        .update(schema.productVariantTable)
+        .set({ status: "inactive", updatedAt: new Date() })
+        .where(eq(schema.productVariantTable.productId, productId));
+      const advertisements = await tx
+        .select({ id: schema.advertisementTable.id })
+        .from(schema.advertisementTable)
+        .where(eq(schema.advertisementTable.productId, productId));
+      if (advertisements.length) {
+        await tx
+          .update(schema.advertisementStatsTable)
+          .set({ status: "paused", updatedAt: new Date() })
+          .where(
+            and(
+              inArray(
+                schema.advertisementStatsTable.advertisementId,
+                advertisements.map(({ id }) => id),
+              ),
+              ne(schema.advertisementStatsTable.status, "archived"),
+            ),
+          );
+      }
+      await recordAdminActivityWithTx(tx, {
+        actorAccountId,
+        sellerId: product.sellerId,
+        eventType: "product.soft_deleted",
+        entityType: "product",
+        entityId: productId,
+      });
+    }
+    return tx.query.productTable.findFirst({
+      where: eq(schema.productTable.id, productId),
+      with: { variants: true, advertisement: { with: { stats: true } } },
+    });
+  });
+}
+
+export async function permanentlyDeleteProduct(
+  productId: string,
+  actorAccountId: string,
+) {
+  if (!(await isAccountAdmin(actorAccountId))) {
+    throw new CustomError("Only a platform admin can permanently delete products", 403);
+  }
+  return db.transaction(async (tx) => {
+    const [product] = await tx
+      .select()
+      .from(schema.productTable)
+      .where(eq(schema.productTable.id, productId))
+      .for("update");
+    if (!product) throw new CustomError("Product not found", 404);
+
+    const [[orders], [advertisements], [cartItems], [collections], [chatrooms]] =
+      await Promise.all([
+        tx.select({ total: count() }).from(schema.orderItemTable).where(eq(schema.orderItemTable.productId, productId)),
+        tx.select({ total: count() }).from(schema.advertisementTable).where(eq(schema.advertisementTable.productId, productId)),
+        tx.select({ total: count() }).from(schema.cartItemTable).where(eq(schema.cartItemTable.productId, productId)),
+        tx.select({ total: count() }).from(schema.collectionTable).where(eq(schema.collectionTable.productId, productId)),
+        tx.select({ total: count() }).from(schema.chatRoomTable).where(eq(schema.chatRoomTable.productId, productId)),
+      ]);
+    const blockers = {
+      orderItems: orders.total,
+      advertisements: advertisements.total,
+      cartItems: cartItems.total,
+      collections: collections.total,
+      chatrooms: chatrooms.total,
+    };
+    if (Object.values(blockers).some((value) => value > 0)) {
+      throw new CustomError(
+        `Product has business references: ${JSON.stringify(blockers)}`,
+        409,
+      );
+    }
+    await tx
+      .delete(schema.productsToCategoriesTable)
+      .where(eq(schema.productsToCategoriesTable.productId, productId));
+    await tx
+      .delete(schema.productVariantTable)
+      .where(eq(schema.productVariantTable.productId, productId));
+    await tx.delete(schema.productTable).where(eq(schema.productTable.id, productId));
+    await recordAdminActivityWithTx(tx, {
+      actorAccountId,
+      sellerId: product.sellerId,
+      eventType: "product.permanently_deleted",
+      entityType: "product",
+      entityId: productId,
+    });
+    return { id: productId, deleted: true, permanent: true };
+  });
 }
 
 export async function getProductWithSellerById(productId: string) {
@@ -196,7 +414,21 @@ export async function createProduct(
   productData: schema.NewProduct,
   categoryIds?: string[],
   variants?: ProductVariantWriteInput[],
+  requesterId?: string,
 ) {
+  if (requesterId) {
+    const actor = await getActiveAdminAccount(requesterId);
+    if (actor.role === "employee") {
+      throw new CustomError("Employees cannot create products", 403);
+    }
+    if (actor.role === "seller" && productData.sellerId !== actor.id) {
+      throw new CustomError("A seller may create products only for itself", 403);
+    }
+    const seller = await getActiveAdminAccount(productData.sellerId);
+    if (seller.role !== "seller") {
+      throw new CustomError("sellerId must identify an active seller", 400);
+    }
+  }
   // 0. Check product name before creating the product
   if (hasSpecialChars(productData.name)) {
     throw new CustomError(
@@ -276,7 +508,12 @@ export async function updateProduct(
   productData: Partial<Omit<schema.NewProduct, "id">>,
   categoryIds?: string[],
   variants?: ProductVariantWriteInput[],
+  requesterId?: string,
 ) {
+  const actor = requesterId ? await getActiveAdminAccount(requesterId) : undefined;
+  if (actor?.role === "employee") {
+    throw new CustomError("Employees cannot update products", 403);
+  }
   // 0. Check product name before updating the product
   if (productData.name) {
     if (hasSpecialChars(productData.name)) {
@@ -295,6 +532,28 @@ export async function updateProduct(
   }
 
   return db.transaction(async (tx) => {
+    const [existingProduct] = await tx
+      .select({
+        deletedAt: schema.productTable.deletedAt,
+        sellerId: schema.productTable.sellerId,
+      })
+      .from(schema.productTable)
+      .where(eq(schema.productTable.id, productId))
+      .for("update");
+    if (!existingProduct) throw new CustomError("Product not found", 404);
+    if (existingProduct.deletedAt) {
+      throw new CustomError("A deleted product cannot be updated", 409);
+    }
+    if (actor?.role === "seller" && existingProduct.sellerId !== actor.id) {
+      throw new CustomError("You cannot update another seller's product", 403);
+    }
+    if (
+      actor?.role === "seller" &&
+      productData.sellerId &&
+      productData.sellerId !== actor.id
+    ) {
+      throw new CustomError("A seller cannot transfer product ownership", 403);
+    }
     // 1. Update the product itself
     const [updatedProduct] = await tx
       .update(schema.productTable)
@@ -416,6 +675,8 @@ export interface ListAdminProductsParams extends PaginationParams {
   minPrice?: number;
   maxPrice?: number;
   sellerId?: string;
+  requesterId: string;
+  includeDeleted?: boolean;
 }
 
 /**
@@ -430,6 +691,8 @@ export async function listAdminProducts({
   search,
   status,
   sellerId,
+  requesterId,
+  includeDeleted,
   minPrice,
   maxPrice,
 }: ListAdminProductsParams) {
@@ -438,6 +701,10 @@ export async function listAdminProducts({
 
   // Only return products that have an associated seller.
   conditions.push(isNotNull(schema.productTable.sellerId));
+  const scope = await resolveAdminSellerScope(requesterId, sellerId);
+  if (!includeDeleted || !scope.isPlatformAdmin) {
+    conditions.push(isNull(schema.productTable.deletedAt));
+  }
 
   // Add conditions based on filters
   if (categoryId) {
@@ -462,11 +729,8 @@ export async function listAdminProducts({
     conditions.push(eq(schema.productTable.status, status));
   }
 
-  if (sellerId) {
-    const isAdmin = await isAccountAdmin(sellerId);
-    if (!isAdmin) {
-      conditions.push(eq(schema.productTable.sellerId, sellerId));
-    }
+  if (scope.sellerId) {
+    conditions.push(eq(schema.productTable.sellerId, scope.sellerId));
   }
 
   if (minPrice !== undefined) {
@@ -549,6 +813,7 @@ export async function listProducts({
 
   // Only return products that have an associated seller.
   conditions.push(isNotNull(schema.productTable.sellerId));
+  conditions.push(isNull(schema.productTable.deletedAt));
 
   // Add conditions based on filters
   if (categoryId) {
@@ -649,15 +914,23 @@ export async function getProductSalesSummary({
   productId,
   startAt,
   endAt,
+  requesterId,
 }: {
   productId: string;
   startAt?: Date;
   endAt?: Date;
+  requesterId?: string;
 }) {
   const product = await db.query.productTable.findFirst({
     where: eq(schema.productTable.id, productId),
   });
   if (!product) throw new CustomError("Product not found", 404);
+  if (requesterId) {
+    const scope = await resolveAdminSellerScope(requesterId);
+    if (scope.sellerId && scope.sellerId !== product.sellerId) {
+      throw new CustomError("You cannot view another seller's product", 403);
+    }
+  }
 
   const conditions: (SQL | undefined)[] = [
     // Filter for the specific product in the order items

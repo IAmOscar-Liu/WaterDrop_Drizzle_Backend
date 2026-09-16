@@ -3,6 +3,7 @@ import { relations, sql } from "drizzle-orm";
 import { convertIndexToString } from "drizzle-orm/mysql-core";
 import {
   boolean,
+  bigserial,
   check,
   date,
   doublePrecision,
@@ -102,11 +103,25 @@ export const advertisementStatusEnum = pgEnum("advertisement_status", [
 ]);
 export const transactionTypeEnum = pgEnum("transaction_type", [
   "deposit",
+  "wallet_funding",
   "view_debit",
   "seller_return_credit",
   "balance_transfer_out",
   "balance_transfer_in",
   "manual_adjustment",
+]);
+
+export const accountWalletTransactionTypeEnum = pgEnum(
+  "account_wallet_transaction_type",
+  ["legacy_opening_balance", "admin_credit", "advertisement_funding_debit"],
+);
+
+export const adminSidebarSectionEnum = pgEnum("admin_sidebar_section", [
+  "orders",
+  "deliveries",
+  "refunds",
+  "advertisements",
+  "chatrooms",
 ]);
 
 export const coinFundingAccountStatusEnum = pgEnum(
@@ -334,6 +349,10 @@ export const accountTable = pgTable("accounts", {
     () => accountGroupTable.id,
   ),
   status: accountStatusEnum("status").default("active").notNull(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  // Kept as an audit identifier instead of a cascading FK: deleting or
+  // anonymizing the actor must not erase who performed the soft deletion.
+  deletedByAccountId: uuid("deleted_by_account_id"),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
@@ -344,24 +363,57 @@ export const accountTable = pgTable("accounts", {
     .notNull(),
 });
 
-export const accountWalletTable = pgTable("account_wallets", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  accountId: uuid("account_id")
-    .notNull()
-    .references(() => accountTable.id)
-    .unique(),
-  walletBalance: doublePrecision("wallet_balance").default(0).notNull(),
-  totalRevenueCash: doublePrecision("total_revenue_cash").default(0).notNull(),
-  totalRevenueCoin: doublePrecision("total_revenue_coin").default(0).notNull(),
-  lockedBalance: doublePrecision("locked_balance").default(0).notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .defaultNow()
-    .$onUpdate(() => new Date())
-    .notNull(),
-});
+export const accountWalletTable = pgTable(
+  "account_wallets",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => accountTable.id)
+      .unique(),
+    walletBalance: numeric("wallet_balance", { precision: 18, scale: 2 })
+      .default("0")
+      .notNull(),
+    totalRevenueCash: numeric("total_revenue_cash", {
+      precision: 18,
+      scale: 2,
+    })
+      .default("0")
+      .notNull(),
+    totalRevenueCoin: numeric("total_revenue_coin", {
+      precision: 18,
+      scale: 2,
+    })
+      .default("0")
+      .notNull(),
+    lockedBalance: numeric("locked_balance", { precision: 18, scale: 2 })
+      .default("0")
+      .notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (t) => [
+    check("account_wallets_balance_nonnegative", sql`${t.walletBalance} >= 0`),
+    check(
+      "account_wallets_revenue_cash_nonnegative",
+      sql`${t.totalRevenueCash} >= 0`,
+    ),
+    check(
+      "account_wallets_revenue_coin_nonnegative",
+      sql`${t.totalRevenueCoin} >= 0`,
+    ),
+    check("account_wallets_locked_nonnegative", sql`${t.lockedBalance} >= 0`),
+    check(
+      "account_wallets_locked_not_above_balance",
+      sql`${t.lockedBalance} <= ${t.walletBalance}`,
+    ),
+  ],
+);
 
 export const userTable = pgTable(
   "users",
@@ -465,17 +517,23 @@ export const treasureBoxTable = pgTable("treasure_boxes", {
   rewardInputSnapshot: jsonb("reward_input_snapshot"),
 });
 
-export const categoryTable = pgTable("categories", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  name: text("name").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .defaultNow()
-    .$onUpdate(() => new Date())
-    .notNull(),
-});
+export const categoryTable = pgTable(
+  "categories",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    name: text("name").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (t) => [
+    uniqueIndex("categories_name_case_insensitive_uk").on(sql`lower(${t.name})`),
+  ],
+);
 
 export const productTable = pgTable("products", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -492,6 +550,11 @@ export const productTable = pgTable("products", {
   type: productTypeEnum("type").default("normal").notNull(),
   allowHomeDelivery: boolean("allow_home_delivery").default(false).notNull(),
   metadata: jsonb("metadata"),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  deletedByAccountId: uuid("deleted_by_account_id").references(
+    () => accountTable.id,
+    { onDelete: "restrict" },
+  ),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -612,6 +675,136 @@ export const advertisementStatsTable = pgTable("advertisement_stats", {
     .notNull(),
 });
 
+export const accountWalletTransactionTable = pgTable(
+  "account_wallet_transactions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    sequence: bigserial("sequence", { mode: "number" }).notNull().unique(),
+    walletId: uuid("wallet_id")
+      .notNull()
+      .references(() => accountWalletTable.id, { onDelete: "restrict" }),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => accountTable.id, { onDelete: "restrict" }),
+    actorAccountId: uuid("actor_account_id").references(() => accountTable.id, {
+      onDelete: "restrict",
+    }),
+    advertisementId: uuid("advertisement_id").references(
+      () => advertisementTable.id,
+      { onDelete: "restrict" },
+    ),
+    type: accountWalletTransactionTypeEnum("type").notNull(),
+    amount: numeric("amount", { precision: 18, scale: 2 }).notNull(),
+    balanceBefore: numeric("balance_before", { precision: 18, scale: 2 })
+      .notNull(),
+    balanceAfter: numeric("balance_after", { precision: 18, scale: 2 })
+      .notNull(),
+    idempotencyKey: text("idempotency_key").notNull().unique(),
+    reason: text("reason"),
+    externalReference: text("external_reference"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    index("account_wallet_transactions_wallet_sequence_idx").on(
+      t.walletId,
+      t.sequence,
+    ),
+    index("account_wallet_transactions_account_created_idx").on(
+      t.accountId,
+      t.createdAt,
+    ),
+    check("account_wallet_transactions_amount_nonzero", sql`${t.amount} <> 0`),
+    check(
+      "account_wallet_transactions_before_nonnegative",
+      sql`${t.balanceBefore} >= 0`,
+    ),
+    check(
+      "account_wallet_transactions_after_nonnegative",
+      sql`${t.balanceAfter} >= 0`,
+    ),
+    check(
+      "account_wallet_transactions_balance_math",
+      sql`${t.balanceAfter} = ${t.balanceBefore} + ${t.amount}`,
+    ),
+    check(
+      "account_wallet_transactions_type_sign",
+      sql`(
+        ${t.type} in ('legacy_opening_balance', 'admin_credit')
+        and ${t.amount} > 0
+      ) or (
+        ${t.type} = 'advertisement_funding_debit'
+        and ${t.amount} < 0
+      )`,
+    ),
+    check(
+      "account_wallet_transactions_funding_ad_required",
+      sql`${t.type} <> 'advertisement_funding_debit' or ${t.advertisementId} is not null`,
+    ),
+    check(
+      "account_wallet_transactions_admin_actor_required",
+      sql`${t.type} <> 'admin_credit' or ${t.actorAccountId} is not null`,
+    ),
+  ],
+);
+
+export const adminActivityEventTable = pgTable(
+  "admin_activity_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    actorAccountId: uuid("actor_account_id").references(
+      () => accountTable.id,
+      { onDelete: "restrict" },
+    ),
+    sellerId: uuid("seller_id").references(() => accountTable.id, {
+      onDelete: "restrict",
+    }),
+    eventType: text("event_type").notNull(),
+    entityType: text("entity_type").notNull(),
+    entityId: uuid("entity_id"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    index("admin_activity_events_seller_created_idx").on(
+      t.sellerId,
+      t.createdAt,
+    ),
+    index("admin_activity_events_actor_created_idx").on(
+      t.actorAccountId,
+      t.createdAt,
+    ),
+  ],
+);
+
+export const adminSidebarReadStateTable = pgTable(
+  "admin_sidebar_read_states",
+  {
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => accountTable.id, { onDelete: "cascade" }),
+    // "platform" for an unfiltered platform-admin view, otherwise seller UUID.
+    scopeKey: text("scope_key").notNull(),
+    section: adminSidebarSectionEnum("section").notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.accountId, t.scopeKey, t.section] }),
+    index("admin_sidebar_read_states_account_idx").on(t.accountId),
+  ],
+);
+
 export const advertisementTransactionTable = pgTable(
   "advertisement_transactions",
   {
@@ -632,6 +825,10 @@ export const advertisementTransactionTable = pgTable(
     balanceBefore: numeric("balance_before", { precision: 18, scale: 2 }),
     balanceAfter: numeric("balance_after", { precision: 18, scale: 2 }),
     idempotencyKey: text("idempotency_key"),
+    accountWalletTransactionId: uuid("account_wallet_transaction_id").references(
+      () => accountWalletTransactionTable.id,
+      { onDelete: "restrict" },
+    ),
     type: transactionTypeEnum("type").default("deposit").notNull(),
     metadata: jsonb("metadata"), // For payment details, etc.
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -648,6 +845,11 @@ export const advertisementTransactionTable = pgTable(
     )
       .on(t.idempotencyKey)
       .where(sql`${t.idempotencyKey} is not null`),
+    accountWalletTransactionUnique: uniqueIndex(
+      "advertisement_transactions_wallet_transaction_uk",
+    )
+      .on(t.accountWalletTransactionId)
+      .where(sql`${t.accountWalletTransactionId} is not null`),
   }),
 );
 
@@ -1969,6 +2171,12 @@ export const accountRelations = relations(accountTable, ({ one, many }) => ({
     fields: [accountTable.id],
     references: [accountWalletTable.accountId],
   }),
+  walletTransactions: many(accountWalletTransactionTable, {
+    relationName: "walletTransactionAccount",
+  }),
+  actedWalletTransactions: many(accountWalletTransactionTable, {
+    relationName: "walletTransactionActor",
+  }),
   shippingFee: one(shippingFeeTable, {
     fields: [accountTable.id],
     references: [shippingFeeTable.accountId],
@@ -2016,10 +2224,35 @@ export const accountGroupRelations = relations(
 
 export const accountWalletRelations = relations(
   accountWalletTable,
-  ({ one }) => ({
+  ({ one, many }) => ({
     account: one(accountTable, {
       fields: [accountWalletTable.accountId],
       references: [accountTable.id],
+    }),
+    transactions: many(accountWalletTransactionTable),
+  }),
+);
+
+export const accountWalletTransactionRelations = relations(
+  accountWalletTransactionTable,
+  ({ one }) => ({
+    wallet: one(accountWalletTable, {
+      fields: [accountWalletTransactionTable.walletId],
+      references: [accountWalletTable.id],
+    }),
+    account: one(accountTable, {
+      fields: [accountWalletTransactionTable.accountId],
+      references: [accountTable.id],
+      relationName: "walletTransactionAccount",
+    }),
+    actor: one(accountTable, {
+      fields: [accountWalletTransactionTable.actorAccountId],
+      references: [accountTable.id],
+      relationName: "walletTransactionActor",
+    }),
+    advertisement: one(advertisementTable, {
+      fields: [accountWalletTransactionTable.advertisementId],
+      references: [advertisementTable.id],
     }),
   }),
 );
@@ -2147,6 +2380,7 @@ export const advertisementRelations = relations(
     views: many(adViewCountTable),
     stats: one(advertisementStatsTable),
     transactions: many(advertisementTransactionTable),
+    walletTransactions: many(accountWalletTransactionTable),
   }),
 );
 
@@ -2195,6 +2429,10 @@ export const advertisementTransactionRelations = relations(
     advertisement: one(advertisementTable, {
       fields: [advertisementTransactionTable.advertisementId],
       references: [advertisementTable.id],
+    }),
+    walletTransaction: one(accountWalletTransactionTable, {
+      fields: [advertisementTransactionTable.accountWalletTransactionId],
+      references: [accountWalletTransactionTable.id],
     }),
   }),
 );
@@ -2374,6 +2612,16 @@ export type NewAccount = typeof accountTable.$inferInsert;
 
 export type AccountWallet = typeof accountWalletTable.$inferSelect;
 export type NewAccountWallet = typeof accountWalletTable.$inferInsert;
+export type AccountWalletTransaction =
+  typeof accountWalletTransactionTable.$inferSelect;
+export type NewAccountWalletTransaction =
+  typeof accountWalletTransactionTable.$inferInsert;
+export type AdminActivityEvent = typeof adminActivityEventTable.$inferSelect;
+export type NewAdminActivityEvent = typeof adminActivityEventTable.$inferInsert;
+export type AdminSidebarReadState =
+  typeof adminSidebarReadStateTable.$inferSelect;
+export type NewAdminSidebarReadState =
+  typeof adminSidebarReadStateTable.$inferInsert;
 
 export type ChatRoom = typeof chatRoomTable.$inferSelect;
 export type NewChatRoom = typeof chatRoomTable.$inferInsert;

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import ProductController from "../../controller/product";
 import isAuth from "../../middleware/isAuth";
+import isAdmin from "../../middleware/isAdmin";
 import validateZod from "../../middleware/validateZod";
 import { adminValidation } from "../../middleware/admin";
 
@@ -75,6 +76,14 @@ const router = Router();
  *         updatedAt:
  *           type: string
  *           format: date-time
+ *         deletedAt:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *         deletedByAccountId:
+ *           type: string
+ *           format: uuid
+ *           nullable: true
  *         availableStock:
  *           type: integer
  *           description: Calculated as active variant stock minus reserve.
@@ -231,8 +240,79 @@ router.get("/categories/list", isAuth, ProductController.listCategory);
 router.post(
   "/categories/create",
   isAuth,
+  isAdmin,
   validateZod({ body: adminValidation.product.categoryCreateBody }),
   ProductController.createCategory,
+);
+
+/**
+ * @swagger
+ * /api/admin/product/categories/{id}:
+ *   put:
+ *     tags: [Product]
+ *     summary: Rename a category (platform admin only)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name]
+ *             properties:
+ *               name: { type: string }
+ *     responses:
+ *       '200': { description: Category renamed. }
+ *       '409': { description: A case-insensitive duplicate name exists. }
+ *   delete:
+ *     tags: [Product]
+ *     summary: Delete a category (platform admin only)
+ *     description: Atomically removes the category from every associated product, updates those products, and then deletes the category. Products are preserved.
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       '200':
+ *         description: Category deleted and product associations removed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   required: [id, deleted, detachedProductCount]
+ *                   properties:
+ *                     id: { type: string, format: uuid }
+ *                     deleted: { type: boolean, example: true }
+ *                     detachedProductCount: { type: integer, example: 3 }
+ *       '404': { description: Category not found. }
+ */
+router.put(
+  "/categories/:id",
+  isAuth,
+  isAdmin,
+  validateZod({
+    params: adminValidation.product.idParams,
+    body: adminValidation.product.categoryUpdateBody,
+  }),
+  ProductController.updateCategory,
+);
+router.delete(
+  "/categories/:id",
+  isAuth,
+  isAdmin,
+  validateZod({ params: adminValidation.product.idParams }),
+  ProductController.deleteCategory,
 );
 
 /**
@@ -276,6 +356,14 @@ router.post(
  *         name: maxPrice
  *         schema:
  *           type: number
+ *       - in: query
+ *         name: sellerId
+ *         schema: { type: string, format: uuid }
+ *         description: Platform-admin seller filter. Seller and employee callers are always server-scoped.
+ *       - in: query
+ *         name: includeDeleted
+ *         schema: { type: boolean, default: false }
+ *         description: Platform-admin-only visibility of soft-deleted products.
  *     responses:
  *       '200':
  *         description: A paginated list of products.
@@ -573,6 +661,55 @@ router.put(
     body: adminValidation.product.updateBody,
   }),
   ProductController.updateProduct,
+);
+
+/**
+ * @swagger
+ * /api/admin/product/{id}:
+ *   delete:
+ *     tags: [Product]
+ *     summary: Soft-delete a product
+ *     description: The owning seller or platform admin may deactivate the product and all variants. Non-archived ads are paused and business history is preserved. Employees cannot delete products.
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       '200': { description: Product soft-deleted; repeated calls are idempotent. }
+ *       '403': { description: Caller is not the owner/platform admin. }
+ */
+router.delete(
+  "/:id",
+  isAuth,
+  validateZod({ params: adminValidation.product.idParams }),
+  ProductController.softDeleteProduct,
+);
+
+/**
+ * @swagger
+ * /api/admin/product/{id}/permanent:
+ *   delete:
+ *     tags: [Product]
+ *     summary: Permanently delete a never-used product (platform admin only)
+ *     description: Rejected with blocker counts when orders, advertisements, carts, collections, or chatrooms reference the product.
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       '200': { description: Product permanently deleted. }
+ *       '409': { description: Product has business references. }
+ */
+router.delete(
+  "/:id/permanent",
+  isAuth,
+  isAdmin,
+  validateZod({ params: adminValidation.product.idParams }),
+  ProductController.permanentlyDeleteProduct,
 );
 
 /**

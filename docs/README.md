@@ -2,20 +2,20 @@
 
 ## API and frontend integration
 
-- [Admin refund API](api/ADMIN_REFUND_API.md)
+- [FE confirmation package](api/FE-confirmation/README.md)
 - [Backend API specification](api/API_SPEC.md)
-- [Flutter coin ledger API changes](api/FLUTTER_COIN_LEDGER_API_CHANGES.md)
-- [Flutter API enums](api/FLUTTER_API_ENUMS.md)
 - [Product variants API changes](api/PRODUCT_VARIANTS_API_CHANGES.md)
 - [Product variants frontend changes](api/PRODUCT_VARIANTS_FRONTEND_API_CHANGES.md)
 - [Refund Swagger update](api/swagger-update-2026-05-05.md)
-- [Admin frontend Swagger update — 2026-09-15](api/swagger-update-2026-09-15.md)
 
 ## Plans
 
 - [Coin ledger and seller return](plans/COIN_LEDGER_SELLER_RETURN_PLAN.md)
 - [DB repository tidy](plans/DB_REPOSITORY_TIDY_PLAN.md)
 - [Group join cycle prevention](plans/GROUP_JOIN_CYCLE_PLAN.md)
+- [Account wallet and advertisement funding](plans/ACCOUNT_WALLET_AD_FUNDING_PLAN.md)
+- [Admin section 1 missing APIs](plans/ADMIN_SECTION_1_MISSING_APIS_PLAN.md)
+- [Admin section 3 seller withdrawal](plans/ADMIN_SECTION_3_WITHDRAWAL_PLAN.md)
 - [Product variants](plans/PRODUCT_VARIANTS_PLAN.md)
 - [Product variant price and images](plans/PRODUCT_VARIANT_PRICE_PLAN.md)
 - [Refund item log](plans/REFUND_LOG_PLAN.md)
@@ -28,6 +28,8 @@
 ## Operations
 
 - [Manual app-user coin credits](operations/MANUAL_COIN_CREDIT.md)
+- [Account-wallet rollout](operations/ACCOUNT_WALLET_ROLLOUT.md)
+- [Admin Section 1 rollout](operations/ADMIN_SECTION_1_ROLLOUT.md)
 
 ## Legal
 

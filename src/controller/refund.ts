@@ -94,7 +94,7 @@ class RefundController {
     sendJsonResponse(res, result);
   }
 
-  async updateRefundItemStatus(req: Request, res: Response): Promise<any> {
+  async updateRefundItemStatus(req: RequestWithId, res: Response): Promise<any> {
     const { refundItemId } = req.params;
     const {
       status,
@@ -120,6 +120,7 @@ class RefundController {
           : {}),
         ...(metadata !== undefined ? { metadata } : {}),
       },
+      req.userId,
     );
     sendJsonResponse(res, result);
   }

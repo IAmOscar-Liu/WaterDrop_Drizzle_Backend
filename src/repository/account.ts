@@ -1,5 +1,5 @@
 import bcrypt from "bcrypt";
-import { count, eq, ilike, or, SQL } from "drizzle-orm";
+import { count, eq, ilike, inArray, isNull, or, SQL, sql, and } from "drizzle-orm";
 import {
   RECIPROCAL_ACCOUNT_GROUP_ASSIGNMENT_ERROR_MESSAGE,
 } from "../constants/group";
@@ -12,6 +12,9 @@ import {
   getTotalPages,
   PaginationParams,
 } from "./utils/query";
+import { recordAdminActivityWithTx } from "./adminActivity";
+import { getActiveAdminAccount, requireNonEmployee } from "./adminScope";
+import { initializeSidebarReadStatesWithTx } from "./sidebarNotification";
 
 // Admin account password: test1234
 
@@ -26,10 +29,24 @@ export async function createAccount(accountData: schema.NewAccount) {
   const hashedPassword = await bcrypt.hash(accountData.password, 10);
   const dataToInsert = { ...accountData, password: hashedPassword };
 
-  const [newAccount] = await db
-    .insert(schema.accountTable)
-    .values(dataToInsert)
-    .returning();
+  const newAccount = await db.transaction(async (tx) => {
+    const [createdAccount] = await tx
+      .insert(schema.accountTable)
+      .values(dataToInsert)
+      .returning();
+
+    await tx.insert(schema.accountWalletTable).values({
+      accountId: createdAccount.id,
+    });
+    await initializeSidebarReadStatesWithTx(
+      tx,
+      createdAccount.id,
+      createdAccount.role === "admin" ? "platform" : createdAccount.id,
+      createdAccount.createdAt,
+    );
+
+    return createdAccount;
+  });
 
   return await getAccountById(newAccount.id);
 }
@@ -53,6 +70,10 @@ export async function getAccountByEmailAndPassword(
     throw new CustomError("Invalid email or password", 404);
   }
 
+  if (account.status !== "active" || account.deletedAt) {
+    throw new CustomError("Account is inactive or no longer available", 403);
+  }
+
   const isPasswordValid = await bcrypt.compare(password, account.password);
 
   if (!isPasswordValid) {
@@ -60,6 +81,137 @@ export async function getAccountByEmailAndPassword(
   }
 
   return await getAccountById(account.id);
+}
+
+export type CreateSubAccountInput = {
+  parentId?: string;
+  name: string;
+  realName: string;
+  email: string;
+  password: string;
+  phone: string;
+  address?: string;
+};
+
+export async function createSubAccount(
+  requesterId: string,
+  input: CreateSubAccountInput,
+) {
+  const requester = await requireNonEmployee(requesterId);
+  const parentId = requester.role === "admin" ? input.parentId : requester.id;
+  if (!parentId) {
+    throw new CustomError("parentId is required for a platform admin", 400);
+  }
+  if (requester.role !== "admin" && input.parentId && input.parentId !== requester.id) {
+    throw new CustomError("A seller may create employees only for itself", 403);
+  }
+
+  const parent = await getActiveAdminAccount(parentId);
+  if (parent.role !== "seller") {
+    throw new CustomError("The parent account must be an active seller", 400);
+  }
+  const hashedPassword = await bcrypt.hash(input.password, 10);
+
+  try {
+    const createdId = await db.transaction(async (tx) => {
+      let [group] = await tx
+        .select()
+        .from(schema.accountGroupTable)
+        .where(eq(schema.accountGroupTable.parentId, parentId))
+        .for("update");
+      if (!group) {
+        [group] = await tx
+          .insert(schema.accountGroupTable)
+          .values({ parentId })
+          .returning();
+      }
+
+      const [created] = await tx
+        .insert(schema.accountTable)
+        .values({
+          name: input.name.trim(),
+          realName: input.realName.trim(),
+          email: input.email.trim().toLowerCase(),
+          password: hashedPassword,
+          phone: input.phone,
+          address: input.address,
+          role: "employee",
+          status: "active",
+          accountGroupId: group.id,
+        })
+        .returning();
+      await tx.insert(schema.accountWalletTable).values({ accountId: created.id });
+      await initializeSidebarReadStatesWithTx(
+        tx,
+        created.id,
+        parentId,
+        created.createdAt,
+      );
+      await recordAdminActivityWithTx(tx, {
+        actorAccountId: requesterId,
+        sellerId: parentId,
+        eventType: "account.sub_account_created",
+        entityType: "account",
+        entityId: created.id,
+        metadata: { email: created.email },
+      });
+      return created.id;
+    });
+    return getAccountById(createdId);
+  } catch (error: any) {
+    if (error?.code === "23505" || error?.cause?.code === "23505") {
+      throw new CustomError("An account with this email already exists", 409);
+    }
+    throw error;
+  }
+}
+
+export async function softDeleteSubAccount(
+  requesterId: string,
+  targetAccountId: string,
+) {
+  const requester = await requireNonEmployee(requesterId);
+  return db.transaction(async (tx) => {
+    const target = await tx.query.accountTable.findFirst({
+      where: eq(schema.accountTable.id, targetAccountId),
+      with: { group: true },
+    });
+    if (!target) throw new CustomError("Account not found", 404);
+    if (target.role !== "employee") {
+      throw new CustomError("Only employee sub-accounts can be deleted", 409);
+    }
+    const parentId = target.group?.parentId;
+    if (!parentId) {
+      throw new CustomError("Employee is not assigned to a seller", 409);
+    }
+    if (requester.role !== "admin" && requester.id !== parentId) {
+      throw new CustomError("You cannot delete another seller's employee", 403);
+    }
+    if (target.deletedAt) {
+      const { password: _, ...result } = target;
+      return result;
+    }
+
+    const [updated] = await tx
+      .update(schema.accountTable)
+      .set({
+        status: "inactive",
+        deletedAt: new Date(),
+        deletedByAccountId: requesterId,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.accountTable.id, targetAccountId))
+      .returning();
+    await recordAdminActivityWithTx(tx, {
+      actorAccountId: requesterId,
+      sellerId: parentId,
+      eventType: "account.sub_account_deleted",
+      entityType: "account",
+      entityId: targetAccountId,
+    });
+    const { password: _, ...result } = updated;
+    return result;
+  });
 }
 
 export async function getAccountById(accountId: string): Promise<
@@ -251,7 +403,12 @@ export async function listAccountEmployees(accountId: string) {
   const employees = await db
     .select()
     .from(schema.accountTable)
-    .where(eq(schema.accountTable.accountGroupId, accountGroup.id));
+    .where(
+      and(
+        eq(schema.accountTable.accountGroupId, accountGroup.id),
+        isNull(schema.accountTable.deletedAt),
+      ),
+    );
 
   return employees.map(({ password, ...accountInfo }) => accountInfo);
 }
@@ -283,7 +440,7 @@ export async function changeAccountPassword(
     account.password
   );
   if (!isOldPasswordValid) {
-    throw new CustomError("Incorrect old password", 404);
+    throw new CustomError("Incorrect old password", 401);
   }
 
   const hashedPassword = await bcrypt.hash(newPassword, 10);
@@ -302,6 +459,9 @@ export interface ListAccountsParams extends PaginationParams {
   search?: string;
   role?: schema.NewAccount["role"];
   status?: schema.NewAccount["status"];
+  sellerId?: string;
+  accountGroupId?: string;
+  parentId?: string;
 }
 
 export async function listAccounts({
@@ -310,9 +470,13 @@ export async function listAccounts({
   search,
   role,
   status,
+  sellerId,
+  accountGroupId,
+  parentId,
 }: ListAccountsParams) {
   const pagination = getPagination(page, limit);
   const conditions: Array<SQL | undefined> = [];
+  conditions.push(isNull(schema.accountTable.deletedAt));
 
   if (search) {
     conditions.push(
@@ -329,6 +493,33 @@ export async function listAccounts({
 
   if (status) {
     conditions.push(eq(schema.accountTable.status, status));
+  }
+
+  if (sellerId && parentId && sellerId !== parentId) {
+    throw new CustomError(
+      "sellerId and parentId must match when both are provided.",
+      400,
+    );
+  }
+
+  if (accountGroupId) {
+    conditions.push(eq(schema.accountTable.accountGroupId, accountGroupId));
+  }
+
+  const effectiveParentId = parentId ?? sellerId;
+  if (effectiveParentId) {
+    const parentGroups = await db
+      .select({ id: schema.accountGroupTable.id })
+      .from(schema.accountGroupTable)
+      .where(eq(schema.accountGroupTable.parentId, effectiveParentId));
+    conditions.push(
+      parentGroups.length > 0
+        ? inArray(
+            schema.accountTable.accountGroupId,
+            parentGroups.map(({ id }) => id),
+          )
+        : sql`false`,
+    );
   }
 
   const whereClause = compactConditions(conditions);

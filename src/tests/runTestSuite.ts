@@ -13,6 +13,7 @@ const suiteCommands: Record<SuiteName, string[]> = {
   all: [
     "_test:coin-accounting",
     "_test:api",
+    "_test:account-wallet",
     "_test:coin-ledger",
     "_test:cron",
   ],
@@ -51,6 +52,7 @@ function runNpmScript(script: string, databaseUrl: string) {
         NODE_ENV: "test",
         NO_CRON: "true",
         COIN_LEDGER_ENABLED: "true",
+        ACCOUNT_WALLET_AD_FUNDING_ENABLED: "true",
         COIN_LEDGER_MAINTENANCE_CONCURRENCY: "2",
         DATABASE_URL: databaseUrl,
         TEST_DATABASE_MANAGED: "true",

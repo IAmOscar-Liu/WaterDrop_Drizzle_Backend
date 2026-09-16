@@ -27,6 +27,8 @@ import {
   PaginationParams,
 } from "./utils/query";
 import { minimumVariantPrice } from "./utils/product";
+import { recordAdminActivityWithTx } from "./adminActivity";
+import { resolveAdminSellerScope } from "./adminScope";
 
 type DeliveryItemWithProductVariant = schema.OrderItem & {
   product?: schema.Product | null;
@@ -133,6 +135,7 @@ export async function updateDeliveryWithNotificationContext(
     Partial<schema.NewDelivery>,
     "id" | "orderId" | "createdAt" | "updatedAt"
   >,
+  actorAccountId?: string,
 ) {
   const result = await db.transaction(async (tx) => {
     const [existingDelivery] = await tx
@@ -176,6 +179,30 @@ export async function updateDeliveryWithNotificationContext(
             ? updates.RtnMsg
             : (latestLog?.RtnMsg ?? updatedDelivery.RtnMsg),
       });
+
+      const sellers = await tx
+        .selectDistinct({ sellerId: schema.productTable.sellerId })
+        .from(schema.orderItemTable)
+        .innerJoin(
+          schema.productTable,
+          eq(schema.productTable.id, schema.orderItemTable.productId),
+        )
+        .where(eq(schema.orderItemTable.orderId, updatedDelivery.orderId));
+      await Promise.all(
+        sellers.map(({ sellerId }) =>
+          recordAdminActivityWithTx(tx, {
+            actorAccountId,
+            sellerId,
+            eventType: "delivery.status_changed",
+            entityType: "delivery",
+            entityId: deliveryId,
+            metadata: {
+              previousStatus: existingDelivery.status,
+              status: updatedDelivery.status,
+            },
+          }),
+        ),
+      );
     }
 
     return { updatedDelivery, latestLog, shouldLog };
@@ -345,8 +372,8 @@ export async function listAdminDeliveries({
   const pagination = getPagination(page, limit);
   const conditions: (SQL | undefined)[] = [];
 
-  const isAdmin = await isAccountAdmin(accountId);
-  if (!isAdmin) {
+  const scope = await resolveAdminSellerScope(accountId);
+  if (scope.sellerId) {
     const sellerDeliveryIdsSubquery = db
       .selectDistinct({ deliveryId: schema.orderItemTable.deliveryId })
       .from(schema.orderItemTable)
@@ -356,7 +383,7 @@ export async function listAdminDeliveries({
       )
       .where(
         and(
-          eq(schema.productTable.sellerId, accountId),
+          eq(schema.productTable.sellerId, scope.sellerId),
           isNotNull(schema.orderItemTable.deliveryId),
         ),
       );
@@ -450,7 +477,10 @@ export async function upsertShippingFee(
       `homeDelivery cannot be greater than ${HOME_DELIVERY_FEE}`,
       400,
     );
-  if (data.homeDeliveryRefrig && data.homeDeliveryRefrig > HOME_DELIVERY_FEE)
+  if (
+    data.homeDeliveryRefrig &&
+    data.homeDeliveryRefrig > HOME_DELIVERY_REFRIG_FEE
+  )
     throw new CustomError(
       `homeDeliveryRefrig cannot be greater than ${HOME_DELIVERY_REFRIG_FEE}`,
       400,

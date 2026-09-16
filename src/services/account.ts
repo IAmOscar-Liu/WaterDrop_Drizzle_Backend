@@ -11,11 +11,33 @@ import {
   updateAccountLastLogin,
   assignAccountParent,
   listAccountEmployees,
+  createSubAccount,
+  softDeleteSubAccount,
+  CreateSubAccountInput,
 } from "../repository/account";
 import { ServiceResponse } from "../type/general";
 import ecpayService from "./ecpay";
 
 class AdminService {
+  async createSubAccount(requesterId: string, input: CreateSubAccountInput) {
+    try {
+      return { success: true as const, data: await createSubAccount(requesterId, input) };
+    } catch (error) {
+      return handleServiceError(error);
+    }
+  }
+
+  async deleteSubAccount(requesterId: string, targetAccountId: string) {
+    try {
+      return {
+        success: true as const,
+        data: await softDeleteSubAccount(requesterId, targetAccountId),
+      };
+    } catch (error) {
+      return handleServiceError(error);
+    }
+  }
+
   async createAdminAccount(
     accountData: schema.NewAccount,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof createAccount>>>> {

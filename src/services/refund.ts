@@ -268,13 +268,18 @@ class RefundService {
   async updateRefundItemStatus(
     refundItemId: string,
     updates: Parameters<typeof updateRefundItemStatus>[1],
+    actorAccountId?: string,
   ): Promise<
     ServiceResponse<
       Awaited<ReturnType<typeof updateRefundItemStatus>>["refundItem"]
     >
   > {
     try {
-      const result = await updateRefundItemStatus(refundItemId, updates);
+      const result = await updateRefundItemStatus(
+        refundItemId,
+        updates,
+        actorAccountId,
+      );
       sendRefundStatusChangedNotificationsAsync(result.notificationContext);
       return { success: true, data: result.refundItem };
     } catch (error) {

@@ -1,13 +1,18 @@
 import { Request, Response } from "express";
 import accountService from "../services/account";
 import { sendJsonResponse } from "../lib/general";
-import { generateToken, sendRefreshToken, validateToken } from "../lib/token";
+import {
+  clearRefreshToken,
+  generateAdminAccessToken,
+  sendRefreshToken,
+  validateToken,
+} from "../lib/token";
 import { RequestWithId } from "../type/request";
 import { isAccountAdmin, ListAccountsParams } from "../repository/account";
 
 class AccountController {
   async register(req: Request, res: Response): Promise<any> {
-    const { name, email, password, phone, realName, address, role } = req.body;
+    const { name, email, password, phone, realName, address } = req.body;
 
     if (!name || !email || !password || !phone || !realName) {
       return sendJsonResponse(res, {
@@ -47,9 +52,9 @@ class AccountController {
       email: String(email),
       password: String(password),
       phone: String(phone),
-      address: String(address),
       realName: String(realName),
-      role: role ?? "seller", // Assuming 'admin' is a valid role
+      ...(address !== undefined ? { address: String(address) } : {}),
+      role: "seller",
     });
     if (result.success) {
       sendRefreshToken(res, result.data);
@@ -57,12 +62,50 @@ class AccountController {
         ...result,
         data: {
           user: result.data,
-          token: generateToken(result.data, "30d"),
+          token: generateAdminAccessToken(result.data),
         },
       });
     } else {
       sendJsonResponse(res, result);
     }
+  }
+
+  async createSubAccount(req: RequestWithId, res: Response): Promise<any> {
+    const { parentId, name, realName, email, password, phone, address } = req.body;
+    if (!accountService.validatePassword(password)) {
+      return sendJsonResponse(res, {
+        success: false,
+        statusCode: 400,
+        message:
+          "Password must be at least 8 characters long and contain uppercase, lowercase, number, and special character.",
+      });
+    }
+    const phoneError = accountService.validateCellPhone(phone);
+    if (phoneError) {
+      return sendJsonResponse(res, { success: false, statusCode: 400, message: phoneError });
+    }
+    const realNameError = accountService.validateRealName(realName);
+    if (realNameError) {
+      return sendJsonResponse(res, { success: false, statusCode: 400, message: realNameError });
+    }
+    const result = await accountService.createSubAccount(req.userId ?? "", {
+      parentId,
+      name,
+      realName,
+      email,
+      password,
+      phone,
+      address,
+    });
+    sendJsonResponse(res, result);
+  }
+
+  async deleteSubAccount(req: RequestWithId, res: Response): Promise<any> {
+    const result = await accountService.deleteSubAccount(
+      req.userId ?? "",
+      req.params.id,
+    );
+    sendJsonResponse(res, result);
   }
 
   async login(req: Request, res: Response): Promise<any> {
@@ -84,7 +127,7 @@ class AccountController {
         ...result,
         data: {
           user: result.data,
-          token: generateToken(result.data, "30d"),
+          token: generateAdminAccessToken(result.data),
         },
       });
     } else {
@@ -93,7 +136,7 @@ class AccountController {
   }
 
   logout(_: Request, res: Response) {
-    res.clearCookie(process.env.REFRESH_TOKEN_NAME!);
+    clearRefreshToken(res);
     sendJsonResponse(res, { success: true, data: "OK" });
   }
 
@@ -126,9 +169,13 @@ class AccountController {
     const accountCheck = await accountService.getAdminAccountById(
       payload.data.id,
     );
-    if (!accountCheck.success) {
+    if (
+      !accountCheck.success ||
+      accountCheck.data.status !== "active" ||
+      accountCheck.data.deletedAt
+    ) {
       // Clear the invalid cookie and deny the request.
-      res.clearCookie(process.env.REFRESH_TOKEN_NAME!);
+      clearRefreshToken(res);
       return sendJsonResponse(res, {
         success: false,
         statusCode: 403,
@@ -137,7 +184,7 @@ class AccountController {
     }
 
     // The account is valid, issue a new refresh token and a new access token.
-    const newAccessToken = generateToken(accountCheck.data, "30d");
+    const newAccessToken = generateAdminAccessToken(accountCheck.data);
     sendRefreshToken(res, accountCheck.data);
     sendJsonResponse(res, {
       success: true,
@@ -146,8 +193,18 @@ class AccountController {
   }
 
   async updateAccount(req: RequestWithId, res: Response): Promise<any> {
-    const { id, name, realName, email, phone, address, role, status } =
-      req.body;
+    const {
+      id,
+      name,
+      realName,
+      email,
+      phone,
+      address,
+      avatarUrl,
+      avatar_url,
+      role,
+      status,
+    } = req.body;
 
     if (!id) {
       return sendJsonResponse(res, {
@@ -194,6 +251,9 @@ class AccountController {
         ...(email ? { email: String(email) } : {}),
         ...(phone ? { phone: String(phone) } : {}),
         ...(address ? { address: String(address) } : {}),
+        ...(avatarUrl !== undefined || avatar_url !== undefined
+          ? { avatar_url: avatarUrl !== undefined ? avatarUrl : avatar_url }
+          : {}),
         ...(role ? { role: role as ListAccountsParams["role"] } : {}),
         ...(status ? { status: status as ListAccountsParams["status"] } : {}),
       },
@@ -235,7 +295,16 @@ class AccountController {
   }
 
   async listAccounts(req: Request, res: Response): Promise<any> {
-    const { page, limit, search, role, status } = req.query;
+    const {
+      page,
+      limit,
+      search,
+      role,
+      status,
+      sellerId,
+      accountGroupId,
+      parentId,
+    } = req.query;
     const result = await accountService.listAdminAccounts({
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
@@ -244,6 +313,9 @@ class AccountController {
       status: status
         ? (String(status) as ListAccountsParams["status"])
         : undefined,
+      sellerId: sellerId ? String(sellerId) : undefined,
+      accountGroupId: accountGroupId ? String(accountGroupId) : undefined,
+      parentId: parentId ? String(parentId) : undefined,
     });
     sendJsonResponse(res, result);
   }

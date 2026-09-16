@@ -1,12 +1,14 @@
 import jwt, { type SignOptions } from "jsonwebtoken";
-import { Response } from "express";
+import { CookieOptions, Response } from "express";
 
 // --- Configuration ---
 // In a real application, store this securely (e.g., in .env files, not in code)
 const JWT_SECRET =
   process.env.JWT_SECRET ??
   "your-super-secret-and-long-string-that-is-hard-to-guess";
-const DEFAULT_EXPIRATION = "30d"; // Default token validity: 1 hour
+const DEFAULT_EXPIRATION: SignOptions["expiresIn"] = "30d";
+const REFRESH_TOKEN_EXPIRATION: SignOptions["expiresIn"] = "30d";
+const REFRESH_TOKEN_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 30;
 
 /**
  * Generates a JSON Web Token (JWT).
@@ -47,6 +49,12 @@ export function generateToken(
   }
 }
 
+export function generateAdminAccessToken(payload: any) {
+  const expiresIn: SignOptions["expiresIn"] =
+    process.env.NODE_ENV === "local" ? "1d" : "1h";
+  return generateToken(payload, expiresIn);
+}
+
 /**
  * Validates a JSON Web Token (JWT) and decodes its payload.
  *
@@ -71,18 +79,32 @@ export function validateToken(token?: string) {
 }
 
 export function sendRefreshToken(res: Response, payload: any) {
-  const refreshToken = generateToken(payload);
+  const refreshToken = generateToken(payload, REFRESH_TOKEN_EXPIRATION);
 
+  res.cookie(process.env.REFRESH_TOKEN_NAME!, refreshToken, {
+    ...getRefreshTokenCookieOptions(),
+    maxAge: REFRESH_TOKEN_MAX_AGE_MS,
+  });
+}
+
+export function clearRefreshToken(res: Response) {
+  res.clearCookie(
+    process.env.REFRESH_TOKEN_NAME!,
+    getRefreshTokenCookieOptions(),
+  );
+}
+
+function getRefreshTokenCookieOptions(): CookieOptions {
   // Determine domain based on environment
   // If production, share cookie across subdomains. If dev, leave undefined (defaults to current host)
   const domain =
     process.env.NODE_ENV === "production" ? "waterdropping.com" : undefined;
 
-  res.cookie(process.env.REFRESH_TOKEN_NAME!, refreshToken, {
+  return {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     domain,
     sameSite: "strict",
-    maxAge: 1000 * 60 * 60 * 24 * 30, // 30 days,
-  });
+    path: "/",
+  };
 }

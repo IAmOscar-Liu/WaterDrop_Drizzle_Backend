@@ -37,6 +37,8 @@ import {
   getTotalPages,
   PaginationParams,
 } from "./utils/query";
+import { recordAdminActivityWithTx } from "./adminActivity";
+import { resolveAdminSellerScope } from "./adminScope";
 
 export interface GetRefundListParams extends PaginationParams {
   accountId?: string;
@@ -389,10 +391,12 @@ export async function getRefundList({
     endAt,
     status,
   });
-  const sellerScope =
-    accountId && !(await isAccountAdmin(accountId))
-      ? eq(schema.productTable.sellerId, accountId)
-      : undefined;
+  const resolvedScope = accountId
+    ? await resolveAdminSellerScope(accountId)
+    : undefined;
+  const sellerScope = resolvedScope?.sellerId
+    ? eq(schema.productTable.sellerId, resolvedScope.sellerId)
+    : undefined;
   const merchantTradeNoPrefix = merchantTradeNo?.trim();
   const merchantTradeNoScope =
     merchantTradeNoPrefix && merchantTradeNoPrefix.length >= 4
@@ -757,6 +761,7 @@ export async function updateRefundItemStatus(
     extraRefundAmount?: number;
     metadata?: schema.RefundItem["metadata"];
   },
+  actorAccountId?: string,
 ) {
   return db.transaction(async (tx) => {
     // 1. Lock the refund item so completion side effects can only run once.
@@ -1271,6 +1276,28 @@ export async function updateRefundItemStatus(
         previousStatus: refundItem.status,
         status: updatedRefundItem.status,
       };
+      const [seller] = await tx
+        .select({ sellerId: schema.productTable.sellerId })
+        .from(schema.orderItemTable)
+        .innerJoin(
+          schema.productTable,
+          eq(schema.productTable.id, schema.orderItemTable.productId),
+        )
+        .where(eq(schema.orderItemTable.id, refundItem.orderItemId))
+        .limit(1);
+      if (seller) {
+        await recordAdminActivityWithTx(tx, {
+          actorAccountId,
+          sellerId: seller.sellerId,
+          eventType: "refund.status_changed",
+          entityType: "refund_item",
+          entityId: refundItemId,
+          metadata: {
+            previousStatus: refundItem.status,
+            status: updatedRefundItem.status,
+          },
+        });
+      }
     }
 
     return {

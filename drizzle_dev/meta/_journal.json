@@ -428,6 +428,20 @@
       "when": 1789454414218,
       "tag": "0060_lowly_midnight",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1789534316735,
+      "tag": "0061_fantastic_the_anarchist",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1789539339775,
+      "tag": "0062_powerful_magus",
+      "breakpoints": true
     }
   ]
 }

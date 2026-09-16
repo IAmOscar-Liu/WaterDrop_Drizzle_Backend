@@ -5,11 +5,20 @@ import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
 import db from "../lib/initDB";
 import {
+  moneyToMinorUnits,
+  minorUnitsToMoney,
+  normalizeMoney,
+  subtractMoney,
+} from "../lib/money";
+import {
   effectiveTimezone,
   getLocalDate,
   isCoinLedgerEnabled,
 } from "../lib/coinAccounting";
 import { isAccountAdmin } from "./account";
+import { lockWalletIdempotencyKeyWithTx } from "./accountWallet";
+import { recordAdminActivityWithTx } from "./adminActivity";
+import { getActiveAdminAccount, resolveAdminSellerScope } from "./adminScope";
 import { withProductVariantAggregates } from "./utils/product";
 import { returnCoinsToSellerWithTx } from "./coinLedger";
 import {
@@ -37,6 +46,7 @@ const activeVariantAvailabilityCondition = sql<boolean>`exists (
  */
 export async function createAdvertisement(
   advertisementData: schema.NewAdvertisement,
+  requesterId?: string,
 ) {
   return await db.transaction(async (tx) => {
     const [product] = await tx
@@ -48,6 +58,18 @@ export async function createAdvertisement(
       .where(eq(schema.productTable.id, advertisementData.productId))
       .for("update");
     if (!product) throw new CustomError("Product not found.", 404);
+    if (requesterId) {
+      const requester = await getActiveAdminAccount(requesterId);
+      if (
+        requester.role === "employee" ||
+        (requester.role !== "admin" && product.sellerId !== requester.id)
+      ) {
+        throw new CustomError(
+          "Only the product seller or a platform admin may create its advertisement.",
+          403,
+        );
+      }
+    }
 
     const [currentAdvertisement] = await tx
       .select({ id: schema.advertisementTable.id })
@@ -119,7 +141,10 @@ export async function createAdvertisement(
  * @param advertisementId The ID of the advertisement to retrieve.
  * @returns The advertisement object with its related data.
  */
-export async function getAdvertisement(advertisementId: string) {
+export async function getAdvertisement(
+  advertisementId: string,
+  requesterId?: string,
+) {
   const advertisement = await db.query.advertisementTable.findFirst({
     where: eq(schema.advertisementTable.id, advertisementId),
     with: {
@@ -140,6 +165,12 @@ export async function getAdvertisement(advertisementId: string) {
 
   if (!advertisement?.product) {
     return advertisement;
+  }
+  if (requesterId) {
+    const scope = await resolveAdminSellerScope(requesterId);
+    if (scope.sellerId && scope.sellerId !== advertisement.product.sellerId) {
+      throw new CustomError("You cannot view another seller's advertisement", 403);
+    }
   }
 
   return {
@@ -346,7 +377,8 @@ export async function listAdvertisements({
 }
 
 export interface ListAdminAdvertisementsParams extends PaginationParams {
-  sellerId: string;
+  requesterId: string;
+  sellerId?: string;
 }
 
 /**
@@ -357,14 +389,15 @@ export interface ListAdminAdvertisementsParams extends PaginationParams {
 export async function listAdminAdvertisements({
   page = 1,
   limit = 10,
+  requesterId,
   sellerId,
 }: ListAdminAdvertisementsParams) {
   const pagination = getPagination(page, limit);
 
-  const isAdmin = await isAccountAdmin(sellerId);
-  const whereClause = isAdmin
-    ? undefined
-    : eq(schema.productTable.sellerId, sellerId);
+  const scope = await resolveAdminSellerScope(requesterId, sellerId);
+  const whereClause = scope.sellerId
+    ? eq(schema.productTable.sellerId, scope.sellerId)
+    : undefined;
 
   const [totalResult, results] = await Promise.all([
     db
@@ -450,7 +483,29 @@ export async function listAdminAdvertisements({
 export async function updateAdvertisementById(
   advertisementId: string,
   updates: Partial<schema.Advertisement>,
+  requesterId?: string,
 ) {
+  if (requesterId) {
+    const [owner] = await db
+      .select({ sellerId: schema.productTable.sellerId })
+      .from(schema.advertisementTable)
+      .innerJoin(
+        schema.productTable,
+        eq(schema.productTable.id, schema.advertisementTable.productId),
+      )
+      .where(eq(schema.advertisementTable.id, advertisementId));
+    if (!owner) throw new CustomError("Advertisement not found", 404);
+    const requester = await getActiveAdminAccount(requesterId);
+    if (
+      requester.role === "employee" ||
+      (requester.role !== "admin" && owner.sellerId !== requester.id)
+    ) {
+      throw new CustomError(
+        "Only the advertisement seller or a platform admin may update it.",
+        403,
+      );
+    }
+  }
   const [updatedAd] = await db
     .update(schema.advertisementTable)
     .set(updates)
@@ -466,17 +521,37 @@ export async function updateAdvertisementById(
  */
 export async function getAdViewCount({
   advertisementId,
+  requesterId,
   startAt,
   endAt,
 }: {
   advertisementId: string;
+  requesterId: string;
   startAt?: Date;
   endAt?: Date;
 }) {
-  const advertisement = await db.query.advertisementTable.findFirst({
-    where: eq(schema.advertisementTable.id, advertisementId),
-  });
-  if (!advertisement) throw new CustomError("Advertisement not found", 404);
+  const [resultWithOwner] = await db
+    .select({
+      advertisement: schema.advertisementTable,
+      sellerId: schema.productTable.sellerId,
+    })
+    .from(schema.advertisementTable)
+    .innerJoin(
+      schema.productTable,
+      eq(schema.productTable.id, schema.advertisementTable.productId),
+    )
+    .where(eq(schema.advertisementTable.id, advertisementId));
+  if (!resultWithOwner) throw new CustomError("Advertisement not found", 404);
+  if (
+    resultWithOwner.sellerId !== requesterId &&
+    !(await isAccountAdmin(requesterId))
+  ) {
+    throw new CustomError(
+      "Only the advertisement seller or a platform admin may view these statistics.",
+      403,
+    );
+  }
+  const advertisement = resultWithOwner.advertisement;
 
   const conditions = [
     eq(schema.adViewCountTable.advertisementId, advertisementId),
@@ -510,6 +585,13 @@ export interface ListAdViewCountParams extends PaginationParams {
   endAt?: Date;
 }
 
+export interface ListPlatformAdViewCountParams extends PaginationParams {
+  requesterId: string;
+  sellerId?: string;
+  startAt?: Date;
+  endAt?: Date;
+}
+
 /**
  * Lists all advertisements along with their view counts within an optional date range.
  * Ads with zero views in the range are included.
@@ -523,6 +605,16 @@ export async function listAdViewCount({
   startAt,
   endAt,
 }: ListAdViewCountParams) {
+  return listAdViewCounts({ sellerId, page, limit, startAt, endAt });
+}
+
+async function listAdViewCounts({
+  sellerId,
+  page = 1,
+  limit = 10,
+  startAt,
+  endAt,
+}: Omit<ListPlatformAdViewCountParams, "requesterId">) {
   const conditions: SQL[] = [];
   const pagination = getPagination(page, limit);
   if (startAt) conditions.push(gte(schema.adViewCountTable.createdAt, startAt));
@@ -541,7 +633,9 @@ export async function listAdViewCount({
     .groupBy(schema.adViewCountTable.advertisementId)
     .as("view_counts");
 
-  const whereClause = eq(schema.productTable.sellerId, sellerId);
+  const whereClause = sellerId
+    ? eq(schema.productTable.sellerId, sellerId)
+    : undefined;
 
   // Query for total count
   const totalResult = await db
@@ -592,6 +686,21 @@ export async function listAdViewCount({
   };
 }
 
+export async function listPlatformAdViewCount({
+  requesterId,
+  sellerId,
+  page,
+  limit,
+  startAt,
+  endAt,
+}: ListPlatformAdViewCountParams) {
+  if (!(await isAccountAdmin(requesterId))) {
+    throw new CustomError("Administrator access required.", 403);
+  }
+
+  return listAdViewCounts({ sellerId, page, limit, startAt, endAt });
+}
+
 /**
  * Increases the balance of an advertisement and records the transaction.
  * @param params The advertisement ID, amount to add, and optional metadata.
@@ -599,24 +708,246 @@ export async function listAdViewCount({
  */
 export async function depositAdBalance({
   advertisementId,
+  requesterId,
   amount,
+  idempotencyKey,
   metadata,
 }: {
   advertisementId: string;
-  amount: number;
+  requesterId: string;
+  amount: string;
+  idempotencyKey: string;
   metadata?: Record<string, any>;
 }) {
-  if (amount <= 0) {
-    throw new CustomError("Deposit amount must be positive.", 400);
+  if (process.env.ACCOUNT_WALLET_AD_FUNDING_ENABLED !== "true") {
+    throw new CustomError(
+      "Account-wallet advertisement funding is temporarily disabled.",
+      503,
+    );
   }
 
+  const normalizedAmount = normalizeMoney(amount);
+  const amountInMinorUnits = moneyToMinorUnits(normalizedAmount);
+  if (amountInMinorUnits <= BigInt(0)) {
+    throw new CustomError("Deposit amount must be positive.", 400);
+  }
+  if (amountInMinorUnits > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new CustomError("Deposit amount is too large.", 400);
+  }
+  const numericAmount = Number(amountInMinorUnits) / 100;
+
   return await db.transaction(async (tx) => {
-    // 1. Update the balance
+    await lockWalletIdempotencyKeyWithTx(tx, idempotencyKey);
+
+    const [advertisement] = await tx
+      .select({
+        id: schema.advertisementTable.id,
+        archivedAt: schema.advertisementTable.archivedAt,
+        financiallyClosedAt: schema.advertisementTable.financiallyClosedAt,
+        sellerId: schema.productTable.sellerId,
+        sellerRole: schema.accountTable.role,
+        sellerStatus: schema.accountTable.status,
+      })
+      .from(schema.advertisementTable)
+      .innerJoin(
+        schema.productTable,
+        eq(schema.productTable.id, schema.advertisementTable.productId),
+      )
+      .innerJoin(
+        schema.accountTable,
+        eq(schema.accountTable.id, schema.productTable.sellerId),
+      )
+      .where(eq(schema.advertisementTable.id, advertisementId))
+      .limit(1);
+    if (!advertisement) throw new CustomError("Advertisement not found.", 404);
+
+    const [requester] = await tx
+      .select({ role: schema.accountTable.role })
+      .from(schema.accountTable)
+      .where(eq(schema.accountTable.id, requesterId))
+      .limit(1);
+    if (
+      !requester ||
+      (requester.role !== "admin" && requesterId !== advertisement.sellerId)
+    ) {
+      throw new CustomError(
+        "Only the owning seller or a platform administrator may fund this advertisement.",
+        403,
+      );
+    }
+
+    const [existingAdvertisementTransaction] = await tx
+      .select()
+      .from(schema.advertisementTransactionTable)
+      .where(
+        eq(schema.advertisementTransactionTable.idempotencyKey, idempotencyKey),
+      )
+      .limit(1);
+    if (existingAdvertisementTransaction) {
+      if (
+        existingAdvertisementTransaction.type !== "wallet_funding" ||
+        existingAdvertisementTransaction.advertisementId !== advertisementId ||
+        normalizeMoney(existingAdvertisementTransaction.amount.toFixed(2)) !==
+          normalizedAmount ||
+        !existingAdvertisementTransaction.accountWalletTransactionId
+      ) {
+        throw new CustomError(
+          "Idempotency key was already used for a different advertisement operation.",
+          409,
+        );
+      }
+
+      const [walletTransaction] = await tx
+        .select()
+        .from(schema.accountWalletTransactionTable)
+        .where(
+          eq(
+            schema.accountWalletTransactionTable.id,
+            existingAdvertisementTransaction.accountWalletTransactionId,
+          ),
+        )
+        .limit(1);
+      const [wallet] = walletTransaction
+        ? await tx
+            .select()
+            .from(schema.accountWalletTable)
+            .where(
+              eq(schema.accountWalletTable.id, walletTransaction.walletId),
+            )
+            .limit(1)
+        : [];
+      const [stats] = await tx
+        .select()
+        .from(schema.advertisementStatsTable)
+        .where(
+          eq(schema.advertisementStatsTable.advertisementId, advertisementId),
+        )
+        .limit(1);
+      if (!walletTransaction || !wallet || !stats) {
+        throw new CustomError("Funding ledger link is incomplete.", 409);
+      }
+
+      return {
+        ...stats,
+        balance: Number(
+          existingAdvertisementTransaction.balanceAfter ?? stats.balance,
+        ),
+        wallet: {
+          ...wallet,
+          walletBalance: walletTransaction.balanceAfter,
+        },
+        walletTransaction,
+        advertisementTransaction: existingAdvertisementTransaction,
+        idempotentReplay: true,
+      };
+    }
+
+    const [conflictingWalletTransaction] = await tx
+      .select({ id: schema.accountWalletTransactionTable.id })
+      .from(schema.accountWalletTransactionTable)
+      .where(
+        eq(schema.accountWalletTransactionTable.idempotencyKey, idempotencyKey),
+      )
+      .limit(1);
+    if (conflictingWalletTransaction) {
+      throw new CustomError(
+        "Idempotency key was already used for a different wallet operation.",
+        409,
+      );
+    }
+
+    if (advertisement.archivedAt || advertisement.financiallyClosedAt) {
+      throw new CustomError(
+        "Archived or financially closed advertisements cannot receive funding.",
+        409,
+      );
+    }
+    if (
+      advertisement.sellerRole !== "seller" ||
+      advertisement.sellerStatus !== "active"
+    ) {
+      throw new CustomError(
+        "Advertisement funding requires an active seller account.",
+        409,
+      );
+    }
+
+    const [walletBefore] = await tx
+      .select()
+      .from(schema.accountWalletTable)
+      .where(eq(schema.accountWalletTable.accountId, advertisement.sellerId))
+      .for("update");
+    if (!walletBefore) {
+      throw new CustomError(
+        "Seller wallet has not been initialized. Run the wallet backfill first.",
+        409,
+      );
+    }
+    if (moneyToMinorUnits(walletBefore.walletBalance) < amountInMinorUnits) {
+      throw new CustomError("Insufficient seller wallet balance.", 409);
+    }
+
+    const [statsBefore] = await tx
+      .select()
+      .from(schema.advertisementStatsTable)
+      .where(
+        eq(schema.advertisementStatsTable.advertisementId, advertisementId),
+      )
+      .for("update");
+    if (!statsBefore) throw new CustomError("Advertisement not found.", 404);
+    if (statsBefore.status === "archived") {
+      throw new CustomError("Archived advertisements cannot receive funding.", 409);
+    }
+
+    const walletBalanceAfter = subtractMoney(
+      walletBefore.walletBalance,
+      normalizedAmount,
+    );
+    const [wallet] = await tx
+      .update(schema.accountWalletTable)
+      .set({ walletBalance: walletBalanceAfter })
+      .where(
+        and(
+          eq(schema.accountWalletTable.id, walletBefore.id),
+          gte(schema.accountWalletTable.walletBalance, normalizedAmount),
+        ),
+      )
+      .returning();
+    if (!wallet) {
+      throw new CustomError("Insufficient seller wallet balance.", 409);
+    }
+
+    const [walletTransaction] = await tx
+      .insert(schema.accountWalletTransactionTable)
+      .values({
+        walletId: wallet.id,
+        accountId: advertisement.sellerId,
+        actorAccountId: requesterId,
+        advertisementId,
+        type: "advertisement_funding_debit",
+        amount: `-${normalizedAmount}`,
+        balanceBefore: walletBefore.walletBalance,
+        balanceAfter: walletBalanceAfter,
+        idempotencyKey,
+        metadata,
+      })
+      .returning();
+
+    const advertisementBalanceBefore = normalizeMoney(
+      statsBefore.balance.toFixed(2),
+    );
+    const advertisementBalanceAfter = normalizeMoney(
+      (statsBefore.balance + numericAmount).toFixed(2),
+    );
     const [updatedStats] = await tx
       .update(schema.advertisementStatsTable)
       .set({
-        balance: sql`${schema.advertisementStatsTable.balance} + ${amount}`,
-        status: sql`case when ${schema.advertisementStatsTable.status} = 'depleted' and ${schema.advertisementStatsTable.balance} + ${amount} >= 100 then 'active' else ${schema.advertisementStatsTable.status} end`,
+        balance: Number(advertisementBalanceAfter),
+        status:
+          statsBefore.status === "depleted" &&
+          Number(advertisementBalanceAfter) >= 100
+            ? "active"
+            : statsBefore.status,
       })
       .where(
         eq(schema.advertisementStatsTable.advertisementId, advertisementId),
@@ -627,15 +958,124 @@ export async function depositAdBalance({
       throw new CustomError("Advertisement not found.", 404);
     }
 
-    // 2. Create a transaction record
-    await tx.insert(schema.advertisementTransactionTable).values({
-      advertisementId,
-      amount,
-      type: "deposit",
-      metadata,
+    const [advertisementTransaction] = await tx
+      .insert(schema.advertisementTransactionTable)
+      .values({
+        advertisementId,
+        amount: numericAmount,
+        sourceSellerId: advertisement.sellerId,
+        balanceBefore: advertisementBalanceBefore,
+        balanceAfter: advertisementBalanceAfter,
+        idempotencyKey,
+        accountWalletTransactionId: walletTransaction.id,
+        type: "wallet_funding",
+        metadata,
+      })
+      .returning();
+
+    await recordAdminActivityWithTx(tx, {
+      actorAccountId: requesterId,
+      sellerId: advertisement.sellerId,
+      eventType: "advertisement.funded",
+      entityType: "advertisement",
+      entityId: advertisementId,
+      metadata: { amount: normalizedAmount, idempotencyKey },
     });
 
-    return updatedStats;
+    return {
+      ...updatedStats,
+      wallet,
+      walletTransaction,
+      advertisementTransaction,
+      idempotentReplay: false,
+    };
+  });
+}
+
+export async function adjustAdBudget({
+  advertisementId,
+  requesterId,
+  operation,
+  amount,
+  idempotencyKey,
+  metadata,
+}: {
+  advertisementId: string;
+  requesterId: string;
+  operation: "increase" | "decrease" | "set";
+  amount: string;
+  idempotencyKey: string;
+  metadata?: Record<string, any>;
+}) {
+  const [record] = await db
+    .select({
+      stats: schema.advertisementStatsTable,
+      sellerId: schema.productTable.sellerId,
+    })
+    .from(schema.advertisementTable)
+    .innerJoin(
+      schema.productTable,
+      eq(schema.productTable.id, schema.advertisementTable.productId),
+    )
+    .innerJoin(
+      schema.advertisementStatsTable,
+      eq(
+        schema.advertisementStatsTable.advertisementId,
+        schema.advertisementTable.id,
+      ),
+    )
+    .where(eq(schema.advertisementTable.id, advertisementId))
+    .limit(1);
+  if (!record) throw new CustomError("Advertisement not found.", 404);
+  if (
+    requesterId !== record.sellerId &&
+    !(await isAccountAdmin(requesterId))
+  ) {
+    throw new CustomError(
+      "Only the owning seller or a platform administrator may fund this advertisement.",
+      403,
+    );
+  }
+
+  if (operation === "decrease") {
+    throw new CustomError(
+      "operation_not_supported: advertisement budget cannot be withdrawn",
+      409,
+    );
+  }
+  if (operation === "increase") {
+    return depositAdBalance({
+      advertisementId,
+      requesterId,
+      amount,
+      idempotencyKey,
+      metadata: { ...metadata, budgetOperation: operation },
+    });
+  }
+
+  const normalizedTarget = normalizeMoney(amount);
+
+  const current = moneyToMinorUnits(record.stats.balance.toFixed(2));
+  const target = moneyToMinorUnits(normalizedTarget);
+  if (target < current) {
+    throw new CustomError(
+      "operation_not_supported: advertisement budget cannot be set lower",
+      409,
+    );
+  }
+  if (target === current) {
+    return { ...record.stats, noChange: true, idempotentReplay: false };
+  }
+  return depositAdBalance({
+    advertisementId,
+    requesterId,
+    amount: minorUnitsToMoney(target - current),
+    idempotencyKey,
+    metadata: {
+      ...metadata,
+      budgetOperation: operation,
+      targetBalance: normalizedTarget,
+    },
   });
 }
 
@@ -747,6 +1187,7 @@ export async function spendAdBalance({
 export async function setAdStatus(
   advertisementId: string,
   status: schema.AdvertisementStats["status"],
+  requesterId: string,
 ) {
   return db.transaction(async (tx) => {
     const [advertisement] = await tx
@@ -764,13 +1205,57 @@ export async function setAdStatus(
     if (!advertisement || !stats) {
       throw new CustomError("Advertisement not found.", 404);
     }
+
+    const [product] = await tx
+      .select({
+        sellerId: schema.productTable.sellerId,
+        status: schema.productTable.status,
+      })
+      .from(schema.productTable)
+      .where(eq(schema.productTable.id, advertisement.productId))
+      .for("update");
+    if (!product) throw new CustomError("Product not found.", 404);
+    if (
+      product.sellerId !== requesterId &&
+      !(await isAccountAdmin(requesterId))
+    ) {
+      throw new CustomError(
+        "Only the advertisement seller or a platform admin may change its status.",
+        403,
+      );
+    }
     if (stats.status === "archived" && status !== "archived") {
       throw new CustomError("An archived advertisement cannot be reactivated.", 409);
+    }
+    if (status === "active" && product.status !== "active") {
+      throw new CustomError(
+        "Cannot activate an advertisement for an inactive product.",
+        409,
+      );
+    }
+    if (status === "active") {
+      const [availableVariant] = await tx
+        .select({ id: schema.productVariantTable.id })
+        .from(schema.productVariantTable)
+        .where(
+          and(
+            eq(schema.productVariantTable.productId, advertisement.productId),
+            eq(schema.productVariantTable.status, "active"),
+            sql`${schema.productVariantTable.stock} > ${schema.productVariantTable.reserve}`,
+          ),
+        )
+        .limit(1);
+      if (!availableVariant) {
+        throw new CustomError(
+          "Cannot activate an advertisement without an active, available product variant.",
+          409,
+        );
+      }
     }
     if (status === "active" && stats.balance < 100) {
       throw new CustomError(
         "Cannot activate ad with balance less than 100.",
-        400,
+        409,
       );
     }
     if (status === "archived" && stats.status !== "archived") {
@@ -796,6 +1281,16 @@ export async function setAdStatus(
         eq(schema.advertisementStatsTable.advertisementId, advertisementId),
       )
       .returning();
+    if (stats.status !== status) {
+      await recordAdminActivityWithTx(tx, {
+        actorAccountId: requesterId,
+        sellerId: product.sellerId,
+        eventType: "advertisement.status_changed",
+        entityType: "advertisement",
+        entityId: advertisementId,
+        metadata: { previousStatus: stats.status, status },
+      });
+    }
     return updatedStats;
   });
 }

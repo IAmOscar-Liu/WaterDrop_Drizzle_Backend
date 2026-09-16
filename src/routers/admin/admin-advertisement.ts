@@ -1,6 +1,7 @@
 import { Router } from "express";
 import AdvertisementController from "../../controller/advertisement";
 import isAuth from "../../middleware/isAuth";
+import isAdmin from "../../middleware/isAdmin";
 import validateZod from "../../middleware/validateZod";
 import { adminValidation } from "../../middleware/admin";
 
@@ -226,7 +227,7 @@ const router = Router();
  *           nullable: true
  *         type:
  *           type: string
- *           enum: [deposit, view_debit, seller_return_credit, balance_transfer_out, balance_transfer_in, manual_adjustment]
+ *           enum: [deposit, wallet_funding, view_debit, seller_return_credit, balance_transfer_out, balance_transfer_in, manual_adjustment]
  *
  *     AdvertisementCoinFundingAccount:
  *       type: object
@@ -513,6 +514,10 @@ const router = Router();
  *         schema:
  *           type: integer
  *           default: 10
+ *       - in: query
+ *         name: sellerId
+ *         schema: { type: string, format: uuid }
+ *         description: Platform-admin seller filter. Seller and employee callers are server-scoped.
  *     responses:
  *       '200':
  *         description: A paginated list of advertisements.
@@ -531,6 +536,62 @@ router.get(
   isAuth,
   validateZod({ query: adminValidation.advertisement.listQuery }),
   AdvertisementController.listAdminAdvertisements,
+);
+
+/**
+ * @swagger
+ * /api/admin/advertisement/metrics:
+ *   get:
+ *     tags: [Advertisement]
+ *     summary: List financial and reward metrics for advertisements
+ *     description: Seller/employee scope is resolved by the server. Platform admins may filter sellerId. CTR and impressions are intentionally absent because they are not reliably recorded.
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { in: query, name: page, schema: { type: integer } }
+ *       - { in: query, name: limit, schema: { type: integer } }
+ *       - { in: query, name: sellerId, schema: { type: string, format: uuid } }
+ *       - { in: query, name: productId, schema: { type: string, format: uuid } }
+ *       - { in: query, name: status, schema: { type: string, enum: [active, paused, depleted, archived] } }
+ *       - { in: query, name: startAt, schema: { type: string, format: date-time } }
+ *       - { in: query, name: endAt, schema: { type: string, format: date-time } }
+ *     responses:
+ *       '200':
+ *         description: Paginated ad metrics including completed views, spend, returned/net amounts, funded coins, current balance, and platform advance/expense.
+ */
+router.get(
+  "/metrics",
+  isAuth,
+  validateZod({ query: adminValidation.advertisement.metricsQuery }),
+  AdvertisementController.listMetrics,
+);
+
+/**
+ * @swagger
+ * /api/admin/advertisement/product/{productId}/dashboard:
+ *   get:
+ *     tags: [Advertisement]
+ *     summary: Get a product's current and historical advertisement dashboard
+ *     description: Includes archived/replacement ads and a Taipei daily view/spend/funded-coin series. Product ownership is enforced.
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: productId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - { in: query, name: startAt, schema: { type: string, format: date-time } }
+ *       - { in: query, name: endAt, schema: { type: string, format: date-time } }
+ *     responses:
+ *       '200': { description: Product, advertisement-chain metrics, and daily points. }
+ *       '403': { description: Product belongs to another seller. }
+ */
+router.get(
+  "/product/:productId/dashboard",
+  isAuth,
+  validateZod({
+    params: adminValidation.advertisement.productDashboardParams,
+    query: adminValidation.advertisement.productDashboardQuery,
+  }),
+  AdvertisementController.getProductDashboard,
 );
 
 /**
@@ -745,11 +806,93 @@ router.get(
 
 /**
  * @swagger
+ * /api/admin/advertisement/platform/list/view-count:
+ *   get:
+ *     tags: [Advertisement]
+ *     summary: List advertisement view counts across the platform
+ *     description: Platform-admin-only view of every seller's advertisements. Supply sellerId to restrict the result to one seller.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: sellerId
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Optional seller account ID.
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *       - in: query
+ *         name: startAt
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *       - in: query
+ *         name: endAt
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *     responses:
+ *       '200':
+ *         description: Paginated advertisements with view counts.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     startAt:
+ *                       type: string
+ *                       format: date-time
+ *                       nullable: true
+ *                     endAt:
+ *                       type: string
+ *                       format: date-time
+ *                       nullable: true
+ *                     total:
+ *                       type: integer
+ *                     page:
+ *                       type: integer
+ *                     limit:
+ *                       type: integer
+ *                     totalPages:
+ *                       type: integer
+ *                     advertisements:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/AdvertisementWithCount'
+ *       '403':
+ *         description: Only a platform admin account may call this endpoint.
+ */
+router.get(
+  "/platform/list/view-count",
+  isAuth,
+  isAdmin,
+  validateZod({
+    query: adminValidation.advertisement.platformViewCountListQuery,
+  }),
+  AdvertisementController.listPlatformAdViewCount,
+);
+
+/**
+ * @swagger
  * /api/admin/advertisement/{id}/view-count:
  *   get:
  *     tags: [Advertisement]
  *     summary: Get the view count for an advertisement
- *     description: Retrieves the total number of views for a specific advertisement, with an optional date range filter.
+ *     description: Retrieves the total number of views for a specific advertisement, with an optional date range filter. Only the owning seller or a platform admin may call it.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -803,6 +946,8 @@ router.get(
  *                         count:
  *                           type: integer
  *                           description: The total number of views.
+ *       '403':
+ *         description: The caller is neither the owning seller nor a platform admin.
  */
 router.get(
   "/:id/view-count",
@@ -943,14 +1088,23 @@ router.get(
  *         application/json:
  *           schema:
  *             type: object
- *             required: [amount]
+ *             required: [amount, idempotencyKey]
  *             properties:
  *               amount:
- *                 type: number
- *                 description: The amount to add to the advertisement's balance.
+ *                 oneOf: [{ type: string }, { type: number }]
+ *                 example: "200.00"
+ *                 description: Positive TWD amount with at most two decimal places. The same amount is debited from the product seller's account wallet.
+ *               idempotencyKey:
+ *                 type: string
+ *                 minLength: 8
+ *                 maxLength: 200
+ *                 example: fund-ad-20260916-0001
+ *               metadata:
+ *                 type: object
+ *                 additionalProperties: true
  *     responses:
  *       '200':
- *         description: The updated advertisement budget and status details.
+ *         description: The updated advertisement budget plus linked wallet and ledger transactions. Decimal wallet values are strings. A depleted ad is automatically reactivated only when its new balance reaches the configured minimum; paused ads remain paused.
  *         content:
  *           application/json:
  *             schema:
@@ -959,7 +1113,23 @@ router.get(
  *                 success:
  *                   type: boolean
  *                 data:
- *                   $ref: '#/components/schemas/AdvertisementBudgetStatus'
+ *                   allOf:
+ *                     - $ref: '#/components/schemas/AdvertisementBudgetStatus'
+ *                     - type: object
+ *                       properties:
+ *                         wallet: { $ref: '#/components/schemas/AccountWallet' }
+ *                         walletTransaction: { $ref: '#/components/schemas/AccountWalletTransaction' }
+ *                         advertisementTransaction:
+ *                           type: object
+ *                           properties:
+ *                             type: { type: string, example: wallet_funding }
+ *                             amount: { type: number, example: 200 }
+ *                             balanceBefore: { type: string, example: "0.00" }
+ *                             balanceAfter: { type: string, example: "200.00" }
+ *                         idempotentReplay: { type: boolean, example: false }
+ *       '403': { description: Only the owning seller or a platform administrator may fund the ad. }
+ *       '409': { description: Insufficient wallet balance, inactive seller, archived/closed ad, or idempotency conflict. }
+ *       '503': { description: Wallet-based advertisement funding is disabled during rollout. }
  */
 router.put(
   "/deposit/:id",
@@ -973,10 +1143,50 @@ router.put(
 
 /**
  * @swagger
+ * /api/admin/advertisement/budget/{id}:
+ *   put:
+ *     tags: [Advertisement]
+ *     summary: Increase or set an advertisement budget
+ *     description: increase funds the requested amount. set may only keep or raise the current balance and funds the difference. decrease and set-lower return 409 because funded ad money cannot be withdrawn.
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [operation, amount, idempotencyKey]
+ *             properties:
+ *               operation: { type: string, enum: [increase, decrease, set] }
+ *               amount: { oneOf: [{ type: string }, { type: number }], example: "200.00" }
+ *               idempotencyKey: { type: string, minLength: 8, maxLength: 200 }
+ *               metadata: { type: object, additionalProperties: true }
+ *     responses:
+ *       '200': { description: Updated ad budget and wallet ledger links. }
+ *       '409': { description: Insufficient wallet balance, idempotency conflict, decrease, or set-lower. }
+ */
+router.put(
+  "/budget/:id",
+  isAuth,
+  validateZod({
+    params: adminValidation.advertisement.idParams,
+    body: adminValidation.advertisement.budgetBody,
+  }),
+  AdvertisementController.adjustAdBudget,
+);
+
+/**
+ * @swagger
  * /api/admin/advertisement/status/{id}:
  *   put:
  *     tags: [Advertisement]
  *     summary: Update advertisement status
+ *     description: Only the owning seller or a platform admin may change the status. Activation additionally requires an active product, an active variant with stock greater than reserve, and sufficient advertisement balance.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -1010,6 +1220,10 @@ router.put(
  *                   type: boolean
  *                 data:
  *                   $ref: '#/components/schemas/AdvertisementBudgetStatus'
+ *       '403':
+ *         description: The caller is neither the owning seller nor a platform admin.
+ *       '409':
+ *         description: Activation prerequisites failed, or the advertisement is permanently archived.
  */
 router.put(
   "/status/:id",

@@ -30,6 +30,8 @@ import {
   getTotalPages,
   PaginationParams,
 } from "./utils/query";
+import { recordAdminActivityWithTx } from "./adminActivity";
+import { resolveAdminSellerScope } from "./adminScope";
 
 type OrderItemWithProductVariant = {
   product?: schema.Product | null;
@@ -623,6 +625,27 @@ export async function updateOrderStatus({
       })
       .where(eq(schema.orderTable.id, orderId));
 
+    if (order.orderStatus !== status) {
+      const sellerIds = [
+        ...new Set(
+          order.items
+            .map((item) => item.product?.sellerId)
+            .filter((sellerId): sellerId is string => Boolean(sellerId)),
+        ),
+      ];
+      await Promise.all(
+        sellerIds.map((sellerId) =>
+          recordAdminActivityWithTx(tx, {
+            sellerId,
+            eventType: "order.status_changed",
+            entityType: "order",
+            entityId: orderId,
+            metadata: { previousStatus: order.orderStatus, status },
+          }),
+        ),
+      );
+    }
+
     return tx.query.orderTable.findFirst({
       where: eq(schema.orderTable.id, orderId),
       with: {
@@ -822,8 +845,8 @@ export async function listAdminOrders({
   const pagination = getPagination(page, limit);
   const conditions: (SQL | undefined)[] = [];
 
-  const isAdmin = await isAccountAdmin(accountId);
-  if (!isAdmin) {
+  const scope = await resolveAdminSellerScope(accountId);
+  if (scope.sellerId) {
     // Subquery to find order IDs that contain at least one product from the seller
     const sellerOrderIdsSubquery = db
       .selectDistinct({ orderId: schema.orderItemTable.orderId })
@@ -832,7 +855,7 @@ export async function listAdminOrders({
         schema.productTable,
         eq(schema.orderItemTable.productId, schema.productTable.id),
       )
-      .where(eq(schema.productTable.sellerId, accountId));
+      .where(eq(schema.productTable.sellerId, scope.sellerId));
     conditions.push(inArray(schema.orderTable.id, sellerOrderIdsSubquery));
   }
 
