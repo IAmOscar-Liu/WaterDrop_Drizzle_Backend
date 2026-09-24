@@ -2,6 +2,7 @@ import "../lib/env";
 
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { mock } from "node:test";
 import type { AddressInfo } from "node:net";
 import { and, eq, inArray } from "drizzle-orm";
 import app from "../app";
@@ -14,6 +15,9 @@ import {
   validateToken,
 } from "../lib/token";
 import { expireUserCoinLots } from "../repository/coinLedger";
+import { getCoinsExpireSoon } from "../repository/coinExpiry";
+import { runCoinExpiryNotificationJob } from "../lib/coinExpiryNotificationJob";
+import { createNotification } from "../repository/notification";
 import ecpayService from "../services/ecpay";
 
 type ApiEnvelope = {
@@ -102,6 +106,103 @@ async function run() {
 
   try {
     const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    // Fixed dates exercise the real login/profile routes and the same handler
+    // used by cron; only Firebase delivery is replaced with a recording fake.
+    const expiryLabel = `expiry-${suffix}`;
+    const expiryUser = await login(expiryLabel);
+    const staleUser = await login(`stale-expiry-${suffix}`);
+    const fallbackUser = await login(`fallback-expiry-${suffix}`);
+    await db.update(schema.userTable).set({ timezone: null })
+      .where(eq(schema.userTable.id, fallbackUser.user.id));
+    await db.insert(schema.userMonthlyCoinStatTable).values([
+      { userId: expiryUser.user.id, month: "2026-08", coinsEarned: 99, expired: true },
+      // Ledger mode must use the lots even if an aggregate has been marked expired.
+      { userId: expiryUser.user.id, month: "2026-09", coinsEarned: 999, expired: true },
+      { userId: staleUser.user.id, month: "2026-08", coinsEarned: 150, expired: true },
+    ]);
+    const expiryLot = {
+      userId: expiryUser.user.id,
+      currentFunderType: "platform" as const,
+      timezoneSnapshot: "Asia/Taipei",
+      earningLocalMonth: "2026-09",
+      expiresAt: new Date("2026-10-31T16:00:00Z"),
+    };
+    await db.insert(schema.userCoinLotTable).values([
+      { ...expiryLot, originalAmount: "20.00", availableAmount: "7.50", consumedAmount: "10.00", reservedAmount: "2.50" },
+      { ...expiryLot, originalAmount: "5.00", availableAmount: "0", reservedAmount: "5.00" },
+      { ...expiryLot, originalAmount: "3.00", availableAmount: "3.00", earningLocalMonth: "2026-07", expiresAt: new Date("2026-08-31T16:00:00Z") },
+      { ...expiryLot, originalAmount: "50.00", availableAmount: "50.00", earningLocalMonth: "2026-10", expiresAt: new Date("2026-11-30T16:00:00Z") },
+      { ...expiryLot, userId: fallbackUser.user.id, originalAmount: "1.25", availableAmount: "1.25" },
+    ]);
+    const pushed: Array<{ tokens: string[]; notification?: { title?: string; body?: string } }> = [];
+    const expiryJobDependencies = {
+      createNotification,
+      getFcmTokensInUserIds: async (ids: string[]) => ids
+        .filter((id) => id !== fallbackUser.user.id)
+        .map((id) => `fake-${id}`),
+      sendMulticastPushNotification: async (message: (typeof pushed)[number]) => { pushed.push(message); },
+    };
+    mock.timers.enable({ apis: ["Date"], now: new Date("2026-09-23T22:00:00Z") });
+    try {
+      // A July lot is still marked active, simulating a delayed expiry job.
+      const septemberLogin = expectSuccess(await request("/api/auth/login", {
+        method: "POST", body: { oauthProvider: "other", oauthId: `api-${expiryLabel}`, timezone: "Asia/Taipei" },
+      }));
+      assert.equal(septemberLogin.user.coinsExpireSoon, null);
+      assert.deepEqual(await runCoinExpiryNotificationJob(new Date(), expiryJobDependencies), { notified: 0, failed: 0 });
+      mock.timers.setTime(Date.parse("2026-10-23T22:00:00Z"));
+      assert.equal(await getCoinsExpireSoon(expiryUser.user.id), null);
+      mock.timers.setTime(Date.parse("2026-10-24T22:00:00Z"));
+      const octoberLogin = expectSuccess(await request("/api/auth/login", {
+        method: "POST", body: { oauthProvider: "other", oauthId: `api-${expiryLabel}`, timezone: "Asia/Taipei" },
+      }));
+      assert.equal(octoberLogin.user.coinsExpireSoon, 7.5);
+      const octoberProfile = expectSuccess(await request("/api/auth/profile", { token: octoberLogin.token }));
+      assert.equal(octoberProfile.coinsExpireSoon, 7.5);
+      assert.equal(await getCoinsExpireSoon(fallbackUser.user.id), 1.25);
+      const result = await runCoinExpiryNotificationJob(new Date(), expiryJobDependencies);
+      assert.deepEqual(result, { notified: 2, failed: 0 });
+      assert.equal(pushed.length, 1);
+      const push = pushed.find((message) => message.tokens.includes(`fake-${expiryUser.user.id}`));
+      assert.ok(push);
+      assert.match(push.notification!.body!, /7\.5金幣/);
+      assert.match(push.notification!.body!, /2026\/11\/01 00:00 \(Asia\/Taipei\)/);
+      const saved = await db.query.userNotificationTable.findFirst({ where: eq(schema.userNotificationTable.userId, expiryUser.user.id) });
+      assert.equal(saved?.body, push.notification!.body);
+      // Saving the in-app message must not depend on a registered push token.
+      const savedWithoutPush = await db.query.userNotificationTable.findFirst({
+        where: eq(schema.userNotificationTable.userId, fallbackUser.user.id),
+      });
+      assert.ok(savedWithoutPush);
+      assert.match(savedWithoutPush.body, /1\.25金幣/);
+      assert.match(savedWithoutPush.body, /2026\/11\/01 00:00/);
+      const staleNotification = await db.query.userNotificationTable.findFirst({
+        where: eq(schema.userNotificationTable.userId, staleUser.user.id),
+      });
+      assert.equal(staleNotification, undefined);
+      assert.equal(pushed.some((message) => message.tokens.includes(`fake-${staleUser.user.id}`)), false);
+      mock.timers.setTime(Date.parse("2026-10-24T22:30:00Z"));
+      assert.deepEqual(await runCoinExpiryNotificationJob(new Date(), expiryJobDependencies), { notified: 0, failed: 0 });
+      // Changing the user's timezone must not rewrite a lot's deadline/warning window.
+      await db.update(schema.userTable).set({ timezone: "America/New_York" }).where(eq(schema.userTable.id, expiryUser.user.id));
+      assert.equal(await getCoinsExpireSoon(expiryUser.user.id), 7.5);
+      mock.timers.setTime(Date.parse("2026-10-31T16:00:00Z"));
+      const atExpiry = expectSuccess(await request("/api/auth/login", {
+        method: "POST", body: { oauthProvider: "other", oauthId: `api-${expiryLabel}`, timezone: "Asia/Taipei" },
+      }));
+      assert.equal(atExpiry.user.coinsExpireSoon, null);
+      assert.equal(await getCoinsExpireSoon(fallbackUser.user.id), null);
+      // Flag-off compatibility also excludes already-expired monthly records.
+      process.env.COIN_LEDGER_ENABLED = "false";
+      mock.timers.setTime(Date.parse("2026-10-24T22:00:00Z"));
+      assert.equal(await getCoinsExpireSoon(expiryUser.user.id), null);
+      await db.update(schema.userMonthlyCoinStatTable).set({ expired: false, coinsEarned: 10, coinsSpent: 2.5 })
+        .where(and(eq(schema.userMonthlyCoinStatTable.userId, expiryUser.user.id), eq(schema.userMonthlyCoinStatTable.month, "2026-09")));
+      assert.equal(await getCoinsExpireSoon(expiryUser.user.id), 7.5);
+    } finally {
+      mock.timers.reset();
+      process.env.COIN_LEDGER_ENABLED = "true";
+    }
     const [seller] = await db
       .insert(schema.accountTable)
       .values({

@@ -142,3 +142,14 @@ export function earlierDate(...dates: Array<Date | null | undefined>) {
     date.getTime() < earliest.getTime() ? date : earliest,
   );
 }
+
+// Warn during the seven local calendar days preceding the stored deadline.
+// Calendar dates (rather than 168 hours) keep this correct across DST changes.
+export function isCoinExpirySoon(now: Date, expiresAt: Date, timezone: string) {
+  if (expiresAt <= now) return false;
+  const days = (
+    Date.parse(getLocalDate(expiresAt, timezone)) -
+    Date.parse(getLocalDate(now, timezone))
+  ) / (24 * 60 * 60 * 1_000);
+  return days >= 0 && days <= 7;
+}

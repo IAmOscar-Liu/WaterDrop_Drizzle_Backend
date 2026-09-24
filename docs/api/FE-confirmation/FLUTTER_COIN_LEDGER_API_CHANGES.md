@@ -242,6 +242,42 @@ If timezone is missing or invalid, the backend uses `Asia/Taipei`. Deadlines
 already assigned to an ad or treasure box use their stored timezone snapshot,
 so changing the device timezone does not rewrite an existing deadline.
 
+## Coin expiry warning — updated 2026-09-24
+
+Coins earned in September remain usable through October 31 and expire at
+**November 1, 00:00**, in the timezone saved when the coins were issued. The
+same end-of-next-month rule applies to every earning month.
+
+The app APIs expose the existing nullable numeric field **`coinsExpireSoon`**:
+
+- `POST /api/auth/login`: `data.user.coinsExpireSoon`.
+- `GET /api/auth/profile`: `data.coinsExpireSoon`.
+
+With the coin ledger enabled, both this field and the expiry notification job
+use the actual coin lots' `expiresAt` and remaining `availableAmount`.
+They exclude already-expired lots (even if expiry cleanup has not run yet),
+inactive lots, spent coins, and coins reserved by payment processing. Historical
+monthly statistics cannot cause a false expiry reminder.
+
+The warning is active during the seven local calendar days preceding each
+lot's expiry, using its stored timezone. For September-earned coins:
+
+| Time in the lot's stored timezone | API result and reminder eligibility |
+| --- | --- |
+| Before October 25, 00:00 | `null` for these coins; no reminder. |
+| October 25–31 | Remaining available coins, such as `7.5`; eligible for a reminder. |
+| November 1, 00:00 onward | These expired coins are excluded; `null` if no other lots qualify. |
+
+Push reminders are checked every 30 minutes and delivered in the user's local
+06:00–06:29 window. Missing or invalid user timezones fall back to `Asia/Taipei`.
+Each message includes the actual amount, deadline, and stored timezone; the
+saved in-app notification and push use the same message. Changing the user's
+timezone changes the reminder delivery clock but does not rewrite existing lot
+deadlines. There is no new request field or response field name.
+
+When the ledger is disabled, both paths share a legacy fallback using only
+unexpired monthly records and the same end-of-next-month expiry rule.
+
 ## Decimal Coin Values
 
 The conversion rate is:
@@ -388,4 +424,3 @@ balance remains `data.coins` from `GET /api/auth/profile`.
   `cashRemainderCoins`.
 - Pending refunds do not increase the displayed balance; completed refunds
   trigger an order/profile refresh.
-

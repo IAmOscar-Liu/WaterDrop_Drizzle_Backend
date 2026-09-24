@@ -29,12 +29,10 @@ import { CustomError } from "../lib/error";
 import {
   generateInvitationCode,
   getBankNameFromCode,
-  getCurrentLocalDateTime,
-  getLastMonthYYYYMM,
-  getNumOfDaysInMonth,
 } from "../lib/general";
 import { getMemberInfo } from "../lib/getMemberInfo";
 import db from "../lib/initDB";
+import { getCoinsExpireSoon } from "./coinExpiry";
 
 export async function createUser(
   user: Omit<typeof schema.userTable.$inferInsert, "referralCode">,
@@ -529,7 +527,7 @@ export async function getUserById(id: string) {
   return {
     ...user,
     ...getMemberInfo(user.referralCount),
-    coinsExpireSoon: await getCoinsExpireSoon(user.id, user.timezone),
+    coinsExpireSoon: await getCoinsExpireSoon(user.id),
     bankName: user.bankCode ? getBankNameFromCode(user.bankCode) : null,
   };
 }
@@ -571,7 +569,7 @@ export async function getUserByOauthProviderAndOauthId(
   return {
     ...user,
     ...getMemberInfo(user.referralCount),
-    coinsExpireSoon: await getCoinsExpireSoon(user.id, user.timezone),
+    coinsExpireSoon: await getCoinsExpireSoon(user.id),
     bankName: user.bankCode ? getBankNameFromCode(user.bankCode) : null,
   };
 }
@@ -649,30 +647,6 @@ export async function updateGroupAdViewsCountYesterday(userId: string) {
 
     return updatedStat;
   });
-}
-
-async function getCoinsExpireSoon(userId: string, timezone?: string | null) {
-  if (!timezone) return null;
-
-  const { localMonth, localDay } = getCurrentLocalDateTime(timezone);
-  if (localDay <= getNumOfDaysInMonth(localMonth) - 7) return null;
-
-  const yearMonthString = getLastMonthYYYYMM(timezone);
-
-  const [userMonthlyCoinStat] = await db
-    .select()
-    .from(schema.userMonthlyCoinStatTable)
-    .where(
-      and(
-        eq(schema.userMonthlyCoinStatTable.userId, userId),
-        eq(schema.userMonthlyCoinStatTable.month, yearMonthString),
-        eq(schema.userMonthlyCoinStatTable.expired, false),
-      ),
-    );
-
-  return userMonthlyCoinStat
-    ? userMonthlyCoinStat.coinsEarned - userMonthlyCoinStat.coinsSpent
-    : null;
 }
 
 export async function updateUserTermsAcceptedAt(userId: string) {

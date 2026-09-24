@@ -4,7 +4,6 @@ import {
   deleteUnusedDeviceTokens,
   getFcmTokensInUserIds,
   getUserIdsInTimezones,
-  getUserMonthlyCoinStatsInUserIds,
   getUserStatsInTimezones,
   setMonthlyCoinExpire,
   updateGroupAdViewsCountYesterday,
@@ -13,10 +12,9 @@ import { CustomError } from "./error";
 import {
   getCurrentLocalDateTime,
   getLastMonthYYYYMM,
-  getNumOfDaysInMonth,
 } from "./general";
 import { sendMulticastPushNotification } from "./sendNotification";
-import { createNotification } from "../repository/notification";
+import { runCoinExpiryNotificationJob } from "./coinExpiryNotificationJob";
 import {
   deleteIdempotencyKeys,
   expirePendingOrders,
@@ -230,100 +228,14 @@ export const monthlyCoinStatExpirationTask = cron.schedule(
 );
 
 export const monthlyCoinExpirationNotificationTask = cron.schedule(
-  "*/30 * 21-31 * *", // Every 30 minutes, 8 days before the end of the month
+  "*/30 * * * *", // Eligibility uses each lot's local deadline, not the host date.
   async () => {
     if (process.env.NO_CRON === "true") return;
-    console.log(
-      `30 minute cron job for monthlyCoinExpirationNotificationTask started. Time: ${new Date()}`,
-    );
-
-    const timezones = (Intl as any).supportedValuesOf("timeZone") as string[];
-    const timezonesAtSpecificTime = timezones.filter((tz) => {
-      const { localMonth, localDay, localHour, localMinute } =
-        getCurrentLocalDateTime(tz);
-      return (
-        localDay > getNumOfDaysInMonth(localMonth) - 7 &&
-        localHour === 6 &&
-        localMinute < 30
-      );
-    });
-
-    if (timezonesAtSpecificTime.length === 0) {
-      console.log("No timezones at 6:00.");
-      return;
-    }
-
-    console.log(
-      `${timezonesAtSpecificTime.length} timezones at 6:00:`,
-      timezonesAtSpecificTime.join(", "),
-    );
-
-    let userIds = await getUserIdsInTimezones(timezonesAtSpecificTime);
-
-    if (userIds.length === 0) {
-      console.log("No users found in the targeted timezones.");
-      return;
-    }
-
-    const yearMonthString = getLastMonthYYYYMM(timezonesAtSpecificTime[0]); // yyyy-mm
-
-    const userMonthlyCoinStats = (
-      await getUserMonthlyCoinStatsInUserIds(userIds, yearMonthString)
-    ).filter((stat) => stat.coinsEarned > stat.coinsSpent);
-
-    const { localMonth, localYear } = getCurrentLocalDateTime(
-      timezonesAtSpecificTime[0],
-    );
-    const lastMonth = localMonth === 1 ? 12 : localMonth - 1;
-    const nextMonth = localMonth === 12 ? 1 : localMonth + 1;
-    const nextYear = localMonth === 12 ? localYear + 1 : localYear;
-
-    for (let i = 0; i < userMonthlyCoinStats.length; i += RESET_BATCH_SIZE) {
-      const batchCoinStats = userMonthlyCoinStats.slice(
-        i,
-        i + RESET_BATCH_SIZE,
-      );
-
-      await Promise.allSettled(
-        batchCoinStats.map((stat) =>
-          createNotification({
-            userId: stat.userId,
-            type: "system_alert",
-            title: "金幣即將過期通知",
-            body: `您${lastMonth}月份的金幣尚有${
-              stat.coinsEarned - stat.coinsSpent
-            }未使用，即將在 ${nextYear}/${nextMonth
-              .toString()
-              .padStart(2, "0")}/01 00:00 過期，快把握時間使用您的金幣吧!`,
-          }),
-        ),
-      );
-    }
-
-    userIds = userMonthlyCoinStats.map((stats) => stats.userId);
-    const fcmTokens = await getFcmTokensInUserIds(userIds);
-
-    for (let i = 0; i < fcmTokens.length; i += FCM_MAX_BATCH_SIZE) {
-      const batchFcmTokens = fcmTokens.slice(i, i + FCM_MAX_BATCH_SIZE);
-
-      await sendMulticastPushNotification({
-        tokens: batchFcmTokens,
-        notification: {
-          title: "金幣即將過期通知",
-          body: `您${lastMonth}月份的金幣即將在 ${nextYear}/${nextMonth
-            .toString()
-            .padStart(2, "0")}/01 00:00 過期，快把握時間使用您的金幣吧!`,
-        },
-        data: {
-          command: "message",
-        },
-      });
-
-      console.log(
-        `✅ Daily notification complete for current ${
-          timezonesAtSpecificTime.length
-        } timezones. Total tokens processed: ${i + batchFcmTokens.length}`,
-      );
+    try {
+      const result = await runCoinExpiryNotificationJob();
+      console.log("Coin expiry notifications completed:", result);
+    } catch (error) {
+      console.error("Coin expiry notifications failed:", error);
     }
   },
 );
