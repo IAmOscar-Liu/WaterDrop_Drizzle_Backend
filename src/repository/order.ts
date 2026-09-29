@@ -790,21 +790,27 @@ export async function expirePaymentProcessingOrders(expireInMs: number) {
 
 export interface ListOrdersParams extends PaginationParams {
   userId: string;
-  statusIn: Exclude<schema.NewOrder["orderStatus"], undefined>[];
   order?: "asc" | "desc";
+  startDate?: string;
+  endDate?: string;
 }
 
 export async function listOrders({
   page = 1,
   limit = 10,
   userId,
-  statusIn,
   order = "desc",
+  startDate,
+  endDate,
 }: ListOrdersParams) {
   const pagination = getPagination(page, limit);
+  const effectiveOrderDate = sql`coalesce(${schema.orderTable.completedAt}, ${schema.orderTable.createdAt})`;
   const whereClause = compactConditions([
-    inArray(schema.orderTable.orderStatus, statusIn),
+    // App order history always includes only these statuses.
+    inArray(schema.orderTable.orderStatus, ["paid", "payment-processing"]),
     eq(schema.orderTable.userId, userId),
+    startDate ? gte(effectiveOrderDate, startDate) : undefined,
+    endDate ? lt(effectiveOrderDate, endDate) : undefined,
   ]);
 
   // Query for total count
@@ -851,9 +857,13 @@ export async function listOrders({
         },
       },
     },
-    orderBy: (orders, { desc, asc }) => [
-      order === "asc" ? asc(orders.createdAt) : desc(orders.createdAt),
-    ],
+    orderBy: (orders, { desc, asc }) => {
+      const sort = order === "asc" ? asc : desc;
+      if (startDate || endDate) {
+        return [sort(effectiveOrderDate), sort(orders.id)];
+      }
+      return [sort(orders.createdAt)];
+    },
   });
 
   return {

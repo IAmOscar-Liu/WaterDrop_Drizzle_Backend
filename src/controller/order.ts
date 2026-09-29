@@ -6,15 +6,14 @@ import { RequestWithId } from "../type/request";
 
 class OrderController {
   async listOrders(req: RequestWithId, res: Response): Promise<any> {
-    const { page, limit, statusIn, order } = req.query;
+    const { page, limit, order, startDate, endDate } = req.query;
     const result = await orderService.listOrders({
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
       userId: req.userId ?? "",
-      statusIn: Array.isArray(statusIn)
-        ? (statusIn as Exclude<schema.NewOrder["orderStatus"], undefined>[])
-        : ["paid", "payment-processing"],
       order: order === "asc" ? "asc" : "desc",
+      startDate: startDate !== undefined ? String(startDate) : undefined,
+      endDate: endDate !== undefined ? String(endDate) : undefined,
     });
     sendJsonResponse(res, result);
   }

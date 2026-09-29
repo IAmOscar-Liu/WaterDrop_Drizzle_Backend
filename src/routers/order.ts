@@ -1,10 +1,17 @@
 import { Router } from "express";
 import OrderController from "../controller/order";
 import isAuth from "../middleware/isAuth";
+import { orderValidation } from "../middleware/order";
+import validateZod from "../middleware/validateZod";
 
 const router = Router();
 
-router.get("/list", isAuth, OrderController.listOrders);
+router.get(
+  "/list",
+  isAuth,
+  validateZod({ query: orderValidation.listQuery }),
+  OrderController.listOrders,
+);
 
 /**
  * @swagger
