@@ -95,13 +95,23 @@ advertisement, expired manual coins are not returned to a seller or ad balance.
 
 ## Local verification
 
-After making local credits, run reconciliation:
+After making local credits, run this read-only balance check against the local
+database. It should return zero rows:
 
-```bash
-npm run coin-ledger:reconcile:local
+```sql
+SELECT u.id,
+       round(u.coins::numeric, 2) AS user_coins,
+       coalesce(sum(l.available_amount) FILTER (WHERE l.status = 'active'), 0)
+         AS available_lot_coins
+FROM users u
+LEFT JOIN user_coin_lots l ON l.user_id = u.id
+GROUP BY u.id, u.coins
+HAVING round(u.coins::numeric, 2) <>
+       coalesce(sum(l.available_amount) FILTER (WHERE l.status = 'active'), 0);
 ```
 
-It should finish with `Coin-ledger reconciliation passed.`
+The one-time migration reconciliation CLI was retired after the staging rollout.
+This query checks current user balances against available coin lots.
 
 ## Common failures
 

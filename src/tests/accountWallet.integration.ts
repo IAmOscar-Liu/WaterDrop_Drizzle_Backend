@@ -1,24 +1,26 @@
 import "../lib/env";
 
 import assert from "node:assert/strict";
-import { eq, inArray } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 
 import * as schema from "../db/schema";
 import db, { client } from "../lib/initDB";
-import {
-  backfillAccountWallets,
-  getAccountWalletAuditSummary,
-  reconcileAccountWallets,
-} from "../scripts/accountWalletMigration";
+import { moneyToMinorUnits } from "../lib/money";
 import { depositAdBalance } from "../repository/advertisement";
 import { creditSellerWallet } from "../repository/accountWallet";
+
+function signedMinorUnits(amount: string) {
+  return amount.startsWith("-")
+    ? -moneyToMinorUnits(amount.slice(1))
+    : moneyToMinorUnits(amount);
+}
 
 async function run() {
   assert.equal(process.env.NODE_ENV, "test");
   assert.equal(process.env.TEST_DATABASE_MANAGED, "true");
   const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-  const [admin, legacySeller, concurrentSeller] = await db
+  const [admin, concurrentSeller] = await db
     .insert(schema.accountTable)
     .values([
       {
@@ -27,13 +29,6 @@ async function run() {
         realName: "Wallet Test Admin",
         phone: "0900100000",
         role: "admin" as const,
-      },
-      {
-        email: `wallet-legacy-${suffix}@example.test`,
-        password: "not-used",
-        realName: "Legacy Wallet Seller",
-        phone: "0900100001",
-        role: "seller" as const,
       },
       {
         email: `wallet-concurrent-${suffix}@example.test`,
@@ -45,29 +40,10 @@ async function run() {
     ])
     .returning();
 
-  const [legacyWallet] = await db
-    .insert(schema.accountWalletTable)
-    .values({ accountId: legacySeller.id, walletBalance: "25.00" })
-    .returning();
-
-  const before = await getAccountWalletAuditSummary();
-  assert.ok(before.missing_wallet_count >= 2);
-  assert.ok((before.nonzero_wallets_without_history ?? 0) >= 1);
-
-  const originalFlag = process.env.ACCOUNT_WALLET_AD_FUNDING_ENABLED;
-  process.env.ACCOUNT_WALLET_AD_FUNDING_ENABLED = "false";
-  await backfillAccountWallets(true);
-  await backfillAccountWallets(true);
-  process.env.ACCOUNT_WALLET_AD_FUNDING_ENABLED = originalFlag;
-
-  const openingTransactions = await db
-    .select()
-    .from(schema.accountWalletTransactionTable)
-    .where(eq(schema.accountWalletTransactionTable.walletId, legacyWallet.id));
-  assert.equal(openingTransactions.length, 1);
-  assert.equal(openingTransactions[0].type, "legacy_opening_balance");
-  assert.equal(openingTransactions[0].amount, "25.00");
-  assert.equal(openingTransactions[0].balanceAfter, "25.00");
+  await db.insert(schema.accountWalletTable).values([
+    { accountId: admin.id },
+    { accountId: concurrentSeller.id },
+  ]);
 
   await creditSellerWallet({
     accountId: concurrentSeller.id,
@@ -237,6 +213,11 @@ async function run() {
     .select({
       walletTransactionId: schema.accountWalletTransactionTable.id,
       advertisementTransactionId: schema.advertisementTransactionTable.id,
+      debitAmount: schema.accountWalletTransactionTable.amount,
+      creditAmount: schema.advertisementTransactionTable.amount,
+      debitAdvertisementId: schema.accountWalletTransactionTable.advertisementId,
+      creditAdvertisementId: schema.advertisementTransactionTable.advertisementId,
+      creditType: schema.advertisementTransactionTable.type,
     })
     .from(schema.accountWalletTransactionTable)
     .leftJoin(
@@ -256,7 +237,33 @@ async function run() {
     fundingPairs.every((pair) => pair.advertisementTransactionId !== null),
   );
 
-  await reconcileAccountWallets();
+  for (const pair of fundingPairs) {
+    assert.equal(pair.creditType, "wallet_funding");
+    assert.equal(pair.creditAdvertisementId, pair.debitAdvertisementId);
+    assert.notEqual(pair.creditAmount, null);
+    assert.equal(
+      moneyToMinorUnits(pair.creditAmount!),
+      -signedMinorUnits(pair.debitAmount),
+    );
+  }
+
+  const transactions = await db
+    .select()
+    .from(schema.accountWalletTransactionTable)
+    .where(eq(schema.accountWalletTransactionTable.accountId, concurrentSeller.id))
+    .orderBy(asc(schema.accountWalletTransactionTable.sequence));
+  let balance = BigInt(0);
+  for (const transaction of transactions) {
+    assert.equal(moneyToMinorUnits(transaction.balanceBefore), balance);
+    balance += signedMinorUnits(transaction.amount);
+    assert.equal(moneyToMinorUnits(transaction.balanceAfter), balance);
+  }
+  const finalWallet = await db.query.accountWalletTable.findFirst({
+    where: eq(schema.accountWalletTable.accountId, concurrentSeller.id),
+  });
+  assert.ok(finalWallet);
+  assert.equal(moneyToMinorUnits(finalWallet.walletBalance), balance);
+  assert.equal(finalWallet.walletBalance, "25.00");
   console.log("account-wallet integration test passed");
 }
 

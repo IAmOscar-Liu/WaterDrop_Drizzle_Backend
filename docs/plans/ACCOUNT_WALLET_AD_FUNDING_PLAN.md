@@ -1,6 +1,10 @@
 # Account wallet and advertisement funding plan
 
-Status: proposed — implementation has not started.
+Status: historical implementation plan. The rollout is complete in test, local,
+development, and staging as of 2026-09-30. One-time migration scripts and package
+commands mentioned below have been retired; see
+[the completion record](../operations/ACCOUNT_WALLET_ROLLOUT.md).
+The original proposal below is retained for design history.
 
 ## Goal
 

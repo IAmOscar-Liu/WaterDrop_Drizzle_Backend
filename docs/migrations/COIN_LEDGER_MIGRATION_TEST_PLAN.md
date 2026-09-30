@@ -1,5 +1,11 @@
 # Coin Ledger Migration and Full-Test Environment Plan
 
+> Rollout update (2026-09-30): test, local, development, and staging migrations
+> and backfills are complete. The one-time migration CLI and package aliases
+> have been retired. Keep generated migrations and persisted backfill checkpoints.
+> The plan and progress entries below are historical; they do not describe current
+> rollout status or certify production migration or every proposed test.
+
 ## Status and Scope
 
 Prepared on 2026-09-12 for branch `feat/coin-log-test`.

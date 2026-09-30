@@ -1,56 +1,23 @@
-# Admin Section 1 rollout
+# Admin Section 1 rollout completion
 
-Run each step in local, development, staging, and production independently.
+As of 2026-09-30, the rollout is complete in test, local, development, and staging.
+The live staging audit confirmed all five sidebar read states for every eligible
+active account, no duplicate normalized category names, and no active employees
+without a valid seller parent.
 
-## 1. Preflight before migration
+The one-time preflight and sidebar backfill CLI and its package aliases have been
+retired. The original implementation remains in Git history. This completion
+record does not certify a production rollout.
 
-```bash
-npm run admin-section-1:preflight:local
-```
+The backfill initialized `orders`, `deliveries`, `refunds`, `advertisements`, and
+`chatrooms` read states in each account's resolved scope, using the rollout cutover
+time so historical records did not appear as new notifications. Existing read
+states remain intact.
 
-Use the matching environment suffix elsewhere. This fails when category names
-have case-insensitive duplicates or an employee is not attached to an active
-seller. Resolve those rows before applying the unique category-name index.
+Retain the generated migrations, snapshots, and journals. Staging's catch-up
+migration is `drizzle_stg/0013_aromatic_toad_men.sql`. The standard
+`db:migrate:<environment>` commands remain available.
 
-## 2. Apply the generated migration
-
-```bash
-npm run db:migrate:local
-```
-
-Generated migrations currently exist for test, local, and development:
-
-- `drizzle_test/0008_long_warstar.sql`
-- `drizzle_local/0108_powerful_daredevil.sql`
-- `drizzle_dev/0062_powerful_magus.sql`
-
-Do not generate staging/production migrations until their migration snapshots
-have been reconciled with the branch.
-
-## 3. Initialize sidebar seen state
-
-Optionally set one shared deployment timestamp before running the backfill:
-
-```dotenv
-ADMIN_SIDEBAR_CUTOVER_AT=2026-09-16T00:00:00.000Z
-```
-
-Then run:
-
-```bash
-npm run admin-section-1:backfill:local
-```
-
-The command is idempotent. It creates five read-state rows for each active
-admin-side account in its resolved scope, so historical records do not appear
-as new sidebar notifications.
-
-## 4. Verify
-
-```bash
-npm test
-```
-
-Smoke-test sub-account creation/deletion, category conflict handling, product
-soft delete, wallet summary, dashboard, ad metrics, and sidebar seen state.
-
+Use `npm test` for regression coverage. Runtime smoke checks cover sub-account
+creation/deletion, category conflicts, product soft deletion, wallet summary,
+dashboard, advertisement metrics, and sidebar seen state.

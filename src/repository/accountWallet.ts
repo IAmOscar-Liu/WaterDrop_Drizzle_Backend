@@ -56,7 +56,7 @@ export async function getAccountWallet(accountId: string) {
     .limit(1);
   if (!wallet) {
     throw new CustomError(
-      "Account wallet has not been initialized. Run the wallet backfill first.",
+      "Account wallet has not been initialized.",
       409,
     );
   }
@@ -268,7 +268,7 @@ export async function creditSellerWallet({
       .for("update");
     if (!walletBefore) {
       throw new CustomError(
-        "Account wallet has not been initialized. Run the wallet backfill first.",
+        "Account wallet has not been initialized.",
         409,
       );
     }

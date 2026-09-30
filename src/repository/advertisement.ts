@@ -879,7 +879,7 @@ export async function depositAdBalance({
       .for("update");
     if (!walletBefore) {
       throw new CustomError(
-        "Seller wallet has not been initialized. Run the wallet backfill first.",
+        "Seller wallet has not been initialized.",
         409,
       );
     }
