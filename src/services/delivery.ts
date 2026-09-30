@@ -65,11 +65,13 @@ class DeliveryService {
   async updateDelivery(
     deliveryId: string,
     updates: Parameters<typeof updateDelivery>[1],
+    actorAccountId?: string,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof updateDelivery>>>> {
     try {
       const result = await updateDeliveryWithNotificationContext(
         deliveryId,
         updates,
+        actorAccountId,
       );
       const delivery = result?.delivery ?? null;
       if (delivery) {

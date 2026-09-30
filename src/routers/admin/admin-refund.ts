@@ -16,14 +16,48 @@ const router = Router();
  *   schemas:
  *     RefundSummary:
  *       type: object
- *       example: {}
+ *       example:
+ *         totalCoin: 142.66
+ *         returnableCoin: 143.26
+ *         originalReturnableCoin: 142.66
+ *         cashRemainderCoin: 0.6
+ *         cashRemainderExpiresAt: "2026-10-31T16:00:00.000Z"
+ *         cashRemainderSourceSellerId: 33333333-3333-4333-8333-333333333333
+ *         coinByMonth:
+ *           2026-09:
+ *             coin: 142.66
+ *             expired: false
+ *             returnedCoin: 142.66
  *       properties:
  *         totalCoin:
  *           type: number
+ *           description: Original order coins reversed by the refund.
+ *         returnableCoin:
+ *           type: number
+ *           description: Total coins credited to the user, including cash-remainder conversion coins.
+ *         originalReturnableCoin:
+ *           type: number
+ *         cashRemainderCoin:
+ *           type: number
+ *         cashRemainderExpiresAt:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *         cashRemainderSourceSellerId:
+ *           type: string
+ *           format: uuid
+ *           nullable: true
  *         coinByMonth:
  *           type: object
  *           additionalProperties:
- *             type: number
+ *             type: object
+ *             properties:
+ *               coin:
+ *                 type: number
+ *               expired:
+ *                 type: boolean
+ *               returnedCoin:
+ *                 type: number
  *
  *     RefundItem:
  *       type: object
@@ -54,20 +88,33 @@ const router = Router();
  *         extraRefundAmount:
  *           type: number
  *           description: Additional refund amount for shipping, fees, or manual adjustments.
+ *         cashRefundAmount:
+ *           type: integer
+ *           nullable: true
+ *           description: Whole-TWD cash payout after combining paidRefundAmount and extraRefundAmount and rounding down.
+ *         cashRemainderCoins:
+ *           type: number
+ *           description: Fractional TWD remainder converted at NT$1 = 10 coins.
  *         coins:
  *           type: number
  *           description: Proportional discount coins associated with this refund item.
  *         returnableCoins:
  *           type: number
  *           nullable: true
- *           description: Portion of refund coins that can be returned to the user.
+ *           description: Total coins actually credited on completion, including cash-remainder conversion coins.
  *         metadata:
  *           type: object
  *           nullable: true
  *         summary:
- *           type: object
+ *           allOf:
+ *             - $ref: '#/components/schemas/RefundSummary'
  *           nullable: true
- *           example: {}
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *         updatedAt:
+ *           type: string
+ *           format: date-time
  *
  *     RefundLog:
  *       type: object
@@ -206,6 +253,7 @@ const router = Router();
  *   get:
  *     tags: [Refund]
  *     summary: List refund items
+ *     description: Platform admins see all matching refunds. Sellers see their own products; employees have read-only access within their parent seller scope.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -250,6 +298,10 @@ const router = Router();
  *           type: string
  *           enum: [pending, processing, completed, cancelled]
  *     responses:
+ *       '401':
+ *         description: Missing or invalid bearer token.
+ *       '403':
+ *         description: Account is inactive or deleted, seller scope is unavailable, or an employee attempted a write.
  *       '200':
  *         description: A paginated list of refund items.
  *         content:
@@ -275,6 +327,7 @@ router.get(
  *   get:
  *     tags: [Refund]
  *     summary: Get a refund item by ID
+ *     description: Platform admins can read all refunds. Sellers and seller employees can read only refunds for their seller products. Missing or out-of-scope refunds return 404.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -285,6 +338,12 @@ router.get(
  *           type: string
  *           format: uuid
  *     responses:
+ *       '401':
+ *         description: Missing or invalid bearer token.
+ *       '403':
+ *         description: Account is inactive or deleted, seller scope is unavailable, or an employee attempted a write.
+ *       '404':
+ *         description: Refund item does not exist or belongs to another seller.
  *       '200':
  *         description: The refund item.
  *         content:
@@ -310,7 +369,7 @@ router.get(
  *   post:
  *     tags: [Refund]
  *     summary: Create a refund item
- *     description: A successful request automatically creates an initial pending refund log with message 申請退貨, then sends the user a fire-and-forget push notification and email linked to the order detail page.
+ *     description: Only active platform admins and sellers can create refunds; sellers are limited to their own products and employees receive 403. Ownership is derived from the order item product, not client accountId. A successful request automatically creates an initial pending refund log with message 申請退貨, then sends the user a fire-and-forget push notification and email linked to the order detail page. paidRefundAmount plus extraRefundAmount is rounded down to whole TWD in cashRefundAmount; the fractional TWD remainder is exposed as cashRemainderCoins at NT$1 = 10 coins and is credited only when the refund completes.
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -342,8 +401,45 @@ router.get(
  *                 type: object
  *                 nullable: true
  *     responses:
+ *       '401':
+ *         description: Missing or invalid bearer token.
+ *       '403':
+ *         description: Account is inactive or deleted, seller scope is unavailable, or an employee attempted a write.
  *       '200':
  *         description: The created refund item.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/RefundItem'
+ *             example:
+ *               success: true
+ *               data:
+ *                 id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+ *                 orderItemId: cccccccc-cccc-4ccc-8ccc-cccccccccccc
+ *                 quantity: 1
+ *                 status: pending
+ *                 reason: Partial refund
+ *                 note: null
+ *                 refundAmount: 71.33
+ *                 paidRefundAmount: 57.06
+ *                 extraRefundAmount: 0
+ *                 cashRefundAmount: 57
+ *                 cashRemainderCoins: 0.6
+ *                 coins: 142.66
+ *                 returnableCoins: null
+ *                 metadata: null
+ *                 summary: null
+ *                 createdAt: "2026-09-13T04:51:21.827Z"
+ *                 updatedAt: "2026-09-13T04:51:21.827Z"
+ *       '400':
+ *         description: Invalid quantity, refund amount, order, or delivery state.
+ *       '404':
+ *         description: Order item, order, or product not found, or the product belongs to another seller.
  */
 router.post(
   "/",
@@ -358,7 +454,7 @@ router.post(
  *   patch:
  *     tags: [Refund]
  *     summary: Update refund item
- *     description: Status, quantity, refundAmount, reason, note, extraRefundAmount, and metadata are mutable. Message is independent from the refund note and is used only for refund logs. A log is appended only when status actually changes or the provided message differs from the latest log message. An actual status change triggers a fire-and-forget push notification linked to order detail; message-only and other field updates do not notify, and status changes do not send email. Quantity and refundAmount can only be changed while the current refund status is pending or processing. Completed and cancelled statuses are terminal and cannot transition to another status.
+ *     description: Only active platform admins and sellers can update refunds; sellers are limited to their own products and employees receive 403. These checks apply to every field, log-only updates, and no-op requests. Status, quantity, refundAmount, reason, note, extraRefundAmount, and metadata are mutable. Message is independent from the refund note and is used only for refund logs. A log is appended only when status actually changes or the provided message differs from the latest log message. An actual status change triggers a fire-and-forget push notification linked to order detail; message-only and other field updates do not notify, and status changes do not send email. Quantity, refundAmount, and extraRefundAmount can only be changed while the current refund status is pending or processing. Completed and cancelled statuses are terminal and cannot transition to another status. Completion credits cashRemainderCoins as a product-seller-funded coin lot that expires at the end of the next month in the user's timezone.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -402,8 +498,58 @@ router.post(
  *                 type: object
  *                 nullable: true
  *     responses:
+ *       '401':
+ *         description: Missing or invalid bearer token.
+ *       '403':
+ *         description: Account is inactive or deleted, seller scope is unavailable, or an employee attempted a write.
  *       '200':
  *         description: The updated refund item.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/RefundItem'
+ *             example:
+ *               success: true
+ *               data:
+ *                 id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+ *                 orderItemId: cccccccc-cccc-4ccc-8ccc-cccccccccccc
+ *                 quantity: 1
+ *                 status: completed
+ *                 reason: Partial refund
+ *                 note: null
+ *                 refundAmount: 71.33
+ *                 paidRefundAmount: 57.06
+ *                 extraRefundAmount: 0
+ *                 cashRefundAmount: 57
+ *                 cashRemainderCoins: 0.6
+ *                 coins: 142.66
+ *                 returnableCoins: 143.26
+ *                 metadata: null
+ *                 summary:
+ *                   totalCoin: 142.66
+ *                   returnableCoin: 143.26
+ *                   originalReturnableCoin: 142.66
+ *                   cashRemainderCoin: 0.6
+ *                   cashRemainderExpiresAt: "2026-10-31T16:00:00.000Z"
+ *                   cashRemainderSourceSellerId: 33333333-3333-4333-8333-333333333333
+ *                   coinByMonth:
+ *                     2026-09:
+ *                       coin: 142.66
+ *                       expired: false
+ *                       returnedCoin: 142.66
+ *                 createdAt: "2026-09-13T04:51:21.827Z"
+ *                 updatedAt: "2026-09-13T04:55:55.875Z"
+ *       '400':
+ *         description: Invalid transition, quantity, or refund amount.
+ *       '404':
+ *         description: Refund item, order item, order, product, or user not found, or the refund belongs to another seller.
+ *       '503':
+ *         description: Coin ledger is required to complete a fractional-cash refund.
  */
 router.patch(
   "/:refundItemId/status",

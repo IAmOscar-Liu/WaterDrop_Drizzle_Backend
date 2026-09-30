@@ -16,6 +16,20 @@ const options: swaggerJsDoc.Options = {
       description:
         "This is the documentation for the Water drop API, which provides endpoints for managing products, orders, advertisements, and user accounts.",
     },
+    tags: [
+      { name: "Account", description: "Administrator authentication and account management" },
+      { name: "Account Wallet", description: "Seller wallet balances and funding transactions" },
+      { name: "Dashboard", description: "Seller-scoped dashboard and activity reporting" },
+      { name: "Product", description: "Product and product-variant management" },
+      { name: "Advertisement", description: "Advertisement management and coin accounting" },
+      { name: "Order", description: "Order management" },
+      { name: "Delivery", description: "Delivery and logistics management" },
+      { name: "Refund", description: "Refund management" },
+      { name: "Chatroom", description: "Customer-support chat management" },
+      { name: "Sidebar Notifications", description: "Per-account admin navigation badges" },
+      { name: "File", description: "File uploads" },
+      { name: "System", description: "System configuration and reference data" },
+    ],
   },
   apis: [adminRouterDocsPath],
 };

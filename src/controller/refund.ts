@@ -1,4 +1,4 @@
-import { Request, Response } from "express";
+import { Response } from "express";
 import * as schema from "../db/schema";
 import { sendJsonResponse } from "../lib/general";
 import { GetRefundListParams } from "../repository/refund";
@@ -35,9 +35,9 @@ class RefundController {
     sendJsonResponse(res, result);
   }
 
-  async getRefundById(req: Request, res: Response): Promise<any> {
+  async getRefundById(req: RequestWithId, res: Response): Promise<any> {
     const { refundItemId } = req.params;
-    const result = await refundService.getRefundById(refundItemId);
+    const result = await refundService.getRefundById(refundItemId, req.userId ?? "");
     sendJsonResponse(res, result);
   }
 
@@ -60,7 +60,7 @@ class RefundController {
       refundAmount,
       extraRefundAmount,
       metadata,
-      accountId: req.userId,
+      actor: { kind: "account", id: req.userId ?? "" },
     });
 
     sendJsonResponse(res, result);
@@ -87,14 +87,13 @@ class RefundController {
       extraRefundAmount,
       metadata,
       accountId,
-      userId: req.userId,
-      chatSenderType: "user",
+      actor: { kind: "user", id: req.userId ?? "" },
     });
 
     sendJsonResponse(res, result);
   }
 
-  async updateRefundItemStatus(req: Request, res: Response): Promise<any> {
+  async updateRefundItemStatus(req: RequestWithId, res: Response): Promise<any> {
     const { refundItemId } = req.params;
     const {
       status,
@@ -120,6 +119,7 @@ class RefundController {
           : {}),
         ...(metadata !== undefined ? { metadata } : {}),
       },
+      req.userId ?? "",
     );
     sendJsonResponse(res, result);
   }

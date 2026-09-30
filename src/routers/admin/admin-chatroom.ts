@@ -325,7 +325,7 @@ const router = Router();
  *         description: Number of items per page.
  *     responses:
  *       200:
- *         description: A paginated list of chat rooms. General support rooms have accountId, productId, and productVariantId all null; product-specific rooms include both productId and productVariantId.
+ *         description: Platform admins can list all rooms; sellers and seller employees are scoped to their seller. A paginated list of chat rooms. General support rooms have accountId, productId, and productVariantId all null; product-specific rooms include both productId and productVariantId.
  *         content:
  *           application/json:
  *             schema:
@@ -350,6 +350,7 @@ router.get(
  * /api/admin/chatroom/history/{chatRoomId}:
  *   get:
  *     summary: Get chat history for a specific room
+ *     description: Requires an active room within the authenticated account scope. Platform admins can access all rooms; sellers and seller employees can access only their seller rooms. Unauthorized rooms return 404.
  *     tags: [Chatroom]
  *     security:
  *       - bearerAuth: []
@@ -398,8 +399,10 @@ router.get(
  *                   $ref: '#/components/schemas/PaginatedChatMessages'
  *       401:
  *         $ref: '#/components/responses/UnauthorizedError'
+ *       403:
+ *         description: Account scope is unavailable or the supplied sender/reader role does not match the authenticated account.
  *       404:
- *         description: Chat room not found.
+ *         description: Chat room does not exist, is inactive, or is outside the authenticated account scope.
  */
 router.get(
   "/history/:chatRoomId",
@@ -416,6 +419,7 @@ router.get(
  * /api/admin/chatroom/message/{chatRoomId}:
  *   post:
  *     summary: Send a message as an admin
+ *     description: Requires an active room within the authenticated account scope. Platform admins use senderType admin; sellers and seller employees use seller. A mismatched role returns 403; an inaccessible room returns 404.
  *     tags: [Chatroom]
  *     security:
  *       - bearerAuth: []
@@ -438,6 +442,7 @@ router.get(
  *               senderType:
  *                 type: string
  *                 enum: [admin, seller]
+ *                 description: Must match the authenticated account role; seller employees use seller.
  *               content:
  *                 type: string
  *                 description: The text content of the message. Required if attachments is empty.
@@ -475,8 +480,10 @@ router.get(
  *         description: Invalid input (e.g., empty message).
  *       401:
  *         $ref: '#/components/responses/UnauthorizedError'
+ *       403:
+ *         description: Account scope is unavailable or the supplied sender/reader role does not match the authenticated account.
  *       404:
- *         description: Chat room not found or is not active.
+ *         description: Chat room does not exist, is inactive, or is outside the authenticated account scope.
  */
 router.post(
   "/message/:chatRoomId",
@@ -493,7 +500,7 @@ router.post(
  * /api/admin/chatroom/message/{chatRoomId}/read:
  *   put:
  *     summary: Mark messages in a room as read
- *     description: Marks all unread messages sent by the user in a specific chat room as read.
+ *     description: Requires an active room within the authenticated account scope. Platform admins use readerType admin; sellers and seller employees use seller. Marks unread messages from other sender roles as read, preserving existing behavior. A mismatched role returns 403; an inaccessible room returns 404.
  *     tags: [Chatroom]
  *     security:
  *       - bearerAuth: []
@@ -516,6 +523,7 @@ router.post(
  *               readerType:
  *                 type: string
  *                 enum: [admin, seller]
+ *                 description: Must match the authenticated account role; seller employees use seller.
  *     responses:
  *       200:
  *         description: Messages marked as read successfully.
@@ -532,8 +540,10 @@ router.post(
  *                     $ref: '#/components/schemas/ChatMessage'
  *       401:
  *         $ref: '#/components/responses/UnauthorizedError'
+ *       403:
+ *         description: Account scope is unavailable or the supplied sender/reader role does not match the authenticated account.
  *       404:
- *         description: Chat room not found or is not active.
+ *         description: Chat room does not exist, is inactive, or is outside the authenticated account scope.
  */
 router.put(
   "/message/:chatRoomId/read",

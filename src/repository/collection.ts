@@ -1,4 +1,4 @@
-import { and, count, eq, ilike, inArray, or } from "drizzle-orm";
+import { and, count, eq, ilike, inArray, isNull, or } from "drizzle-orm";
 import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
 import db from "../lib/initDB";
@@ -20,25 +20,66 @@ import {
 export async function findOrCreateCollection(
   collectionData: Omit<schema.NewCollection, "id" | "createdAt" | "updatedAt">,
 ) {
-  // Check if a collection for this user and product already exists
-  const existingCollection = await db.query.collectionTable.findFirst({
-    where: and(
-      eq(schema.collectionTable.userId, collectionData.userId),
-      eq(schema.collectionTable.productId, collectionData.productId),
-    ),
+  return db.transaction(async (tx) => {
+    const [product] = await tx
+      .select({
+        status: schema.productTable.status,
+        deletedAt: schema.productTable.deletedAt,
+      })
+      .from(schema.productTable)
+      .where(eq(schema.productTable.id, collectionData.productId))
+      .for("share");
+
+    if (!product) {
+      throw new CustomError("Product not found", 404);
+    }
+
+    if (product.status !== "active" || product.deletedAt) {
+      throw new CustomError("Product is unavailable", 400);
+    }
+
+    // Check if a collection for this user and product already exists.
+    const existingCollection = await tx.query.collectionTable.findFirst({
+      where: and(
+        eq(schema.collectionTable.userId, collectionData.userId),
+        eq(schema.collectionTable.productId, collectionData.productId),
+      ),
+    });
+
+    if (existingCollection) {
+      return existingCollection;
+    }
+
+    // If not, create a new one.
+    const [newCollection] = await tx
+      .insert(schema.collectionTable)
+      .values(collectionData)
+      .onConflictDoNothing({
+        target: [
+          schema.collectionTable.userId,
+          schema.collectionTable.productId,
+        ],
+      })
+      .returning();
+
+    if (newCollection) {
+      return newCollection;
+    }
+
+    const concurrentlyCreatedCollection =
+      await tx.query.collectionTable.findFirst({
+        where: and(
+          eq(schema.collectionTable.userId, collectionData.userId),
+          eq(schema.collectionTable.productId, collectionData.productId),
+        ),
+      });
+
+    if (!concurrentlyCreatedCollection) {
+      throw new CustomError("Unable to save collection", 409);
+    }
+
+    return concurrentlyCreatedCollection;
   });
-
-  if (existingCollection) {
-    return existingCollection;
-  }
-
-  // If not, create a new one
-  const [newCollection] = await db
-    .insert(schema.collectionTable)
-    .values(collectionData)
-    .returning();
-
-  return newCollection;
 }
 
 export async function removeCollection(userId: string, productId: string) {
@@ -74,6 +115,18 @@ export async function listCollections({
 
   const conditions = [
     eq(schema.collectionTable.userId, userId),
+    inArray(
+      schema.collectionTable.productId,
+      db
+        .select({ id: schema.productTable.id })
+        .from(schema.productTable)
+        .where(
+          and(
+            eq(schema.productTable.status, "active"),
+            isNull(schema.productTable.deletedAt),
+          ),
+        ),
+    ),
   ];
 
   if (search) {

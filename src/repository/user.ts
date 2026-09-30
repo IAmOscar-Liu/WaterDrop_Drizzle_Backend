@@ -1,11 +1,15 @@
 import {
   and,
+  asc,
   count,
   eq,
   getTableColumns,
   inArray,
+  isNull,
   isNotNull,
   lt,
+  notInArray,
+  or,
   sql,
 } from "drizzle-orm";
 import fs from "fs";
@@ -25,12 +29,10 @@ import { CustomError } from "../lib/error";
 import {
   generateInvitationCode,
   getBankNameFromCode,
-  getCurrentLocalDateTime,
-  getLastMonthYYYYMM,
-  getNumOfDaysInMonth,
 } from "../lib/general";
 import { getMemberInfo } from "../lib/getMemberInfo";
 import db from "../lib/initDB";
+import { getCoinsExpireSoon } from "./coinExpiry";
 
 export async function createUser(
   user: Omit<typeof schema.userTable.$inferInsert, "referralCode">,
@@ -93,10 +95,21 @@ export async function getUsers() {
 }
 
 export async function getUserIdsInTimezones(timezones: string[]) {
+  const timezoneCondition = timezones.includes("Asia/Taipei")
+    ? or(
+        inArray(schema.userTable.timezone, timezones),
+        isNull(schema.userTable.timezone),
+        eq(schema.userTable.timezone, ""),
+        notInArray(
+          schema.userTable.timezone,
+          (Intl as any).supportedValuesOf("timeZone") as string[],
+        ),
+      )
+    : inArray(schema.userTable.timezone, timezones);
   const users = await db
     .select({ id: schema.userTable.id })
     .from(schema.userTable)
-    .where(inArray(schema.userTable.timezone, timezones));
+    .where(timezoneCondition);
 
   return users.map((u) => u.id);
 }
@@ -218,15 +231,31 @@ export async function clearDeviceToken({
   return deletedByUserAndDevice;
 }
 
-export async function deleteUnusedDeviceTokens(unusedInMs: number) {
+export async function deleteUnusedDeviceTokens(
+  unusedInMs: number,
+  limit = 5_000,
+) {
+  if (!Number.isInteger(limit) || limit <= 0) {
+    throw new Error("Device-token cleanup limit must be a positive integer.");
+  }
   const cutoffTime = new Date(Date.now() - unusedInMs);
-
-  const deletedTokens = await db
-    .delete(schema.deviceTokenTable)
+  const candidates = await db
+    .select({ id: schema.deviceTokenTable.id })
+    .from(schema.deviceTokenTable)
     .where(lt(schema.deviceTokenTable.lastUsedAt, cutoffTime))
-    .returning();
+    .orderBy(asc(schema.deviceTokenTable.lastUsedAt))
+    .limit(limit);
+  if (candidates.length === 0) return [];
 
-  return deletedTokens;
+  return db
+    .delete(schema.deviceTokenTable)
+    .where(
+      inArray(
+        schema.deviceTokenTable.id,
+        candidates.map((candidate) => candidate.id),
+      ),
+    )
+    .returning();
 }
 
 export async function setMonthlyCoinExpire(userIds: string[], month: string) {
@@ -498,7 +527,7 @@ export async function getUserById(id: string) {
   return {
     ...user,
     ...getMemberInfo(user.referralCount),
-    coinsExpireSoon: await getCoinsExpireSoon(user.id, user.timezone),
+    coinsExpireSoon: await getCoinsExpireSoon(user.id),
     bankName: user.bankCode ? getBankNameFromCode(user.bankCode) : null,
   };
 }
@@ -540,7 +569,7 @@ export async function getUserByOauthProviderAndOauthId(
   return {
     ...user,
     ...getMemberInfo(user.referralCount),
-    coinsExpireSoon: await getCoinsExpireSoon(user.id, user.timezone),
+    coinsExpireSoon: await getCoinsExpireSoon(user.id),
     bankName: user.bankCode ? getBankNameFromCode(user.bankCode) : null,
   };
 }
@@ -618,30 +647,6 @@ export async function updateGroupAdViewsCountYesterday(userId: string) {
 
     return updatedStat;
   });
-}
-
-async function getCoinsExpireSoon(userId: string, timezone?: string | null) {
-  if (!timezone) return null;
-
-  const { localMonth, localDay } = getCurrentLocalDateTime(timezone);
-  if (localDay <= getNumOfDaysInMonth(localMonth) - 7) return null;
-
-  const yearMonthString = getLastMonthYYYYMM(timezone);
-
-  const [userMonthlyCoinStat] = await db
-    .select()
-    .from(schema.userMonthlyCoinStatTable)
-    .where(
-      and(
-        eq(schema.userMonthlyCoinStatTable.userId, userId),
-        eq(schema.userMonthlyCoinStatTable.month, yearMonthString),
-        eq(schema.userMonthlyCoinStatTable.expired, false),
-      ),
-    );
-
-  return userMonthlyCoinStat
-    ? userMonthlyCoinStat.coinsEarned - userMonthlyCoinStat.coinsSpent
-    : null;
 }
 
 export async function updateUserTermsAcceptedAt(userId: string) {

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isPositiveMoney, normalizeMoney } from "../../lib/money";
 
 export const uuid = z.uuid();
 export const nonEmptyString = z.string().trim().min(1);
@@ -9,6 +10,12 @@ export const jsonObject = z.record(z.string(), z.any());
 export const dateTimeString = z
   .string()
   .refine((value) => !Number.isNaN(Date.parse(value)), "Invalid date-time");
+export const positiveCurrencyAmount = z
+  .union([z.string(), z.number()])
+  .refine(isPositiveMoney, {
+    message: "Amount must be positive and have at most two decimal places",
+  })
+  .transform((value) => normalizeMoney(value));
 
 export const paginationQuery = z.object({
   page: positiveInt.optional(),

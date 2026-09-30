@@ -1,6 +1,9 @@
 import { NextFunction, Response } from "express";
 import jwt from "jsonwebtoken";
+import { eq } from "drizzle-orm";
+import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
+import db from "../lib/initDB";
 import { RequestWithId } from "../type/request";
 
 const JWT_SECRET =
@@ -18,7 +21,7 @@ const JWT_SECRET =
  * @param {object} res - The Express response object.
  * @param {function} next - The Express next middleware function.
  */
-export default function isAuth(
+export default async function isAuth(
   req: RequestWithId,
   _: Response,
   next: NextFunction
@@ -29,21 +32,41 @@ export default function isAuth(
 
   if (!token) return next(new CustomError("Unauthorized", 401));
 
+  let decodedPayload: jwt.JwtPayload | string;
   try {
-    // Use jwt.verify directly to handle errors within the middleware
-    const decodedPayload = jwt.verify(token, JWT_SECRET);
-    if (typeof decodedPayload === "string")
-      return next(new CustomError("Token is invalid", 401));
-
-    if (decodedPayload.data?.id) req.userId = decodedPayload.data.id;
-
-    // Attach the decoded user information to the request object
-    // req.user = decodedPayload;
-    // Proceed to the next middleware or route handler
-    next();
+    decodedPayload = jwt.verify(token, JWT_SECRET);
   } catch (error: any) {
-    // If token is not valid (e.g., expired, wrong signature)
     console.error("Token validation error:", error.message);
-    next(new CustomError(`Token validation error -  ${error.message}`, 401));
+    return next(new CustomError(`Token validation error -  ${error.message}`, 401));
+  }
+
+  if (typeof decodedPayload === "string") {
+    return next(new CustomError("Token is invalid", 401));
+  }
+  if (decodedPayload.data?.id) req.userId = decodedPayload.data.id;
+  if (!req.userId) return next(new CustomError("Token is invalid", 401));
+
+  try {
+    // App users and admin-side accounts share this middleware and token shape.
+    // Only admin routes must be checked against the accounts table here.
+    if (req.originalUrl.startsWith("/api/admin/")) {
+      const [account] = await db
+        .select({
+          status: schema.accountTable.status,
+          deletedAt: schema.accountTable.deletedAt,
+        })
+        .from(schema.accountTable)
+        .where(eq(schema.accountTable.id, req.userId))
+        .limit(1);
+      if (!account || account.status !== "active" || account.deletedAt) {
+        return next(
+          new CustomError("Account is inactive or no longer available", 403),
+        );
+      }
+    }
+
+    next();
+  } catch (error) {
+    next(error);
   }
 }

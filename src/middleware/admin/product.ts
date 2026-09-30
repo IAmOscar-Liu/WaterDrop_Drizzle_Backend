@@ -89,12 +89,17 @@ export const productValidation = {
   categoryCreateBody: z.object({
     name: nonEmptyString,
   }),
+  categoryUpdateBody: z.object({
+    name: nonEmptyString,
+  }),
   listQuery: paginationQuery.extend({
     categoryId: uuid.optional(),
     search: z.string().optional(),
     status: productStatus.optional(),
     minPrice: nonNegativeNumber.optional(),
     maxPrice: nonNegativeNumber.optional(),
+    sellerId: uuid.optional(),
+    includeDeleted: z.coerce.boolean().optional(),
   }),
   idParams,
   createBody: productWriteBody.extend({

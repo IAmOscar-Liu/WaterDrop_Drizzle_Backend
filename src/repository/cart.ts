@@ -21,6 +21,39 @@ export async function upsertCartItem(
   quantity: number,
 ) {
   return db.transaction(async (tx) => {
+    // Removing the user's own row must remain possible even when its product
+    // or variant has since become unavailable. This also cleans legacy stale
+    // rows created before automatic lifecycle cleanup was introduced.
+    if (quantity <= 0) {
+      await tx
+        .delete(schema.cartItemTable)
+        .where(
+          and(
+            eq(schema.cartItemTable.userId, userId),
+            eq(schema.cartItemTable.productId, productId),
+            eq(schema.cartItemTable.productVariantId, productVariantId),
+          ),
+        );
+      return;
+    }
+
+    const [product] = await tx
+      .select({
+        status: schema.productTable.status,
+        deletedAt: schema.productTable.deletedAt,
+      })
+      .from(schema.productTable)
+      .where(eq(schema.productTable.id, productId))
+      .for("update");
+
+    if (!product) {
+      throw new CustomError("Product not found", 404);
+    }
+
+    if (product.status !== "active" || product.deletedAt) {
+      throw new CustomError("Product is unavailable", 400);
+    }
+
     const [variant] = await tx
       .select()
       .from(schema.productVariantTable)
@@ -37,19 +70,6 @@ export async function upsertCartItem(
 
     if (quantity > variant.stock - variant.reserve) {
       throw new CustomError("Insufficient stock", 400);
-    }
-
-    // If quantity is 0 or less, remove the item from the cart.
-    if (quantity <= 0) {
-      await tx
-        .delete(schema.cartItemTable)
-        .where(
-          and(
-            eq(schema.cartItemTable.userId, userId),
-            eq(schema.cartItemTable.productVariantId, productVariantId),
-          ),
-        );
-      return;
     }
 
     const existingCartItem = await tx.query.cartItemTable.findFirst({
@@ -121,6 +141,41 @@ export async function updateCartItemVariant({
   productVariantId: string;
 }) {
   return db.transaction(async (tx) => {
+    const cartItemSnapshot = await tx.query.cartItemTable.findFirst({
+      where: and(
+        eq(schema.cartItemTable.id, cartItemId),
+        eq(schema.cartItemTable.userId, userId),
+      ),
+    });
+
+    if (!cartItemSnapshot) {
+      throw new CustomError("Cart item not found", 404);
+    }
+
+    const [product] = await tx
+      .select()
+      .from(schema.productTable)
+      .where(eq(schema.productTable.id, cartItemSnapshot.productId))
+      .for("update");
+
+    if (!product || product.status !== "active" || product.deletedAt) {
+      throw new CustomError("Product is unavailable", 400);
+    }
+
+    const [variant] = await tx
+      .select()
+      .from(schema.productVariantTable)
+      .where(eq(schema.productVariantTable.id, productVariantId))
+      .for("update");
+
+    if (!variant || variant.productId !== cartItemSnapshot.productId) {
+      throw new CustomError("Product variant not found", 404);
+    }
+
+    if (variant.status !== "active") {
+      throw new CustomError("Product variant is inactive", 400);
+    }
+
     const [cartItem] = await tx
       .select()
       .from(schema.cartItemTable)
@@ -128,6 +183,7 @@ export async function updateCartItemVariant({
         and(
           eq(schema.cartItemTable.id, cartItemId),
           eq(schema.cartItemTable.userId, userId),
+          eq(schema.cartItemTable.productId, cartItemSnapshot.productId),
         ),
       )
       .for("update");
@@ -138,20 +194,6 @@ export async function updateCartItemVariant({
 
     if (cartItem.productVariantId === productVariantId) {
       return cartItem;
-    }
-
-    const [variant] = await tx
-      .select()
-      .from(schema.productVariantTable)
-      .where(eq(schema.productVariantTable.id, productVariantId))
-      .for("update");
-
-    if (!variant || variant.productId !== cartItem.productId) {
-      throw new CustomError("Product variant not found", 404);
-    }
-
-    if (variant.status !== "active") {
-      throw new CustomError("Product variant is inactive", 400);
     }
 
     const [targetCartItem] = await tx

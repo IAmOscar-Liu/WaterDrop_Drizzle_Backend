@@ -4,7 +4,6 @@ import {
   deleteUnusedDeviceTokens,
   getFcmTokensInUserIds,
   getUserIdsInTimezones,
-  getUserMonthlyCoinStatsInUserIds,
   getUserStatsInTimezones,
   setMonthlyCoinExpire,
   updateGroupAdViewsCountYesterday,
@@ -13,10 +12,9 @@ import { CustomError } from "./error";
 import {
   getCurrentLocalDateTime,
   getLastMonthYYYYMM,
-  getNumOfDaysInMonth,
 } from "./general";
 import { sendMulticastPushNotification } from "./sendNotification";
-import { createNotification } from "../repository/notification";
+import { runCoinExpiryNotificationJob } from "./coinExpiryNotificationJob";
 import {
   deleteIdempotencyKeys,
   expirePendingOrders,
@@ -26,8 +24,29 @@ import { pollEcPayLogisticsTradeInfo } from "./polling";
 import { Worker } from "worker_threads";
 import path from "path";
 import { existsSync } from "fs";
+import { isCoinLedgerEnabled } from "./coinAccounting";
+import { runCoinLedgerMaintenanceJob } from "./coinLedgerMaintenanceJob";
+import { deleteCoinLedgerJobRuns } from "../repository/coinLedger";
+import { withPostgresAdvisoryLock } from "./postgresAdvisoryLock";
 
 const RESET_BATCH_SIZE = 100; // Process 100 users at a time. Adjust as needed.
+const DAY_MS = 24 * 60 * 60 * 1_000;
+
+function positiveIntegerEnv(name: string, fallback: number) {
+  const value = Number(process.env[name] ?? fallback);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer.`);
+  }
+  return value;
+}
+
+function cleanupBatchSize() {
+  return positiveIntegerEnv("DATABASE_CLEANUP_BATCH_SIZE", 5_000);
+}
+
+function retentionMs(name: string, fallbackDays: number) {
+  return positiveIntegerEnv(name, fallbackDays) * DAY_MS;
+}
 
 // Schedule a task to run every hour to check for users in timezones at midnight.
 export const dailyResetTask = cron.schedule(
@@ -193,7 +212,11 @@ export const monthlyCoinStatExpirationTask = cron.schedule(
 
       // For these users, expire all their monthly stats. The logic to keep the current month active
       // is handled by creating a new entry when coins are earned/spent.
-      await setMonthlyCoinExpire(userIds, yearMonthString);
+      if (isCoinLedgerEnabled()) {
+        await runCoinLedgerMaintenanceJob();
+      } else {
+        await setMonthlyCoinExpire(userIds, yearMonthString);
+      }
 
       console.log(
         `✅ Monthly coin stat expiration complete for ${userIds.length} users.`,
@@ -205,100 +228,14 @@ export const monthlyCoinStatExpirationTask = cron.schedule(
 );
 
 export const monthlyCoinExpirationNotificationTask = cron.schedule(
-  "*/30 * 21-31 * *", // Every 30 minutes, 8 days before the end of the month
+  "*/30 * * * *", // Eligibility uses each lot's local deadline, not the host date.
   async () => {
     if (process.env.NO_CRON === "true") return;
-    console.log(
-      `30 minute cron job for monthlyCoinExpirationNotificationTask started. Time: ${new Date()}`,
-    );
-
-    const timezones = (Intl as any).supportedValuesOf("timeZone") as string[];
-    const timezonesAtSpecificTime = timezones.filter((tz) => {
-      const { localMonth, localDay, localHour, localMinute } =
-        getCurrentLocalDateTime(tz);
-      return (
-        localDay > getNumOfDaysInMonth(localMonth) - 7 &&
-        localHour === 6 &&
-        localMinute < 30
-      );
-    });
-
-    if (timezonesAtSpecificTime.length === 0) {
-      console.log("No timezones at 6:00.");
-      return;
-    }
-
-    console.log(
-      `${timezonesAtSpecificTime.length} timezones at 6:00:`,
-      timezonesAtSpecificTime.join(", "),
-    );
-
-    let userIds = await getUserIdsInTimezones(timezonesAtSpecificTime);
-
-    if (userIds.length === 0) {
-      console.log("No users found in the targeted timezones.");
-      return;
-    }
-
-    const yearMonthString = getLastMonthYYYYMM(timezonesAtSpecificTime[0]); // yyyy-mm
-
-    const userMonthlyCoinStats = (
-      await getUserMonthlyCoinStatsInUserIds(userIds, yearMonthString)
-    ).filter((stat) => stat.coinsEarned > stat.coinsSpent);
-
-    const { localMonth, localYear } = getCurrentLocalDateTime(
-      timezonesAtSpecificTime[0],
-    );
-    const lastMonth = localMonth === 1 ? 12 : localMonth - 1;
-    const nextMonth = localMonth === 12 ? 1 : localMonth + 1;
-    const nextYear = localMonth === 12 ? localYear + 1 : localYear;
-
-    for (let i = 0; i < userMonthlyCoinStats.length; i += RESET_BATCH_SIZE) {
-      const batchCoinStats = userMonthlyCoinStats.slice(
-        i,
-        i + RESET_BATCH_SIZE,
-      );
-
-      await Promise.allSettled(
-        batchCoinStats.map((stat) =>
-          createNotification({
-            userId: stat.userId,
-            type: "system_alert",
-            title: "金幣即將過期通知",
-            body: `您${lastMonth}月份的金幣尚有${
-              stat.coinsEarned - stat.coinsSpent
-            }未使用，即將在 ${nextYear}/${nextMonth
-              .toString()
-              .padStart(2, "0")}/01 00:00 過期，快把握時間使用您的金幣吧!`,
-          }),
-        ),
-      );
-    }
-
-    userIds = userMonthlyCoinStats.map((stats) => stats.userId);
-    const fcmTokens = await getFcmTokensInUserIds(userIds);
-
-    for (let i = 0; i < fcmTokens.length; i += FCM_MAX_BATCH_SIZE) {
-      const batchFcmTokens = fcmTokens.slice(i, i + FCM_MAX_BATCH_SIZE);
-
-      await sendMulticastPushNotification({
-        tokens: batchFcmTokens,
-        notification: {
-          title: "金幣即將過期通知",
-          body: `您${lastMonth}月份的金幣即將在 ${nextYear}/${nextMonth
-            .toString()
-            .padStart(2, "0")}/01 00:00 過期，快把握時間使用您的金幣吧!`,
-        },
-        data: {
-          command: "message",
-        },
-      });
-
-      console.log(
-        `✅ Daily notification complete for current ${
-          timezonesAtSpecificTime.length
-        } timezones. Total tokens processed: ${i + batchFcmTokens.length}`,
-      );
+    try {
+      const result = await runCoinExpiryNotificationJob();
+      console.log("Coin expiry notifications completed:", result);
+    } catch (error) {
+      console.error("Coin expiry notifications failed:", error);
     }
   },
 );
@@ -312,12 +249,24 @@ export const deleteUnusedDeviceTokensTask = cron.schedule(
     );
 
     try {
-      const result = await deleteUnusedDeviceTokens(60 * 24 * 60 * 60 * 1000); // 2 months ago
-      console.log(`Deleted ${result.length} unused device tokens.`);
+      const cleanup = await withPostgresAdvisoryLock(
+        "waterdrop:cleanup:device-tokens",
+        () =>
+          deleteUnusedDeviceTokens(
+            retentionMs("DEVICE_TOKEN_RETENTION_DAYS", 60),
+            cleanupBatchSize(),
+          ),
+      );
+      if (!cleanup.acquired) {
+        console.log("Device-token cleanup skipped because another instance is running it.");
+        return;
+      }
+      console.log(`Deleted ${cleanup.value.length} unused device tokens.`);
     } catch (error) {
       console.error(`Error during deleteUnusedDeviceTokensTask:`, error);
     }
   },
+  { noOverlap: true },
 );
 
 export const expireOrdersTask = cron.schedule(
@@ -339,6 +288,49 @@ export const expireOrdersTask = cron.schedule(
       console.error(`Error during expireOrdersTask:`, error);
     }
   },
+);
+
+// Deadlines are stored as UTC instants computed from each user's timezone.
+// Advertisement assignments use a snapshotted timezone/local date and become
+// expired on the first maintenance pass after that local date ends. Cohort
+// settlement uses Asia/Taipei dates, and old terminal assignments are purged
+// according to their configured audit-retention periods.
+export const coinLedgerMaintenanceTask = cron.schedule(
+  "*/30 * * * *",
+  async () => {
+    if (process.env.NO_CRON === "true" || !isCoinLedgerEnabled()) return;
+    try {
+      await runCoinLedgerMaintenanceJob();
+    } catch (error) {
+      console.error("Error during coin ledger maintenance:", error);
+    }
+  },
+  { timezone: "Asia/Taipei", noOverlap: true },
+);
+
+export const deleteCoinLedgerJobRunsTask = cron.schedule(
+  "15 3 * * *",
+  async () => {
+    if (process.env.NO_CRON === "true" || !isCoinLedgerEnabled()) return;
+    try {
+      const cleanup = await withPostgresAdvisoryLock(
+        "waterdrop:cleanup:coin-ledger-job-runs",
+        () =>
+          deleteCoinLedgerJobRuns(
+            retentionMs("COIN_LEDGER_JOB_RUN_RETENTION_DAYS", 90),
+            cleanupBatchSize(),
+          ),
+      );
+      if (!cleanup.acquired) {
+        console.log("Coin-ledger job-run cleanup skipped because another instance is running it.");
+        return;
+      }
+      console.log(`Deleted ${cleanup.value.length} old coin-ledger job runs.`);
+    } catch (error) {
+      console.error("Error during coin-ledger job-run cleanup:", error);
+    }
+  },
+  { timezone: "Asia/Taipei", noOverlap: true },
 );
 
 export const pollLogisticsTradeInfoTask = cron.schedule(
@@ -366,7 +358,10 @@ export const fetchEcPayStoreListTask = cron.schedule(
     );
 
     try {
-      const tsFile = path.resolve(process.cwd(), "src/ecpay-storeList.ts");
+      const tsFile = path.resolve(
+        process.cwd(),
+        "src/scripts/ecpay-storeList.ts",
+      );
       const jsFile = path.resolve(process.cwd(), "dist/ecpay-storeList.js");
 
       const workerFile = existsSync(jsFile) ? jsFile : tsFile;
@@ -421,10 +416,22 @@ export const deleteIdempotencyKeysTask = cron.schedule(
     );
 
     try {
-      await deleteIdempotencyKeys(3 * 24 * 60 * 60 * 1000); // 3 days ago
-      console.log("Expired idempotency keys deleted.");
+      const cleanup = await withPostgresAdvisoryLock(
+        "waterdrop:cleanup:idempotency-keys",
+        () =>
+          deleteIdempotencyKeys(
+            retentionMs("IDEMPOTENCY_KEY_RETENTION_DAYS", 3),
+            cleanupBatchSize(),
+          ),
+      );
+      if (!cleanup.acquired) {
+        console.log("Idempotency-key cleanup skipped because another instance is running it.");
+        return;
+      }
+      console.log(`Deleted ${cleanup.value.length} expired idempotency keys.`);
     } catch (error) {
       console.error(`Error during deleteIdempotencyKeysTask:`, error);
     }
   },
+  { noOverlap: true },
 );

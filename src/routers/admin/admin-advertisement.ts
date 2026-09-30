@@ -1,6 +1,7 @@
 import { Router } from "express";
 import AdvertisementController from "../../controller/advertisement";
 import isAuth from "../../middleware/isAuth";
+import isAdmin from "../../middleware/isAdmin";
 import validateZod from "../../middleware/validateZod";
 import { adminValidation } from "../../middleware/admin";
 
@@ -30,6 +31,22 @@ const router = Router();
  *           nullable: true
  *         video_url:
  *           type: string
+ *         archivedAt:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *         archiveGraceEndsAt:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *         financiallyClosedAt:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *         replacementOfAdvertisementId:
+ *           type: string
+ *           format: uuid
+ *           nullable: true
  *         createdAt:
  *           type: string
  *           format: date-time
@@ -145,6 +162,15 @@ const router = Router();
  *           type: number
  *         totalSpent:
  *           type: number
+ *         sellerReturnedCurrencyAmount:
+ *           type: string
+ *           example: "2.00"
+ *         returnedCoinAmount:
+ *           type: string
+ *           example: "20.00"
+ *         netSettledSpentAmount:
+ *           type: string
+ *           example: "13.00"
  *         status:
  *           type: string
  *           enum: [active, paused, depleted, archived]
@@ -172,9 +198,299 @@ const router = Router();
  *           format: uuid
  *         amount:
  *           type: number
+ *         coinAmount:
+ *           type: string
+ *           nullable: true
+ *           example: "15.00"
+ *         coinToCurrencyRate:
+ *           type: string
+ *           nullable: true
+ *           example: "10.000000"
+ *         sourceSellerId:
+ *           type: string
+ *           format: uuid
+ *           nullable: true
+ *         adViewCountId:
+ *           type: string
+ *           format: uuid
+ *           nullable: true
+ *         balanceBefore:
+ *           type: string
+ *           nullable: true
+ *           example: "100.00"
+ *         balanceAfter:
+ *           type: string
+ *           nullable: true
+ *           example: "98.50"
+ *         idempotencyKey:
+ *           type: string
+ *           nullable: true
  *         type:
  *           type: string
- *           enum: [deposit]
+ *           enum: [deposit, wallet_funding, view_debit, seller_return_credit, balance_transfer_out, balance_transfer_in, manual_adjustment]
+ *
+ *     AdvertisementCoinFundingAccount:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: string
+ *           format: uuid
+ *         advertisementId:
+ *           type: string
+ *           format: uuid
+ *         sourceSellerId:
+ *           type: string
+ *           format: uuid
+ *         coinToCurrencyRate:
+ *           type: string
+ *           example: "10.000000"
+ *         sellerFundingAvailableAmount:
+ *           type: string
+ *           example: "30.00"
+ *         platformAdvanceOutstandingAmount:
+ *           type: string
+ *           example: "0.00"
+ *         platformFundedConsumedAmount:
+ *           type: string
+ *           example: "0.00"
+ *         platformPromotionalExpenseAmount:
+ *           type: string
+ *           example: "0.00"
+ *         status:
+ *           type: string
+ *           enum: [active, closing, closed, exception]
+ *         openedAt:
+ *           type: string
+ *           format: date-time
+ *         closedAt:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *         updatedAt:
+ *           type: string
+ *           format: date-time
+ *
+ *     AdvertisementCoinSettlementCohort:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: string
+ *           format: uuid
+ *         fundingAccountId:
+ *           type: string
+ *           format: uuid
+ *         businessDate:
+ *           type: string
+ *           format: date
+ *         claimSettlementAt:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *         openingPlatformAdvanceAmount:
+ *           type: string
+ *           example: "0.00"
+ *         sellerFundedAmount:
+ *           type: string
+ *           example: "30.00"
+ *         acquiredRewardAmount:
+ *           type: string
+ *           example: "15.00"
+ *         advanceCreatedAmount:
+ *           type: string
+ *           example: "0.00"
+ *         advanceRepaidAmount:
+ *           type: string
+ *           example: "0.00"
+ *         advanceCancelledAtExpiryAmount:
+ *           type: string
+ *           example: "0.00"
+ *         sellerSurplusReturnedAmount:
+ *           type: string
+ *           example: "15.00"
+ *         closingPlatformAdvanceAmount:
+ *           type: string
+ *           example: "0.00"
+ *         status:
+ *           type: string
+ *           enum: [open, settling, settled, exception]
+ *         settledAt:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *         updatedAt:
+ *           type: string
+ *           format: date-time
+ *
+ *     SellerCoinReturnTransaction:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: string
+ *           format: uuid
+ *         sourceSellerId:
+ *           type: string
+ *           format: uuid
+ *         advertisementId:
+ *           type: string
+ *           format: uuid
+ *         fundingAccountId:
+ *           type: string
+ *           format: uuid
+ *         settlementCohortId:
+ *           type: string
+ *           format: uuid
+ *           nullable: true
+ *         rewardAllocationId:
+ *           type: string
+ *           format: uuid
+ *           nullable: true
+ *         userCoinLotId:
+ *           type: string
+ *           format: uuid
+ *           nullable: true
+ *         reason:
+ *           type: string
+ *           enum: [unacquired_surplus, expired_unused, refund_after_expiry, manual]
+ *         coinAmount:
+ *           type: string
+ *           example: "15.00"
+ *         coinToCurrencyRate:
+ *           type: string
+ *           example: "10.000000"
+ *         currencyEquivalent:
+ *           type: string
+ *           example: "1.50"
+ *         destinationType:
+ *           type: string
+ *           example: advertisement_balance
+ *         destinationReferenceId:
+ *           type: string
+ *           format: uuid
+ *         idempotencyKey:
+ *           type: string
+ *         metadata:
+ *           type: object
+ *           nullable: true
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *
+ *     AdvertisementCoinFundingTransaction:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: string
+ *           format: uuid
+ *         fundingAccountId:
+ *           type: string
+ *           format: uuid
+ *         settlementCohortId:
+ *           type: string
+ *           format: uuid
+ *           nullable: true
+ *         type:
+ *           type: string
+ *           enum: [view_funded, reward_acquired_seller_funded, platform_advance_created, platform_advance_repaid, funding_source_reclassified, platform_advance_cancelled_expiry, platform_advance_written_off_archive, coin_consumed, coin_consumption_reversed, seller_surplus_returned, seller_unused_returned, seller_refund_after_expiry_returned, manual_adjustment]
+ *         coinAmount:
+ *           type: string
+ *           example: "15.00"
+ *         currencyEquivalent:
+ *           type: string
+ *           nullable: true
+ *           example: "1.50"
+ *         coinToCurrencyRate:
+ *           type: string
+ *           example: "10.000000"
+ *         adViewCountId:
+ *           type: string
+ *           format: uuid
+ *           nullable: true
+ *         treasureBoxRewardAllocationId:
+ *           type: string
+ *           format: uuid
+ *           nullable: true
+ *         userCoinLotId:
+ *           type: string
+ *           format: uuid
+ *           nullable: true
+ *         sellerReturnTransactionId:
+ *           type: string
+ *           format: uuid
+ *           nullable: true
+ *         idempotencyKey:
+ *           type: string
+ *         metadata:
+ *           type: object
+ *           nullable: true
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *
+ *     AdvertisementCoinLedger:
+ *       type: object
+ *       properties:
+ *         fundingAccount:
+ *           $ref: '#/components/schemas/AdvertisementCoinFundingAccount'
+ *         cohorts:
+ *           type: array
+ *           items:
+ *             $ref: '#/components/schemas/AdvertisementCoinSettlementCohort'
+ *         sellerReturns:
+ *           type: array
+ *           items:
+ *             $ref: '#/components/schemas/SellerCoinReturnTransaction'
+ *         fundingTransactions:
+ *           type: array
+ *           items:
+ *             $ref: '#/components/schemas/AdvertisementCoinFundingTransaction'
+ *
+ *     AdvertisementBalanceTransfer:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: string
+ *           format: uuid
+ *         sourceAdvertisementId:
+ *           type: string
+ *           format: uuid
+ *         destinationAdvertisementId:
+ *           type: string
+ *           format: uuid
+ *         sourceSellerId:
+ *           type: string
+ *           format: uuid
+ *         coinAmount:
+ *           type: string
+ *           example: "200.00"
+ *         coinToCurrencyRate:
+ *           type: string
+ *           example: "10.000000"
+ *         currencyAmount:
+ *           type: string
+ *           example: "20.00"
+ *         sourceBalanceBefore:
+ *           type: string
+ *           example: "50.00"
+ *         sourceBalanceAfter:
+ *           type: string
+ *           example: "30.00"
+ *         destinationBalanceBefore:
+ *           type: string
+ *           example: "100.00"
+ *         destinationBalanceAfter:
+ *           type: string
+ *           example: "120.00"
+ *         idempotencyKey:
+ *           type: string
+ *         createdAt:
+ *           type: string
+ *           format: date-time
  *
  *
  */
@@ -198,6 +514,10 @@ const router = Router();
  *         schema:
  *           type: integer
  *           default: 10
+ *       - in: query
+ *         name: sellerId
+ *         schema: { type: string, format: uuid }
+ *         description: Platform-admin seller filter. Seller and employee callers are server-scoped.
  *     responses:
  *       '200':
  *         description: A paginated list of advertisements.
@@ -216,6 +536,62 @@ router.get(
   isAuth,
   validateZod({ query: adminValidation.advertisement.listQuery }),
   AdvertisementController.listAdminAdvertisements,
+);
+
+/**
+ * @swagger
+ * /api/admin/advertisement/metrics:
+ *   get:
+ *     tags: [Advertisement]
+ *     summary: List financial and reward metrics for advertisements
+ *     description: Seller/employee scope is resolved by the server. Platform admins may filter sellerId. CTR and impressions are intentionally absent because they are not reliably recorded.
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { in: query, name: page, schema: { type: integer } }
+ *       - { in: query, name: limit, schema: { type: integer } }
+ *       - { in: query, name: sellerId, schema: { type: string, format: uuid } }
+ *       - { in: query, name: productId, schema: { type: string, format: uuid } }
+ *       - { in: query, name: status, schema: { type: string, enum: [active, paused, depleted, archived] } }
+ *       - { in: query, name: startAt, schema: { type: string, format: date-time } }
+ *       - { in: query, name: endAt, schema: { type: string, format: date-time } }
+ *     responses:
+ *       '200':
+ *         description: Paginated ad metrics including completed views, spend, returned/net amounts, funded coins, current balance, and platform advance/expense.
+ */
+router.get(
+  "/metrics",
+  isAuth,
+  validateZod({ query: adminValidation.advertisement.metricsQuery }),
+  AdvertisementController.listMetrics,
+);
+
+/**
+ * @swagger
+ * /api/admin/advertisement/product/{productId}/dashboard:
+ *   get:
+ *     tags: [Advertisement]
+ *     summary: Get a product's current and historical advertisement dashboard
+ *     description: Includes archived/replacement ads and a Taipei daily view/spend/funded-coin series. Product ownership is enforced.
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: productId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - { in: query, name: startAt, schema: { type: string, format: date-time } }
+ *       - { in: query, name: endAt, schema: { type: string, format: date-time } }
+ *     responses:
+ *       '200': { description: Product, advertisement-chain metrics, and daily points. }
+ *       '403': { description: Product belongs to another seller. }
+ */
+router.get(
+  "/product/:productId/dashboard",
+  isAuth,
+  validateZod({
+    params: adminValidation.advertisement.productDashboardParams,
+    query: adminValidation.advertisement.productDashboardQuery,
+  }),
+  AdvertisementController.getProductDashboard,
 );
 
 /**
@@ -430,11 +806,93 @@ router.get(
 
 /**
  * @swagger
+ * /api/admin/advertisement/platform/list/view-count:
+ *   get:
+ *     tags: [Advertisement]
+ *     summary: List advertisement view counts across the platform
+ *     description: Platform-admin-only view of every seller's advertisements. Supply sellerId to restrict the result to one seller.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: sellerId
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Optional seller account ID.
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *       - in: query
+ *         name: startAt
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *       - in: query
+ *         name: endAt
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *     responses:
+ *       '200':
+ *         description: Paginated advertisements with view counts.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     startAt:
+ *                       type: string
+ *                       format: date-time
+ *                       nullable: true
+ *                     endAt:
+ *                       type: string
+ *                       format: date-time
+ *                       nullable: true
+ *                     total:
+ *                       type: integer
+ *                     page:
+ *                       type: integer
+ *                     limit:
+ *                       type: integer
+ *                     totalPages:
+ *                       type: integer
+ *                     advertisements:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/AdvertisementWithCount'
+ *       '403':
+ *         description: Only a platform admin account may call this endpoint.
+ */
+router.get(
+  "/platform/list/view-count",
+  isAuth,
+  isAdmin,
+  validateZod({
+    query: adminValidation.advertisement.platformViewCountListQuery,
+  }),
+  AdvertisementController.listPlatformAdViewCount,
+);
+
+/**
+ * @swagger
  * /api/admin/advertisement/{id}/view-count:
  *   get:
  *     tags: [Advertisement]
  *     summary: Get the view count for an advertisement
- *     description: Retrieves the total number of views for a specific advertisement, with an optional date range filter.
+ *     description: Retrieves the total number of views for a specific advertisement, with an optional date range filter. Only the owning seller or a platform admin may call it.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -488,6 +946,8 @@ router.get(
  *                         count:
  *                           type: integer
  *                           description: The total number of views.
+ *       '403':
+ *         description: The caller is neither the owning seller nor a platform admin.
  */
 router.get(
   "/:id/view-count",
@@ -497,6 +957,114 @@ router.get(
     query: adminValidation.advertisement.viewCountQuery,
   }),
   AdvertisementController.getAdViewCount,
+);
+
+/**
+ * @swagger
+ * /api/admin/advertisement/{id}/coin-ledger:
+ *   get:
+ *     tags: [Advertisement]
+ *     summary: Get advertisement coin funding and seller-return ledger
+ *     description: Returns the funding account plus the latest settlement cohorts, seller returns, and funding transactions. Monetary coin fields are exact decimal strings.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       '200':
+ *         description: Advertisement coin-ledger details.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/AdvertisementCoinLedger'
+ *             example:
+ *               success: true
+ *               data:
+ *                 fundingAccount:
+ *                   id: 11111111-1111-4111-8111-111111111111
+ *                   advertisementId: 22222222-2222-4222-8222-222222222222
+ *                   sourceSellerId: 33333333-3333-4333-8333-333333333333
+ *                   coinToCurrencyRate: "10.000000"
+ *                   sellerFundingAvailableAmount: "15.00"
+ *                   platformAdvanceOutstandingAmount: "0.00"
+ *                   platformFundedConsumedAmount: "0.00"
+ *                   platformPromotionalExpenseAmount: "0.00"
+ *                   status: active
+ *                   openedAt: "2026-09-13T01:00:00.000Z"
+ *                   closedAt: null
+ *                   createdAt: "2026-09-13T01:00:00.000Z"
+ *                   updatedAt: "2026-09-13T01:05:00.000Z"
+ *                 cohorts:
+ *                   - id: 44444444-4444-4444-8444-444444444444
+ *                     fundingAccountId: 11111111-1111-4111-8111-111111111111
+ *                     businessDate: "2026-09-13"
+ *                     claimSettlementAt: "2026-09-13T16:00:00.000Z"
+ *                     openingPlatformAdvanceAmount: "0.00"
+ *                     sellerFundedAmount: "30.00"
+ *                     acquiredRewardAmount: "15.00"
+ *                     advanceCreatedAmount: "0.00"
+ *                     advanceRepaidAmount: "0.00"
+ *                     advanceCancelledAtExpiryAmount: "0.00"
+ *                     sellerSurplusReturnedAmount: "15.00"
+ *                     closingPlatformAdvanceAmount: "0.00"
+ *                     status: settled
+ *                     settledAt: "2026-09-13T16:01:00.000Z"
+ *                     createdAt: "2026-09-13T01:05:00.000Z"
+ *                     updatedAt: "2026-09-13T16:01:00.000Z"
+ *                 sellerReturns:
+ *                   - id: 55555555-5555-4555-8555-555555555555
+ *                     sourceSellerId: 33333333-3333-4333-8333-333333333333
+ *                     advertisementId: 22222222-2222-4222-8222-222222222222
+ *                     fundingAccountId: 11111111-1111-4111-8111-111111111111
+ *                     settlementCohortId: 44444444-4444-4444-8444-444444444444
+ *                     rewardAllocationId: null
+ *                     userCoinLotId: null
+ *                     reason: unacquired_surplus
+ *                     coinAmount: "15.00"
+ *                     coinToCurrencyRate: "10.000000"
+ *                     currencyEquivalent: "1.50"
+ *                     destinationType: advertisement_balance
+ *                     destinationReferenceId: 22222222-2222-4222-8222-222222222222
+ *                     idempotencyKey: cohort-surplus:44444444-4444-4444-8444-444444444444
+ *                     metadata: null
+ *                     createdAt: "2026-09-13T16:01:00.000Z"
+ *                 fundingTransactions:
+ *                   - id: 66666666-6666-4666-8666-666666666666
+ *                     fundingAccountId: 11111111-1111-4111-8111-111111111111
+ *                     settlementCohortId: 44444444-4444-4444-8444-444444444444
+ *                     type: view_funded
+ *                     coinAmount: "15.00"
+ *                     currencyEquivalent: "1.50"
+ *                     coinToCurrencyRate: "10.000000"
+ *                     adViewCountId: 77777777-7777-4777-8777-777777777777
+ *                     treasureBoxRewardAllocationId: null
+ *                     userCoinLotId: null
+ *                     sellerReturnTransactionId: null
+ *                     idempotencyKey: view-funded:77777777-7777-4777-8777-777777777777
+ *                     metadata: null
+ *                     createdAt: "2026-09-13T01:05:00.000Z"
+ *       '403':
+ *         description: The authenticated account does not own this advertisement.
+ *       '404':
+ *         description: Funding account not found.
+ *       '409':
+ *         description: Coin ledger is not enabled.
+ */
+router.get(
+  "/:id/coin-ledger",
+  isAuth,
+  validateZod({ params: adminValidation.advertisement.idParams }),
+  AdvertisementController.getAdvertisementCoinLedger,
 );
 
 /**
@@ -520,14 +1088,23 @@ router.get(
  *         application/json:
  *           schema:
  *             type: object
- *             required: [amount]
+ *             required: [amount, idempotencyKey]
  *             properties:
  *               amount:
- *                 type: number
- *                 description: The amount to add to the advertisement's balance.
+ *                 oneOf: [{ type: string }, { type: number }]
+ *                 example: "200.00"
+ *                 description: Positive TWD amount with at most two decimal places. The same amount is debited from the product seller's account wallet.
+ *               idempotencyKey:
+ *                 type: string
+ *                 minLength: 8
+ *                 maxLength: 200
+ *                 example: fund-ad-20260916-0001
+ *               metadata:
+ *                 type: object
+ *                 additionalProperties: true
  *     responses:
  *       '200':
- *         description: The updated advertisement budget and status details.
+ *         description: The updated advertisement budget plus linked wallet and ledger transactions. Decimal wallet values are strings. A depleted ad is automatically reactivated only when its new balance reaches the configured minimum; paused ads remain paused.
  *         content:
  *           application/json:
  *             schema:
@@ -536,7 +1113,23 @@ router.get(
  *                 success:
  *                   type: boolean
  *                 data:
- *                   $ref: '#/components/schemas/AdvertisementBudgetStatus'
+ *                   allOf:
+ *                     - $ref: '#/components/schemas/AdvertisementBudgetStatus'
+ *                     - type: object
+ *                       properties:
+ *                         wallet: { $ref: '#/components/schemas/AccountWallet' }
+ *                         walletTransaction: { $ref: '#/components/schemas/AccountWalletTransaction' }
+ *                         advertisementTransaction:
+ *                           type: object
+ *                           properties:
+ *                             type: { type: string, example: wallet_funding }
+ *                             amount: { type: number, example: 200 }
+ *                             balanceBefore: { type: string, example: "0.00" }
+ *                             balanceAfter: { type: string, example: "200.00" }
+ *                         idempotentReplay: { type: boolean, example: false }
+ *       '403': { description: Only the owning seller or a platform administrator may fund the ad. }
+ *       '409': { description: Insufficient wallet balance, inactive seller, archived/closed ad, or idempotency conflict. }
+ *       '503': { description: Wallet-based advertisement funding is disabled during rollout. }
  */
 router.put(
   "/deposit/:id",
@@ -550,10 +1143,50 @@ router.put(
 
 /**
  * @swagger
+ * /api/admin/advertisement/budget/{id}:
+ *   put:
+ *     tags: [Advertisement]
+ *     summary: Increase or set an advertisement budget
+ *     description: increase funds the requested amount. set may only keep or raise the current balance and funds the difference. decrease and set-lower return 409 because funded ad money cannot be withdrawn.
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [operation, amount, idempotencyKey]
+ *             properties:
+ *               operation: { type: string, enum: [increase, decrease, set] }
+ *               amount: { oneOf: [{ type: string }, { type: number }], example: "200.00" }
+ *               idempotencyKey: { type: string, minLength: 8, maxLength: 200 }
+ *               metadata: { type: object, additionalProperties: true }
+ *     responses:
+ *       '200': { description: Updated ad budget and wallet ledger links. }
+ *       '409': { description: Insufficient wallet balance, idempotency conflict, decrease, or set-lower. }
+ */
+router.put(
+  "/budget/:id",
+  isAuth,
+  validateZod({
+    params: adminValidation.advertisement.idParams,
+    body: adminValidation.advertisement.budgetBody,
+  }),
+  AdvertisementController.adjustAdBudget,
+);
+
+/**
+ * @swagger
  * /api/admin/advertisement/status/{id}:
  *   put:
  *     tags: [Advertisement]
  *     summary: Update advertisement status
+ *     description: Only the owning seller or a platform admin may change the status. Activation additionally requires an active product, an active variant with stock greater than reserve, and sufficient advertisement balance.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -587,6 +1220,10 @@ router.put(
  *                   type: boolean
  *                 data:
  *                   $ref: '#/components/schemas/AdvertisementBudgetStatus'
+ *       '403':
+ *         description: The caller is neither the owning seller nor a platform admin.
+ *       '409':
+ *         description: Activation prerequisites failed, or the advertisement is permanently archived.
  */
 router.put(
   "/status/:id",
@@ -596,6 +1233,141 @@ router.put(
     body: adminValidation.advertisement.statusBody,
   }),
   AdvertisementController.setAdStatus,
+);
+
+/**
+ * @swagger
+ * /api/admin/advertisement/{id}/financial-close:
+ *   post:
+ *     tags: [Advertisement]
+ *     summary: Financially close an archived advertisement
+ *     description: Returns settled seller surplus, writes any remaining platform advance off as promotional expense, and permanently closes the funding account. The archive grace period must have ended and no treasure-box claims may remain.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       '200':
+ *         description: The financially closed advertisement.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/Advertisement'
+ *             example:
+ *               success: true
+ *               data:
+ *                 id: 22222222-2222-4222-8222-222222222222
+ *                 productId: 88888888-8888-4888-8888-888888888888
+ *                 title: Archived campaign
+ *                 description: null
+ *                 video_url: https://example.com/archive-ad.mp4
+ *                 archivedAt: "2026-09-12T00:00:00.000Z"
+ *                 archiveGraceEndsAt: "2026-09-13T00:00:00.000Z"
+ *                 financiallyClosedAt: "2026-09-13T00:05:00.000Z"
+ *                 replacementOfAdvertisementId: null
+ *                 createdAt: "2026-09-01T00:00:00.000Z"
+ *                 updatedAt: "2026-09-13T00:05:00.000Z"
+ *       '403':
+ *         description: The authenticated account does not own this advertisement.
+ *       '404':
+ *         description: Advertisement not found.
+ *       '409':
+ *         description: The ad is not archived, grace is active, claims remain, or the ledger is disabled.
+ */
+router.post(
+  "/:id/financial-close",
+  isAuth,
+  validateZod({ params: adminValidation.advertisement.idParams }),
+  AdvertisementController.financiallyCloseAdvertisement,
+);
+
+/**
+ * @swagger
+ * /api/admin/advertisement/{id}/balance-transfer:
+ *   post:
+ *     tags: [Advertisement]
+ *     summary: Transfer archived ad balance to its replacement
+ *     description: Moves available currency from a financially closed source ad to its direct replacement for the same product and seller. Neither ad is automatically activated. Reusing the same idempotencyKey returns the original transfer.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [destinationAdvertisementId, amount, idempotencyKey]
+ *             properties:
+ *               destinationAdvertisementId:
+ *                 type: string
+ *                 format: uuid
+ *               amount:
+ *                 type: number
+ *                 exclusiveMinimum: 0
+ *               idempotencyKey:
+ *                 type: string
+ *     responses:
+ *       '200':
+ *         description: Immutable balance-transfer record.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/AdvertisementBalanceTransfer'
+ *             example:
+ *               success: true
+ *               data:
+ *                 id: 99999999-9999-4999-8999-999999999999
+ *                 sourceAdvertisementId: 22222222-2222-4222-8222-222222222222
+ *                 destinationAdvertisementId: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+ *                 sourceSellerId: 33333333-3333-4333-8333-333333333333
+ *                 coinAmount: "200.00"
+ *                 coinToCurrencyRate: "10.000000"
+ *                 currencyAmount: "20.00"
+ *                 sourceBalanceBefore: "50.00"
+ *                 sourceBalanceAfter: "30.00"
+ *                 destinationBalanceBefore: "100.00"
+ *                 destinationBalanceAfter: "120.00"
+ *                 idempotencyKey: transfer-archived-ad-20260913-001
+ *                 createdAt: "2026-09-13T02:00:00.000Z"
+ *       '400':
+ *         description: Invalid amount, same source/destination, or insufficient source balance.
+ *       '403':
+ *         description: The authenticated account does not own the source advertisement.
+ *       '404':
+ *         description: Source or destination advertisement not found.
+ *       '409':
+ *         description: Ads are not a valid source/replacement pair.
+ */
+router.post(
+  "/:id/balance-transfer",
+  isAuth,
+  validateZod({
+    params: adminValidation.advertisement.idParams,
+    body: adminValidation.advertisement.balanceTransferBody,
+  }),
+  AdvertisementController.transferArchivedAdvertisementBalance,
 );
 
 export default router;

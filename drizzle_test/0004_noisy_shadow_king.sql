@@ -1,0 +1,3 @@
+CREATE INDEX "advertisement_assignments_status_local_date_idx" ON "advertisement_assignments" USING btree ("status","user_local_date");--> statement-breakpoint
+CREATE INDEX "advertisement_assignments_status_completed_at_idx" ON "advertisement_assignments" USING btree ("status","completed_at");--> statement-breakpoint
+CREATE INDEX "advertisement_assignments_status_updated_at_idx" ON "advertisement_assignments" USING btree ("status","updated_at");

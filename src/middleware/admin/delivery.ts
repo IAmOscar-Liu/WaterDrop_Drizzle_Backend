@@ -1,5 +1,11 @@
 import { z } from "zod";
 import {
+  HOME_DELIVERY_FEE,
+  HOME_DELIVERY_REFRIG_FEE,
+  OKMARTC2C_LOW_TMP_DELIVERY,
+} from "../../constants/delivery";
+import { ECPAY_SHIPPING_FEE } from "../../constants/ecpay";
+import {
   dateTimeString,
   jsonObject,
   nonEmptyString,
@@ -56,13 +62,23 @@ export const deliveryValidation = {
   }),
   shippingFeeBody: requireAtLeastOneField(
     z.object({
-      homeDelivery: nonNegativeNumber.max(60).optional(),
-      homeDeliveryRefrig: nonNegativeNumber.max(160).optional(),
-      OKMART_LOW_TMP_C2C: nonNegativeNumber.max(160).optional(),
-      UNIMARTC2C: nonNegativeNumber.max(69).optional(),
-      FAMIC2C: nonNegativeNumber.max(69).optional(),
-      HILIFEC2C: nonNegativeNumber.max(58).optional(),
-      OKMARTC2C: nonNegativeNumber.max(58).optional(),
+      homeDelivery: nonNegativeNumber.max(HOME_DELIVERY_FEE).optional(),
+      homeDeliveryRefrig: nonNegativeNumber
+        .max(HOME_DELIVERY_REFRIG_FEE)
+        .optional(),
+      OKMART_LOW_TMP_C2C: nonNegativeNumber
+        .max(OKMARTC2C_LOW_TMP_DELIVERY)
+        .optional(),
+      UNIMARTC2C: nonNegativeNumber
+        .max(ECPAY_SHIPPING_FEE.UNIMARTC2C)
+        .optional(),
+      FAMIC2C: nonNegativeNumber.max(ECPAY_SHIPPING_FEE.FAMIC2C).optional(),
+      HILIFEC2C: nonNegativeNumber
+        .max(ECPAY_SHIPPING_FEE.HILIFEC2C)
+        .optional(),
+      OKMARTC2C: nonNegativeNumber
+        .max(ECPAY_SHIPPING_FEE.OKMARTC2C)
+        .optional(),
     }),
   ),
 };

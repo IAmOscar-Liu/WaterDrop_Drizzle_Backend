@@ -2,22 +2,39 @@ import dotenv from "dotenv";
 import path from "path";
 import { defineConfig } from "drizzle-kit";
 
-type EnvType = "local" | "development" | "stg" | "production";
+type EnvType = "test" | "local" | "development" | "stg" | "production";
 
-// Remember to update it when you add a new environment, and also create a corresponding .env file and output directory for it.
-const env = "stg" as EnvType;
+const supportedEnvironments: EnvType[] = [
+  "test",
+  "local",
+  "development",
+  "stg",
+  "production",
+];
+
+const requestedEnv = process.env.DRIZZLE_ENV ?? process.env.NODE_ENV ?? "local";
+if (!supportedEnvironments.includes(requestedEnv as EnvType)) {
+  throw new Error(`Unsupported Drizzle environment: ${requestedEnv}`);
+}
+
+const env = requestedEnv as EnvType;
 const envPath = path.resolve(process.cwd(), `.env.${env}`);
 
 dotenv.config({
   path: envPath,
   override: true,
+  quiet: true,
 });
 
-console.log(`Loaded env from ${envPath}`);
-console.log("DATABASE_URL:", process.env.DATABASE_URL);
+const databaseUrl = process.env.DATABASE_URL;
+if (!databaseUrl) {
+  throw new Error(`DATABASE_URL is missing from ${envPath}`);
+}
 
 const getOutPath = () => {
   switch (env) {
+    case "test":
+      return "./drizzle_test";
     case "local":
       return "./drizzle_local";
     case "development":
@@ -31,11 +48,24 @@ const getOutPath = () => {
   }
 };
 
+if (env === "test") {
+  const databaseName = decodeURIComponent(
+    new URL(databaseUrl).pathname.replace(/^\//, ""),
+  );
+  if (!databaseName.endsWith("_test")) {
+    throw new Error(
+      `Refusing test Drizzle command for non-test database: ${databaseName}`,
+    );
+  }
+}
+
+console.log(`Drizzle environment: ${env}; migrations: ${getOutPath()}`);
+
 export default defineConfig({
   out: getOutPath(),
   schema: "./src/db/schema.ts",
   dialect: "postgresql",
   dbCredentials: {
-    url: process.env.DATABASE_URL!,
+    url: databaseUrl,
   },
 });

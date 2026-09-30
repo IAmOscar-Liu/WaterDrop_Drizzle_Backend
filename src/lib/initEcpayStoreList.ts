@@ -16,7 +16,10 @@ export function ensureEcpayStoreListOnStartup() {
     //   `ecpay-storeList.json not found. Triggering immediate fetch in worker...`,
     // );
 
-    const tsFile = path.resolve(process.cwd(), "src/ecpay-storeList.ts");
+    const tsFile = path.resolve(
+      process.cwd(),
+      "src/scripts/ecpay-storeList.ts",
+    );
     const jsFile = path.resolve(process.cwd(), "dist/ecpay-storeList.js");
     const useTsRunner = !existsSync(jsFile);
 

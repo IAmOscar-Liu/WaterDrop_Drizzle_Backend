@@ -179,7 +179,9 @@ class EcPayService {
     const hexHash = hash.digest("hex");
 
     //最後，轉成大寫
-    console.log(`check value: ${hexHash.toUpperCase()}`);
+    if (process.env.NODE_ENV !== "test") {
+      console.log(`check value: ${hexHash.toUpperCase()}`);
+    }
     return hexHash.toUpperCase();
   }
 

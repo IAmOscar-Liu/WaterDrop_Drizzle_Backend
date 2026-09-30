@@ -13,10 +13,49 @@ import {
   getProductSalesSummary,
   type ListProductsParams,
   type ProductVariantWriteInput,
+  updateCategory,
+  deleteCategory,
+  softDeleteProduct,
+  permanentlyDeleteProduct,
 } from "../repository/product";
 import { ServiceResponse } from "../type/general";
 
 class ProductService {
+  async updateCategory(id: string, name: string, actorAccountId: string) {
+    try {
+      return { success: true as const, data: await updateCategory(id, name, actorAccountId) };
+    } catch (error) {
+      return handleServiceError(error);
+    }
+  }
+
+  async deleteCategory(id: string, actorAccountId: string) {
+    try {
+      return { success: true as const, data: await deleteCategory(id, actorAccountId) };
+    } catch (error) {
+      return handleServiceError(error);
+    }
+  }
+
+  async softDeleteProduct(id: string, actorAccountId: string) {
+    try {
+      return { success: true as const, data: await softDeleteProduct(id, actorAccountId) };
+    } catch (error) {
+      return handleServiceError(error);
+    }
+  }
+
+  async permanentlyDeleteProduct(id: string, actorAccountId: string) {
+    try {
+      return {
+        success: true as const,
+        data: await permanentlyDeleteProduct(id, actorAccountId),
+      };
+    } catch (error) {
+      return handleServiceError(error);
+    }
+  }
+
   async listCategory(): Promise<ServiceResponse<schema.Category[]>> {
     try {
       const categories = await listCategory();
@@ -65,9 +104,10 @@ class ProductService {
 
   async getProductById(
     id: string,
+    requesterId?: string,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof getProductById>>>> {
     try {
-      const product = await getProductById(id);
+      const product = await getProductById(id, requesterId);
       if (product) {
         return { success: true, data: product };
       } else {
@@ -108,11 +148,17 @@ class ProductService {
       categoryIds?: string[];
       variants?: ProductVariantWriteInput[];
     },
+    requesterId?: string,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof createProduct>>>> {
     try {
       const { categoryIds, variants, ...productData } =
         productDataWithCategoryIds;
-      const product = await createProduct(productData, categoryIds, variants);
+      const product = await createProduct(
+        productData,
+        categoryIds,
+        variants,
+        requesterId,
+      );
       return { success: true, data: product };
     } catch (error) {
       // console.error(error);
@@ -126,6 +172,7 @@ class ProductService {
       categoryIds?: string[];
       variants?: ProductVariantWriteInput[];
     },
+    requesterId?: string,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof updateProduct>>>> {
     try {
       const { categoryIds, variants, ...productData } =
@@ -135,6 +182,7 @@ class ProductService {
         productData,
         categoryIds,
         variants,
+        requesterId,
       );
       if (product) {
         return { success: true, data: product };
@@ -155,6 +203,7 @@ class ProductService {
     productId: string;
     startAt?: Date;
     endAt?: Date;
+    requesterId?: string;
   }): Promise<
     ServiceResponse<Awaited<ReturnType<typeof getProductSalesSummary>>>
   > {

@@ -1,5 +1,6 @@
 import {
   and,
+  asc,
   count,
   eq,
   gte,
@@ -17,12 +18,20 @@ import { isPlainObject } from "../lib/general";
 import db from "../lib/initDB";
 import { isAccountAdmin } from "./account";
 import { minimumVariantPrice } from "./utils/product";
+import { isCoinLedgerEnabled } from "../lib/coinAccounting";
+import {
+  allocateOrderCoinsWithTx,
+  consumeOrderReservationsWithTx,
+  releaseOrderReservationsWithTx,
+} from "./coinLedger";
 import {
   compactConditions,
   getPagination,
   getTotalPages,
   PaginationParams,
 } from "./utils/query";
+import { recordAdminActivityWithTx } from "./adminActivity";
+import { resolveAdminSellerScope } from "./adminScope";
 
 type OrderItemWithProductVariant = {
   product?: schema.Product | null;
@@ -108,17 +117,33 @@ export async function createOrder({
       throw new CustomError("Duplicate productVariantId in order items", 400);
     }
 
+    const productMap = new Map<string, schema.Product>();
     const variantMap = new Map<string, schema.ProductVariant>();
 
     if (items.length > 0) {
+      const sortedProductIds = [
+        ...new Set(items.map((item) => item.productId)),
+      ].sort();
       const sortedVariantIds = [
         ...new Set(items.map((item) => item.productVariantId!)),
       ].sort();
+
+      const products = await tx
+        .select()
+        .from(schema.productTable)
+        .where(inArray(schema.productTable.id, sortedProductIds))
+        .orderBy(schema.productTable.id)
+        .for("update");
+
+      products.forEach((product) => {
+        productMap.set(product.id, product);
+      });
 
       const variants = await tx
         .select()
         .from(schema.productVariantTable)
         .where(inArray(schema.productVariantTable.id, sortedVariantIds))
+        .orderBy(schema.productVariantTable.id)
         .for("update");
 
       variants.forEach((variant) => {
@@ -127,6 +152,37 @@ export async function createOrder({
 
       const errors = [];
       for (const item of items) {
+        const product = productMap.get(item.productId);
+        if (!product) {
+          errors.push({
+            productId: item.productId,
+            productVariantId: item.productVariantId,
+            productName: item.productNameAtSale,
+            reason: "Product not found",
+          });
+          continue;
+        }
+
+        if (product.deletedAt) {
+          errors.push({
+            productId: item.productId,
+            productVariantId: item.productVariantId,
+            productName: item.productNameAtSale,
+            reason: "Product deleted",
+          });
+          continue;
+        }
+
+        if (product.status !== "active") {
+          errors.push({
+            productId: item.productId,
+            productVariantId: item.productVariantId,
+            productName: item.productNameAtSale,
+            reason: "Product inactive",
+          });
+          continue;
+        }
+
         const variant = variantMap.get(item.productVariantId!);
         if (!variant || variant.productId !== item.productId) {
           errors.push({
@@ -287,6 +343,11 @@ export async function updateOrderStatus({
   paymentInfo?: schema.NewOrder["paymentInfo"];
 }) {
   return db.transaction(async (tx) => {
+    await tx
+      .select({ id: schema.orderTable.id })
+      .from(schema.orderTable)
+      .where(eq(schema.orderTable.id, orderId))
+      .for("update");
     // First, get the order to access its items and user ID
     const order = await tx.query.orderTable.findFirst({
       where: eq(schema.orderTable.id, orderId),
@@ -310,6 +371,15 @@ export async function updateOrderStatus({
     // If the new status is "paid", remove the corresponding items from the cart
     if (status === "paid") {
       const promises: Promise<any>[] = [];
+      if (
+        isCoinLedgerEnabled() &&
+        order.orderStatus === "payment-processing"
+      ) {
+        Object.assign(
+          coinInfo,
+          await consumeOrderReservationsWithTx(tx, order.id),
+        );
+      }
       if (order.items.length > 0) {
         for (let item of order.items) {
           if (!item.productVariantId) {
@@ -357,6 +427,17 @@ export async function updateOrderStatus({
         order.discountCoin &&
         order.discountCoin > 0
       ) {
+        if (isCoinLedgerEnabled()) {
+          Object.assign(
+            coinInfo,
+            await allocateOrderCoinsWithTx(tx, {
+              orderId: order.id,
+              userId: order.userId,
+              amount: order.discountCoin,
+              mode: "consume",
+            }),
+          );
+        } else {
         // Deduct the used discount coins from the user's balance
         promises.push(
           tx
@@ -406,6 +487,7 @@ export async function updateOrderStatus({
             remainingDiscountCoins -= amountToSpendInThisMonth;
             coinInfo[stat.month] = amountToSpendInThisMonth;
           }
+        }
         }
       }
       await Promise.all(promises);
@@ -437,6 +519,14 @@ export async function updateOrderStatus({
         order.discountCoin &&
         order.discountCoin > 0
       ) {
+        if (isCoinLedgerEnabled()) {
+          await allocateOrderCoinsWithTx(tx, {
+            orderId: order.id,
+            userId: order.userId,
+            amount: order.discountCoin,
+            mode: "reserve",
+          });
+        } else {
         // Deduct the used discount coins from the user's balance
         promises.push(
           tx
@@ -486,6 +576,7 @@ export async function updateOrderStatus({
             remainingDiscountCoins -= amountToSpendInThisMonth;
             coinInfo[stat.month] = amountToSpendInThisMonth;
           }
+        }
         }
       }
       await Promise.all(promises);
@@ -518,6 +609,7 @@ export async function updateOrderStatus({
         }
       }
       if (
+        !isCoinLedgerEnabled() &&
         order.orderStatus === "payment-processing" &&
         isPlainObject(order.coinInfo) &&
         Object.keys(order.coinInfo as Record<string, number>).length > 0
@@ -550,6 +642,15 @@ export async function updateOrderStatus({
             .where(eq(schema.userTable.id, order.userId)),
         );
       }
+      if (
+        isCoinLedgerEnabled() &&
+        order.orderStatus === "payment-processing"
+      ) {
+        await releaseOrderReservationsWithTx(tx, {
+          orderId: order.id,
+          userId: order.userId,
+        });
+      }
       await Promise.all(promises);
     }
 
@@ -570,6 +671,27 @@ export async function updateOrderStatus({
           : {}),
       })
       .where(eq(schema.orderTable.id, orderId));
+
+    if (order.orderStatus !== status) {
+      const sellerIds = [
+        ...new Set(
+          order.items
+            .map((item) => item.product?.sellerId)
+            .filter((sellerId): sellerId is string => Boolean(sellerId)),
+        ),
+      ];
+      await Promise.all(
+        sellerIds.map((sellerId) =>
+          recordAdminActivityWithTx(tx, {
+            sellerId,
+            eventType: "order.status_changed",
+            entityType: "order",
+            entityId: orderId,
+            metadata: { previousStatus: order.orderStatus, status },
+          }),
+        ),
+      );
+    }
 
     return tx.query.orderTable.findFirst({
       where: eq(schema.orderTable.id, orderId),
@@ -597,12 +719,31 @@ export async function updateOrderStatus({
   });
 }
 
-export async function deleteIdempotencyKeys(expireInMs: number) {
+export async function deleteIdempotencyKeys(
+  expireInMs: number,
+  limit = 5_000,
+) {
+  if (!Number.isInteger(limit) || limit <= 0) {
+    throw new Error("Idempotency-key cleanup limit must be a positive integer.");
+  }
   const cutoffTime = new Date(Date.now() - expireInMs);
+  const candidates = await db
+    .select({ id: schema.idempotencyKeyTable.id })
+    .from(schema.idempotencyKeyTable)
+    .where(lt(schema.idempotencyKeyTable.updatedAt, cutoffTime))
+    .orderBy(asc(schema.idempotencyKeyTable.updatedAt))
+    .limit(limit);
+  if (candidates.length === 0) return [];
 
   return db
     .delete(schema.idempotencyKeyTable)
-    .where(lt(schema.idempotencyKeyTable.updatedAt, cutoffTime));
+    .where(
+      inArray(
+        schema.idempotencyKeyTable.id,
+        candidates.map((candidate) => candidate.id),
+      ),
+    )
+    .returning({ id: schema.idempotencyKeyTable.id });
 }
 
 export async function expirePendingOrders(expireInMs: number) {
@@ -649,21 +790,27 @@ export async function expirePaymentProcessingOrders(expireInMs: number) {
 
 export interface ListOrdersParams extends PaginationParams {
   userId: string;
-  statusIn: Exclude<schema.NewOrder["orderStatus"], undefined>[];
   order?: "asc" | "desc";
+  startDate?: string;
+  endDate?: string;
 }
 
 export async function listOrders({
   page = 1,
   limit = 10,
   userId,
-  statusIn,
   order = "desc",
+  startDate,
+  endDate,
 }: ListOrdersParams) {
   const pagination = getPagination(page, limit);
+  const effectiveOrderDate = sql`coalesce(${schema.orderTable.completedAt}, ${schema.orderTable.createdAt})`;
   const whereClause = compactConditions([
-    inArray(schema.orderTable.orderStatus, statusIn),
+    // App order history always includes only these statuses.
+    inArray(schema.orderTable.orderStatus, ["paid", "payment-processing"]),
     eq(schema.orderTable.userId, userId),
+    startDate ? gte(effectiveOrderDate, startDate) : undefined,
+    endDate ? lt(effectiveOrderDate, endDate) : undefined,
   ]);
 
   // Query for total count
@@ -710,9 +857,13 @@ export async function listOrders({
         },
       },
     },
-    orderBy: (orders, { desc, asc }) => [
-      order === "asc" ? asc(orders.createdAt) : desc(orders.createdAt),
-    ],
+    orderBy: (orders, { desc, asc }) => {
+      const sort = order === "asc" ? asc : desc;
+      if (startDate || endDate) {
+        return [sort(effectiveOrderDate), sort(orders.id)];
+      }
+      return [sort(orders.createdAt)];
+    },
   });
 
   return {
@@ -751,8 +902,8 @@ export async function listAdminOrders({
   const pagination = getPagination(page, limit);
   const conditions: (SQL | undefined)[] = [];
 
-  const isAdmin = await isAccountAdmin(accountId);
-  if (!isAdmin) {
+  const scope = await resolveAdminSellerScope(accountId);
+  if (scope.sellerId) {
     // Subquery to find order IDs that contain at least one product from the seller
     const sellerOrderIdsSubquery = db
       .selectDistinct({ orderId: schema.orderItemTable.orderId })
@@ -761,7 +912,7 @@ export async function listAdminOrders({
         schema.productTable,
         eq(schema.orderItemTable.productId, schema.productTable.id),
       )
-      .where(eq(schema.productTable.sellerId, accountId));
+      .where(eq(schema.productTable.sellerId, scope.sellerId));
     conditions.push(inArray(schema.orderTable.id, sellerOrderIdsSubquery));
   }
 

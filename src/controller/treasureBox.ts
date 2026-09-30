@@ -16,7 +16,7 @@ class TreasureBoxController {
     const { advertisementId } = req.body;
     const result = await treasureBoxService.processVideoCompletion({
       userId: req.userId ?? "",
-      advertisementId: advertisementId ? String(advertisementId) : undefined,
+      advertisementId: String(advertisementId),
     });
     sendJsonResponse(res, result);
   }

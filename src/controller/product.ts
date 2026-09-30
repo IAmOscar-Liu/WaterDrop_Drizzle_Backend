@@ -16,6 +16,23 @@ class ProductController {
     sendJsonResponse(res, result);
   }
 
+  async updateCategory(req: RequestWithId, res: Response): Promise<any> {
+    const result = await productService.updateCategory(
+      req.params.id,
+      req.body.name,
+      req.userId ?? "",
+    );
+    sendJsonResponse(res, result);
+  }
+
+  async deleteCategory(req: RequestWithId, res: Response): Promise<any> {
+    const result = await productService.deleteCategory(
+      req.params.id,
+      req.userId ?? "",
+    );
+    sendJsonResponse(res, result);
+  }
+
   async listProducts(req: Request, res: Response): Promise<any> {
     const { page, limit, categoryId, search, minPrice, maxPrice } = req.query;
     const result = await productService.listProducts({
@@ -31,14 +48,29 @@ class ProductController {
   }
 
   async listAdminProducts(req: RequestWithId, res: Response): Promise<any> {
-    const { page, limit, categoryId, search, status, minPrice, maxPrice } =
+    const {
+      page,
+      limit,
+      categoryId,
+      search,
+      status,
+      minPrice,
+      maxPrice,
+      sellerId,
+      includeDeleted,
+    } =
       req.query;
     const result = await productService.listAdminProducts({
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
       categoryId: categoryId ? String(categoryId) : undefined,
       search: search ? String(search) : undefined,
-      sellerId: req.userId ?? "",
+      requesterId: req.userId ?? "",
+      sellerId: sellerId ? String(sellerId) : undefined,
+      includeDeleted:
+        includeDeleted === undefined
+          ? undefined
+          : String(includeDeleted) === "true",
       status: status
         ? (String(status) as ListProductsParams["status"])
         : undefined,
@@ -48,9 +80,9 @@ class ProductController {
     sendJsonResponse(res, result);
   }
 
-  async getProduct(req: Request, res: Response): Promise<any> {
+  async getProduct(req: RequestWithId, res: Response): Promise<any> {
     const { id } = req.params;
-    const result = await productService.getProductById(id);
+    const result = await productService.getProductById(id, req.userId);
     sendJsonResponse(res, result);
   }
 
@@ -60,24 +92,51 @@ class ProductController {
     sendJsonResponse(res, result);
   }
 
-  async createProduct(req: Request, res: Response): Promise<any> {
+  async createProduct(req: RequestWithId, res: Response): Promise<any> {
     const productData = req.body;
-    const result = await productService.createProduct(productData);
+    const result = await productService.createProduct(
+      productData,
+      req.userId ?? "",
+    );
     sendJsonResponse(res, result);
   }
 
-  async updateProduct(req: Request, res: Response): Promise<any> {
+  async updateProduct(req: RequestWithId, res: Response): Promise<any> {
     const { id } = req.params;
     const productData = req.body;
-    const result = await productService.updateProduct(id, productData);
+    const result = await productService.updateProduct(
+      id,
+      productData,
+      req.userId ?? "",
+    );
     sendJsonResponse(res, result);
   }
 
-  async getProductSalesSummary(req: Request, res: Response): Promise<any> {
+  async softDeleteProduct(req: RequestWithId, res: Response): Promise<any> {
+    const result = await productService.softDeleteProduct(
+      req.params.id,
+      req.userId ?? "",
+    );
+    sendJsonResponse(res, result);
+  }
+
+  async permanentlyDeleteProduct(
+    req: RequestWithId,
+    res: Response,
+  ): Promise<any> {
+    const result = await productService.permanentlyDeleteProduct(
+      req.params.id,
+      req.userId ?? "",
+    );
+    sendJsonResponse(res, result);
+  }
+
+  async getProductSalesSummary(req: RequestWithId, res: Response): Promise<any> {
     const { id } = req.params;
     const { startAt, endAt } = req.query;
     const result = await productService.getProductSalesSummary({
       productId: id,
+      requesterId: req.userId,
       startAt: startAt
         ? new Date(typeof startAt === "number" ? startAt : String(startAt))
         : undefined,

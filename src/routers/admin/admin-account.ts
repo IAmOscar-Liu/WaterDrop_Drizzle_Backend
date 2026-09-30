@@ -1,6 +1,7 @@
 import { Router } from "express";
 import AccountController from "../../controller/account";
 import isAuth from "../../middleware/isAuth";
+import isAdmin from "../../middleware/isAdmin";
 import validateZod from "../../middleware/validateZod";
 import { adminValidation } from "../../middleware/admin";
 
@@ -42,6 +43,11 @@ import { adminValidation } from "../../middleware/admin";
  *           type: string
  *           nullable: true
  *           description: The address of the account holder.
+ *         avatar_url:
+ *           type: string
+ *           format: uri
+ *           nullable: true
+ *           description: The account avatar URL.
  *         role:
  *           type: string
  *           enum: [admin, seller, employee]
@@ -63,6 +69,15 @@ import { adminValidation } from "../../middleware/admin";
  *           type: string
  *           format: date-time
  *           description: The date and time the account was last updated.
+ *         deletedAt:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *           description: Employee soft-deletion time.
+ *         deletedByAccountId:
+ *           type: string
+ *           format: uuid
+ *           nullable: true
  *
  *     AccountWithParent:
  *       allOf:
@@ -107,7 +122,7 @@ import { adminValidation } from "../../middleware/admin";
  *               $ref: '#/components/schemas/AccountWithParent'
  *             token:
  *               type: string
- *               description: JWT access token.
+ *               description: Admin JWT access token. It expires after 1 day in local and 1 hour in every other environment.
  *
  *     ErrorResponse:
  *       type: object
@@ -147,7 +162,8 @@ const router = Router();
  * /api/admin/account/register:
  *   post:
  *     tags: [Account]
- *     summary: Register a new admin or seller account
+ *     summary: Register a new seller account
+ *     description: Public registration always creates a seller. Employee accounts must be created through the protected sub-account endpoint.
  *     requestBody:
  *       required: true
  *       content:
@@ -161,6 +177,7 @@ const router = Router();
  *                 example: "John Doe"
  *               realName:
  *                 type: string
+ *                 description: Required ECPay-compatible real name; encoded length 4-10 and no emoji.
  *                 example: "王小明"
  *               email:
  *                 type: string
@@ -169,16 +186,15 @@ const router = Router();
  *               password:
  *                 type: string
  *                 format: password
- *                 example: "password123"
+ *                 description: At least 8 characters with uppercase, lowercase, number, and special character.
+ *                 example: "Password123!"
  *               phone:
  *                 type: string
- *                 example: "123-456-7890"
+ *                 description: Taiwan mobile format, 10 digits beginning with 09.
+ *                 example: "0912345678"
  *               address:
  *                 type: string
  *                 example: "123 Main St, Anytown, USA"
- *               role:
- *                 type: string
- *                 enum: [seller, employee]
  *     responses:
  *       '200':
  *         description: Account created successfully. Returns user info and an access token. A refresh token is set in an HTTP-only cookie.
@@ -300,7 +316,7 @@ router.post("/logout", AccountController.logout);
  *                   properties:
  *                     token:
  *                       type: string
- *                       description: A new JWT access token.
+ *                       description: A new admin JWT access token. It expires after 1 day in local and 1 hour in every other environment.
  *       '401':
  *         description: Unauthorized (e.g., no refresh token provided).
  *       '403':
@@ -357,6 +373,7 @@ router.get("/me", isAuth, AccountController.getCurrentUser);
  *                 type: string
  *               realName:
  *                 type: string
+ *                 description: ECPay-compatible real name; encoded length 4-10 and no emoji.
  *               email:
  *                 type: string
  *                 format: email
@@ -364,6 +381,17 @@ router.get("/me", isAuth, AccountController.getCurrentUser);
  *                 type: string
  *               address:
  *                 type: string
+ *               avatarUrl:
+ *                 type: string
+ *                 format: uri
+ *                 nullable: true
+ *                 description: Preferred avatar request field. Send null to clear it. avatar_url is also accepted for backward compatibility.
+ *               avatar_url:
+ *                 type: string
+ *                 format: uri
+ *                 nullable: true
+ *                 deprecated: true
+ *                 description: Backward-compatible alias for avatarUrl.
  *               role:
  *                 type: string
  *                 enum: [seller, employee]
@@ -515,6 +543,24 @@ router.get("/list-employees", isAuth, AccountController.listAccountEmployees);
  *           type: string
  *           enum: [active, inactive, banned]
  *         description: Filter accounts by status.
+ *       - in: query
+ *         name: sellerId
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Filter employee accounts whose account-group parent is this seller. Alias of parentId.
+ *       - in: query
+ *         name: accountGroupId
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Filter accounts directly assigned to this account group.
+ *       - in: query
+ *         name: parentId
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Filter employee accounts whose account-group parent is this account. If sellerId is also supplied, both values must match.
  *     responses:
  *       '200':
  *         description: A paginated list of accounts.
@@ -527,13 +573,76 @@ router.get("/list-employees", isAuth, AccountController.listAccountEmployees);
  *                   type: boolean
  *                 data:
  *                   $ref: '#/components/schemas/ListAccountsResponse'
+ *       '403':
+ *         description: Only a platform admin account may list accounts.
  *
  */
 router.get(
   "/list",
   isAuth,
+  isAdmin,
   validateZod({ query: adminValidation.account.listQuery }),
   AccountController.listAccounts,
+);
+
+/**
+ * @swagger
+ * /api/admin/account/sub-account:
+ *   post:
+ *     tags: [Account]
+ *     summary: Create an employee sub-account
+ *     description: Sellers create an employee under themselves. Platform admins must provide parentId for an active seller. Employees cannot call this endpoint. A zero-balance wallet is created atomically.
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, realName, email, password, phone]
+ *             properties:
+ *               parentId: { type: string, format: uuid, description: Required only for a platform-admin caller. }
+ *               name: { type: string }
+ *               realName: { type: string }
+ *               email: { type: string, format: email }
+ *               password: { type: string, format: password }
+ *               phone: { type: string, example: "0912345678" }
+ *               address: { type: string }
+ *     responses:
+ *       '200': { description: Employee and wallet created. }
+ *       '403': { description: Employee caller or cross-seller request. }
+ *       '409': { description: Email already exists. }
+ */
+router.post(
+  "/sub-account",
+  isAuth,
+  validateZod({ body: adminValidation.account.subAccountCreateBody }),
+  AccountController.createSubAccount,
+);
+
+/**
+ * @swagger
+ * /api/admin/account/{id}:
+ *   delete:
+ *     tags: [Account]
+ *     summary: Soft-delete an employee sub-account
+ *     description: The owning seller or a platform admin may deactivate an employee. Existing tokens are rejected immediately; history and wallet records remain.
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       '200': { description: Employee was deactivated. }
+ *       '403': { description: Caller does not own the employee. }
+ *       '409': { description: Target is not an employee. }
+ */
+router.delete(
+  "/:id",
+  isAuth,
+  validateZod({ params: adminValidation.account.idParams }),
+  AccountController.deleteSubAccount,
 );
 
 /**
