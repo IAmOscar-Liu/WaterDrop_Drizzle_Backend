@@ -7,18 +7,22 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
-type SuiteName = "all" | "api" | "coin-ledger" | "cron" | "order-date-filter";
+type SuiteName = "all" | "api" | "coin-ledger" | "cron" | "order-date-filter" | "chatroom-auth" | "refund-auth";
 
 const suiteCommands: Record<SuiteName, string[]> = {
   all: [
     "_test:coin-accounting",
     "_test:api",
     "_test:order-date-filter",
+    "_test:chatroom-auth",
+    "_test:refund-auth",
     "_test:account-wallet",
     "_test:coin-ledger",
     "_test:cron",
   ],
   api: ["_test:api"],
+  "refund-auth": ["_test:refund-auth"],
+  "chatroom-auth": ["_test:chatroom-auth"],
   "order-date-filter": ["_test:order-date-filter"],
   "coin-ledger": ["_test:coin-ledger"],
   cron: ["_test:cron"],
@@ -81,7 +85,7 @@ async function main() {
   const requestedSuite = process.argv[2] ?? "all";
   if (!(requestedSuite in suiteCommands)) {
     throw new Error(
-      `Unknown suite "${requestedSuite}". Use all, api, coin-ledger, cron, or order-date-filter.`,
+      `Unknown suite "${requestedSuite}". Use all, api, coin-ledger, cron, order-date-filter, chatroom-auth, or refund-auth.`,
     );
   }
   const suite = requestedSuite as SuiteName;

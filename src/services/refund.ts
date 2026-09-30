@@ -2,8 +2,7 @@ import { handleServiceError } from "../lib/error";
 import { generateRefundCreatedEmailHtml } from "../lib/mailTemplate";
 import { sendEmail } from "../lib/sendGrid";
 import { sendMulticastPushNotification } from "../lib/sendNotification";
-import { isAccountAdmin } from "../repository/account";
-import { findOrCreateChatRoom, sendChatMessage } from "../repository/chatroom";
+import { findOrCreateChatRoom, sendSystemChatMessage } from "../repository/chatroom";
 import { createNotification } from "../repository/notification";
 import {
   canRefund as canRefundOrderItem,
@@ -44,10 +43,9 @@ async function sendRefundCreatedChatMessage({
     throw new Error("Chat room could not be created");
   }
 
-  await sendChatMessage({
+  await sendSystemChatMessage({
     chatRoomId: chatRoom.id,
-    senderType:
-      senderType ?? ((await isAccountAdmin(accountId)) ? "admin" : "seller"),
+    senderType,
     content,
   });
 }
@@ -223,9 +221,10 @@ class RefundService {
 
   async getRefundById(
     refundItemId: string,
+    accountId: string,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof getRefundById>>>> {
     try {
-      const refund = await getRefundById(refundItemId);
+      const refund = await getRefundById(refundItemId, accountId);
       if (!refund) {
         return {
           success: false,
@@ -268,7 +267,7 @@ class RefundService {
   async updateRefundItemStatus(
     refundItemId: string,
     updates: Parameters<typeof updateRefundItemStatus>[1],
-    actorAccountId?: string,
+    actorAccountId: string,
   ): Promise<
     ServiceResponse<
       Awaited<ReturnType<typeof updateRefundItemStatus>>["refundItem"]

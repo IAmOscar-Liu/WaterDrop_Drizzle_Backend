@@ -253,6 +253,7 @@ const router = Router();
  *   get:
  *     tags: [Refund]
  *     summary: List refund items
+ *     description: Platform admins see all matching refunds. Sellers see their own products; employees have read-only access within their parent seller scope.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -297,6 +298,10 @@ const router = Router();
  *           type: string
  *           enum: [pending, processing, completed, cancelled]
  *     responses:
+ *       '401':
+ *         description: Missing or invalid bearer token.
+ *       '403':
+ *         description: Account is inactive or deleted, seller scope is unavailable, or an employee attempted a write.
  *       '200':
  *         description: A paginated list of refund items.
  *         content:
@@ -322,6 +327,7 @@ router.get(
  *   get:
  *     tags: [Refund]
  *     summary: Get a refund item by ID
+ *     description: Platform admins can read all refunds. Sellers and seller employees can read only refunds for their seller products. Missing or out-of-scope refunds return 404.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -332,6 +338,12 @@ router.get(
  *           type: string
  *           format: uuid
  *     responses:
+ *       '401':
+ *         description: Missing or invalid bearer token.
+ *       '403':
+ *         description: Account is inactive or deleted, seller scope is unavailable, or an employee attempted a write.
+ *       '404':
+ *         description: Refund item does not exist or belongs to another seller.
  *       '200':
  *         description: The refund item.
  *         content:
@@ -357,7 +369,7 @@ router.get(
  *   post:
  *     tags: [Refund]
  *     summary: Create a refund item
- *     description: A successful request automatically creates an initial pending refund log with message 申請退貨, then sends the user a fire-and-forget push notification and email linked to the order detail page. paidRefundAmount plus extraRefundAmount is rounded down to whole TWD in cashRefundAmount; the fractional TWD remainder is exposed as cashRemainderCoins at NT$1 = 10 coins and is credited only when the refund completes.
+ *     description: Only active platform admins and sellers can create refunds; sellers are limited to their own products and employees receive 403. Ownership is derived from the order item product, not client accountId. A successful request automatically creates an initial pending refund log with message 申請退貨, then sends the user a fire-and-forget push notification and email linked to the order detail page. paidRefundAmount plus extraRefundAmount is rounded down to whole TWD in cashRefundAmount; the fractional TWD remainder is exposed as cashRemainderCoins at NT$1 = 10 coins and is credited only when the refund completes.
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -389,6 +401,10 @@ router.get(
  *                 type: object
  *                 nullable: true
  *     responses:
+ *       '401':
+ *         description: Missing or invalid bearer token.
+ *       '403':
+ *         description: Account is inactive or deleted, seller scope is unavailable, or an employee attempted a write.
  *       '200':
  *         description: The created refund item.
  *         content:
@@ -423,7 +439,7 @@ router.get(
  *       '400':
  *         description: Invalid quantity, refund amount, order, or delivery state.
  *       '404':
- *         description: Order item, order, or product not found.
+ *         description: Order item, order, or product not found, or the product belongs to another seller.
  */
 router.post(
   "/",
@@ -438,7 +454,7 @@ router.post(
  *   patch:
  *     tags: [Refund]
  *     summary: Update refund item
- *     description: Status, quantity, refundAmount, reason, note, extraRefundAmount, and metadata are mutable. Message is independent from the refund note and is used only for refund logs. A log is appended only when status actually changes or the provided message differs from the latest log message. An actual status change triggers a fire-and-forget push notification linked to order detail; message-only and other field updates do not notify, and status changes do not send email. Quantity, refundAmount, and extraRefundAmount can only be changed while the current refund status is pending or processing. Completed and cancelled statuses are terminal and cannot transition to another status. Completion credits cashRemainderCoins as a product-seller-funded coin lot that expires at the end of the next month in the user's timezone.
+ *     description: Only active platform admins and sellers can update refunds; sellers are limited to their own products and employees receive 403. These checks apply to every field, log-only updates, and no-op requests. Status, quantity, refundAmount, reason, note, extraRefundAmount, and metadata are mutable. Message is independent from the refund note and is used only for refund logs. A log is appended only when status actually changes or the provided message differs from the latest log message. An actual status change triggers a fire-and-forget push notification linked to order detail; message-only and other field updates do not notify, and status changes do not send email. Quantity, refundAmount, and extraRefundAmount can only be changed while the current refund status is pending or processing. Completed and cancelled statuses are terminal and cannot transition to another status. Completion credits cashRemainderCoins as a product-seller-funded coin lot that expires at the end of the next month in the user's timezone.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -482,6 +498,10 @@ router.post(
  *                 type: object
  *                 nullable: true
  *     responses:
+ *       '401':
+ *         description: Missing or invalid bearer token.
+ *       '403':
+ *         description: Account is inactive or deleted, seller scope is unavailable, or an employee attempted a write.
  *       '200':
  *         description: The updated refund item.
  *         content:
@@ -527,7 +547,7 @@ router.post(
  *       '400':
  *         description: Invalid transition, quantity, or refund amount.
  *       '404':
- *         description: Refund item, order item, order, product, or user not found.
+ *         description: Refund item, order item, order, product, or user not found, or the refund belongs to another seller.
  *       '503':
  *         description: Coin ledger is required to complete a fractional-cash refund.
  */

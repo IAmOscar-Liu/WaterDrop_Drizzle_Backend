@@ -2,6 +2,7 @@ import * as schema from "../db/schema";
 import { handleServiceError } from "../lib/error";
 import { sendMulticastPushNotification } from "../lib/sendNotification";
 import {
+  ChatroomActor,
   findOrCreateChatRoom,
   getChatHistory,
   GetChatHistoryParams,
@@ -36,9 +37,10 @@ class ChatroomService {
 
   async getChatRoomById(
     chatRoomId: string,
+    actor: ChatroomActor,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof getChatRoomById>>>> {
     try {
-      const chatRoom = await getChatRoomById(chatRoomId);
+      const chatRoom = await getChatRoomById(chatRoomId, actor);
       if (chatRoom) {
         return { success: true, data: chatRoom };
       } else {
@@ -54,6 +56,7 @@ class ChatroomService {
   }
 
   async sendMessage(input: {
+    actor: ChatroomActor;
     chatRoomId: string;
     senderType: schema.ChatMessage["senderType"];
     content: string;
@@ -81,7 +84,7 @@ class ChatroomService {
     input: Parameters<typeof sendChatMessage>[0],
   ) {
     try {
-      const chatroom = await getChatRoomById(input.chatRoomId);
+      const chatroom = await getChatRoomById(input.chatRoomId, input.actor);
       if (!chatroom) throw new Error("Chat room not found");
       if (!chatroom.product) throw new Error("Product not found in chat room");
 
@@ -129,14 +132,16 @@ class ChatroomService {
   }
 
   async markMessagesAsRead({
+    actor,
     chatRoomId,
     readerType,
   }: {
+    actor: ChatroomActor;
     chatRoomId: string;
     readerType: schema.ChatMessage["senderType"];
   }): Promise<ServiceResponse<Awaited<ReturnType<typeof markMessagesAsRead>>>> {
     try {
-      const updatedMessages = await markMessagesAsRead(chatRoomId, readerType);
+      const updatedMessages = await markMessagesAsRead(chatRoomId, readerType, actor);
       return { success: true, data: updatedMessages };
     } catch (error) {
       return handleServiceError(error);

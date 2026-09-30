@@ -19,6 +19,25 @@ All endpoints require bearer authentication.
 
 The update endpoint is `PATCH`, not `PUT`.
 
+## Authorization
+
+The authorization fix is implemented locally and is not yet deployed. It requires no schema migration.
+
+| Account | List and detail | Create and update refunds |
+| --- | --- | --- |
+| Active platform admin | All refunds | All products |
+| Active seller | Their own products | Their own products only |
+| Seller employee | Their active parent seller's products | Not allowed (`403`) |
+| Inactive or deleted account | Not allowed | Not allowed |
+
+Ownership comes from the purchased order item's product `sellerId`, including when one order contains products from multiple sellers. The authenticated token identifies the actor. Request body `accountId`, `actor`, or role fields cannot override permissions. A foreign refund/detail or seller write against another seller's product returns `404`; authentication/account failures retain `401`/`403`.
+
+Write authorization is checked inside the transaction before any refund mutation, log, stock return, or coin change. It also applies to unchanged status requests, note/message-only updates, cancellation, and completion. Existing app users can still submit a pending refund request for their own order items through `/api/refund`; they cannot use the admin endpoint to process or complete refunds. The app's legacy `accountId` must match the product seller.
+
+Automatic refund chat messages now use the product seller as the room recipient, with message role derived from the actor (`user`, `seller`, or `admin`). Admin-created refunds therefore use the seller's customer room without assigning the admin as that product's seller. Chat delivery remains asynchronous after the refund commit.
+
+Validation: `npm run build`, `npm run test:refund-auth`, `npm run test:api`, and `npm run test:chatroom-auth`. The dedicated refund test uses a disposable PostgreSQL database and covers role/ownership denials, no side effects on rejection, mixed-seller orders, successful completion, and actual user/seller/admin refund chat messages.
+
 ## Important Business Rules
 
 - A refund belongs to one purchased `orderItem`.
@@ -391,8 +410,9 @@ Returns refund items newest first.
 | `endAt` | ISO date-time | No | Inclusive refund `createdAt` upper bound |
 | `status` | `RefundStatus` | No | Exact status filter |
 
-Admin accounts see all matching refunds. Any non-admin authenticated account is
-scoped to products whose `sellerId` matches that account.
+Admin accounts see all matching refunds. Sellers are scoped to products whose
+`sellerId` matches their account; employees have read-only access scoped to
+their active parent seller.
 
 ### Response
 

@@ -22,7 +22,6 @@ import {
   roundToTwoDecimals,
 } from "../lib/general";
 import db from "../lib/initDB";
-import { isAccountAdmin } from "./account";
 import { minimumVariantPrice } from "./utils/product";
 import { isCoinLedgerEnabled } from "../lib/coinAccounting";
 import {
@@ -40,8 +39,44 @@ import {
 import { recordAdminActivityWithTx } from "./adminActivity";
 import { resolveAdminSellerScope } from "./adminScope";
 
+export type RefundActor =
+  | { kind: "user"; id: string }
+  | { kind: "account"; id: string };
+
+type RefundTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type RefundWriteScope = {
+  userId?: string;
+  sellerId?: string;
+  senderType: schema.ChatMessage["senderType"];
+};
+
+async function getRefundWriteScope(
+  tx: RefundTransaction,
+  actor: RefundActor,
+): Promise<RefundWriteScope> {
+  if (!actor.id) throw new CustomError("Unauthorized", 401);
+  if (actor.kind === "user") {
+    const [user] = await tx.select({ id: schema.userTable.id })
+      .from(schema.userTable).where(eq(schema.userTable.id, actor.id));
+    if (!user) throw new CustomError("Unauthorized", 401);
+    return { userId: user.id, senderType: "user" };
+  }
+  const [account] = await tx.select().from(schema.accountTable)
+    .where(eq(schema.accountTable.id, actor.id)).for("share");
+  if (!account || account.status !== "active" || account.deletedAt) {
+    throw new CustomError("Account is inactive or no longer available", 403);
+  }
+  if (account.role !== "admin" && account.role !== "seller") {
+    throw new CustomError("Only admins and sellers can manage refunds", 403);
+  }
+  return {
+    sellerId: account.role === "seller" ? account.id : undefined,
+    senderType: account.role,
+  };
+}
+
 export interface GetRefundListParams extends PaginationParams {
-  accountId?: string;
+  accountId: string;
   userId?: string;
   productId?: string;
   merchantTradeNo?: string;
@@ -56,7 +91,7 @@ export type RefundCreatedChatMessageInput = {
   productId: string;
   productVariantId: string;
   orderId: string;
-  senderType?: schema.ChatMessage["senderType"];
+  senderType: schema.ChatMessage["senderType"];
   content: string;
 };
 
@@ -139,7 +174,7 @@ function getRefundFilters({
   startAt,
   endAt,
   status,
-}: Omit<GetRefundListParams, "page" | "limit">) {
+}: Omit<GetRefundListParams, "page" | "limit" | "accountId">) {
   const conditions: SQL[] = [];
 
   if (userId) {
@@ -382,7 +417,7 @@ export async function getRefundList({
   startAt,
   endAt,
   status,
-}: GetRefundListParams = {}) {
+}: GetRefundListParams) {
   const pagination = getPagination(page, limit);
   const whereClause = getRefundFilters({
     userId,
@@ -391,9 +426,8 @@ export async function getRefundList({
     endAt,
     status,
   });
-  const resolvedScope = accountId
-    ? await resolveAdminSellerScope(accountId)
-    : undefined;
+  if (!accountId) throw new CustomError("Unauthorized", 401);
+  const resolvedScope = await resolveAdminSellerScope(accountId);
   const sellerScope = resolvedScope?.sellerId
     ? eq(schema.productTable.sellerId, resolvedScope.sellerId)
     : undefined;
@@ -455,26 +489,29 @@ export async function getRefundList({
   };
 }
 
-export async function getRefundById(refundItemId: string) {
-  const [[row], logs] = await Promise.all([
-    getRefundBaseQuery().where(eq(schema.refundItemTable.id, refundItemId)),
-    db.query.refundLogTable.findMany({
-      where: eq(schema.refundLogTable.refundItemId, refundItemId),
-      orderBy: (logs, { desc }) => [desc(logs.createdAt)],
-    }),
-  ]);
-
-  return row ? { ...formatRefundRow(row), logs } : undefined;
+export async function getRefundById(refundItemId: string, accountId: string) {
+  if (!accountId) throw new CustomError("Unauthorized", 401);
+  const scope = await resolveAdminSellerScope(accountId);
+  const [row] = await getRefundBaseQuery().where(and(
+    eq(schema.refundItemTable.id, refundItemId),
+    scope.sellerId ? eq(schema.productTable.sellerId, scope.sellerId) : undefined,
+  ));
+  if (!row) return undefined;
+  const logs = await db.query.refundLogTable.findMany({
+    where: eq(schema.refundLogTable.refundItemId, refundItemId),
+    orderBy: (logs, { desc }) => [desc(logs.createdAt)],
+  });
+  return { ...formatRefundRow(row), logs };
 }
 
 export async function createRefundWithChatContext(
   item: schema.NewRefundItem & {
     accountId?: string;
-    userId?: string;
-    chatSenderType?: schema.ChatMessage["senderType"];
+    actor: RefundActor;
   },
 ) {
   const result = await db.transaction(async (tx) => {
+    const scope = await getRefundWriteScope(tx, item.actor);
     // 1. Lock the order item so concurrent refunds cannot over-refund it.
     const [orderItem] = await tx
       .select()
@@ -494,6 +531,24 @@ export async function createRefundWithChatContext(
         }),
         400,
       );
+    }
+
+    const [product] = await tx
+      .select()
+      .from(schema.productTable)
+      .where(eq(schema.productTable.id, orderItem.productId))
+      .for("update");
+
+    if (!product) {
+      throw new CustomError("Product not found", 404);
+    }
+
+    if (scope.sellerId && product.sellerId !== scope.sellerId) {
+      throw new CustomError("Order item not found", 404);
+    }
+    // The app's legacy accountId is a recipient hint, never the acting account.
+    if (scope.userId && item.accountId && item.accountId !== product.sellerId) {
+      throw new CustomError("Account does not match the product seller", 400);
     }
 
     const errors = [];
@@ -518,7 +573,7 @@ export async function createRefundWithChatContext(
       });
     }
 
-    if (item.userId && order && order.userId !== item.userId) {
+    if (scope.userId && order && order.userId !== scope.userId) {
       errors.push({
         orderItemId: item.orderItemId,
         reason: "Order item does not belong to user",
@@ -593,16 +648,6 @@ export async function createRefundWithChatContext(
       throw new CustomError("Order not found", 404);
     }
 
-    const [product] = await tx
-      .select()
-      .from(schema.productTable)
-      .where(eq(schema.productTable.id, orderItem.productId))
-      .for("update");
-
-    if (!product) {
-      throw new CustomError("Product not found", 404);
-    }
-
     // 7. Fill the default refund amount from the original unit sale price.
     const refundFinancials = calculateRefundFinancials(
       order,
@@ -641,7 +686,7 @@ export async function createRefundWithChatContext(
       message: "申請退貨",
     });
 
-    if (item.accountId && !orderItem.productVariantId) {
+    if (!orderItem.productVariantId) {
       throw new CustomError("Order item productVariantId is required", 400);
     }
 
@@ -658,27 +703,25 @@ export async function createRefundWithChatContext(
         variantName: orderItem.variantNameAtSale,
         status: newRefundItem.status,
       } satisfies RefundNotificationContext,
-      chatMessageInput: item.accountId
-        ? {
-            accountId: item.accountId,
-            userId: item.userId ?? order.userId,
-            productId: orderItem.productId,
-            productVariantId: productVariantId!,
-            orderId: orderItem.orderId,
-            senderType: item.chatSenderType,
-            content: formatRefundChatMessage({
-              createdAt: newRefundItem.createdAt,
-              productName: product.name,
-              variantName: orderItem.variantNameAtSale,
-              quantity: newRefundItem.quantity,
-              cashRefundAmount: newRefundItem.cashRefundAmount,
-              cashRemainderCoins: newRefundItem.cashRemainderCoins,
-              coins: newRefundItem.coins,
-              reason: newRefundItem.reason,
-              note: newRefundItem.note,
-            }),
-          }
-        : undefined,
+      chatMessageInput: {
+        accountId: product.sellerId,
+        userId: order.userId,
+        productId: orderItem.productId,
+        productVariantId: productVariantId!,
+        orderId: orderItem.orderId,
+        senderType: scope.senderType,
+        content: formatRefundChatMessage({
+          createdAt: newRefundItem.createdAt,
+          productName: product.name,
+          variantName: orderItem.variantNameAtSale,
+          quantity: newRefundItem.quantity,
+          cashRefundAmount: newRefundItem.cashRefundAmount,
+          cashRemainderCoins: newRefundItem.cashRemainderCoins,
+          coins: newRefundItem.coins,
+          reason: newRefundItem.reason,
+          note: newRefundItem.note,
+        }),
+      },
     };
   });
 
@@ -761,9 +804,10 @@ export async function updateRefundItemStatus(
     extraRefundAmount?: number;
     metadata?: schema.RefundItem["metadata"];
   },
-  actorAccountId?: string,
+  actorAccountId: string,
 ) {
   return db.transaction(async (tx) => {
+    const scope = await getRefundWriteScope(tx, { kind: "account", id: actorAccountId });
     // 1. Lock the refund item so completion side effects can only run once.
     const [refundItem] = await tx
       .select()
@@ -772,6 +816,16 @@ export async function updateRefundItemStatus(
       .for("update");
 
     if (!refundItem) {
+      throw new CustomError("Refund item not found", 404);
+    }
+
+    // Authorize before no-op returns, logs, financial changes, or completion effects.
+    const [ownership] = await tx.select({ sellerId: schema.productTable.sellerId })
+      .from(schema.orderItemTable)
+      .innerJoin(schema.productTable, eq(schema.productTable.id, schema.orderItemTable.productId))
+      .where(eq(schema.orderItemTable.id, refundItem.orderItemId))
+      .for("update");
+    if (!ownership || (scope.sellerId && ownership.sellerId !== scope.sellerId)) {
       throw new CustomError("Refund item not found", 404);
     }
 

@@ -30,6 +30,8 @@ export const refundValidation = {
   refundItemIdParams: z.object({
     refundItemId: uuid,
   }),
+  // The authenticated actor and product ownership are checked in the repository.
+  // Actor, role, and seller scope cannot be supplied by the client.
   createBody: z.object({
     orderItemId: uuid,
     quantity: positiveInt,

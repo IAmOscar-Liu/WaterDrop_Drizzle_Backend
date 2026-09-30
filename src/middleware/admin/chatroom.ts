@@ -8,6 +8,7 @@ import {
 } from "./common";
 
 const chatRoomStatus = z.enum(["active", "inactive"]);
+// Repository authorization additionally requires the role derived from the token.
 const adminMessageSender = z.enum(["admin", "seller"]);
 
 export const chatroomValidation = {
