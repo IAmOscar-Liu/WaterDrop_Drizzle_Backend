@@ -6,6 +6,8 @@ import validateZod from "../../middleware/validateZod";
 import { adminValidation } from "../../middleware/admin";
 
 const router = Router();
+router.get("/:id/budget-withdrawal-preview", isAuth, validateZod({ params: adminValidation.advertisement.idParams }), AdvertisementController.withdrawalPreview);
+router.post("/:id/budget-withdrawal", isAuth, validateZod({ params: adminValidation.advertisement.idParams, body: adminValidation.advertisement.withdrawalBody }), AdvertisementController.withdrawBudget);
 
 /**
  * @swagger
@@ -544,7 +546,7 @@ router.get(
  *   get:
  *     tags: [Advertisement]
  *     summary: List financial and reward metrics for advertisements
- *     description: Seller/employee scope is resolved by the server. Platform admins may filter sellerId. CTR and impressions are intentionally absent because they are not reliably recorded.
+ *     description: Seller/employee scope is resolved by the server. Platform admins may filter sellerId. Each ad includes budgetWithdrawnAmount (lifetime) and periodBudgetWithdrawnAmount (filtered range), exact positive TWD strings for 回收廣告費. Withdrawals are separate from view spend and settlement returns. CTR and impressions are absent because they are not reliably recorded.
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - { in: query, name: page, schema: { type: integer } }
@@ -557,6 +559,28 @@ router.get(
  *     responses:
  *       '200':
  *         description: Paginated ad metrics including completed views, spend, returned/net amounts, funded coins, current balance, and platform advance/expense.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     advertisements:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           budgetWithdrawnAmount: { type: string, example: "300.00", description: Lifetime positive TWD withdrawal total }
+ *                           periodBudgetWithdrawnAmount: { type: string, example: "100.00", description: Positive TWD withdrawal total within startAt/endAt }
+ *                     page: { type: integer }
+ *                     limit: { type: integer }
+ *                     total: { type: integer }
+ *                     totalPages: { type: integer }
+ *                     startAt: { type: string, format: date-time, nullable: true }
+ *                     endAt: { type: string, format: date-time, nullable: true }
  */
 router.get(
   "/metrics",
@@ -1069,42 +1093,35 @@ router.get(
 
 /**
  * @swagger
- * /api/admin/advertisement/deposit/{id}:
+ * /api/admin/advertisement/budget/{id}:
  *   put:
  *     tags: [Advertisement]
  *     summary: Increase advertisement balance
- *     security:
- *       - bearerAuth: []
+ *     description: Canonical balance-funding endpoint; replaces the retired deposit endpoint. increase debits the product seller wallet and credits the ad by the requested amount. Funding requires an active seller, sufficient wallet funds, and an ad that is not archived or financially closed. decrease is accepted as an operation but returns 409 because withdrawals are not supported. set is not accepted and returns 400.
+ *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
- *         schema:
- *           type: string
- *           format: uuid
+ *         schema: { type: string, format: uuid }
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required: [amount, idempotencyKey]
+ *             required: [operation, amount, idempotencyKey]
  *             properties:
- *               amount:
- *                 oneOf: [{ type: string }, { type: number }]
- *                 example: "200.00"
- *                 description: Positive TWD amount with at most two decimal places. The same amount is debited from the product seller's account wallet.
- *               idempotencyKey:
- *                 type: string
- *                 minLength: 8
- *                 maxLength: 200
- *                 example: fund-ad-20260916-0001
- *               metadata:
- *                 type: object
- *                 additionalProperties: true
+ *               operation: { type: string, enum: [increase, decrease] }
+ *               amount: { oneOf: [{ type: string }, { type: number }], example: "200.00", description: Positive TWD amount with at most two decimal places. Increase adds this amount to the advertisement balance. }
+ *               idempotencyKey: { type: string, minLength: 8, maxLength: 200 }
+ *               metadata: { type: object, additionalProperties: true }
  *     responses:
+ *       '400': { description: Invalid operation, amount, idempotency key, or advertisement UUID. }
+ *       '401': { description: Authentication required. }
+ *       '404': { description: Advertisement not found. }
  *       '200':
- *         description: The updated advertisement budget plus linked wallet and ledger transactions. Decimal wallet values are strings. A depleted ad is automatically reactivated only when its new balance reaches the configured minimum; paused ads remain paused.
+ *         description: Updated advertisement balance plus linked wallet and ledger transactions. Decimal wallet values are strings. A depleted ad is automatically reactivated only when its new balance reaches the configured minimum; paused ads remain paused.
  *         content:
  *           application/json:
  *             schema:
@@ -1128,47 +1145,8 @@ router.get(
  *                             balanceAfter: { type: string, example: "200.00" }
  *                         idempotentReplay: { type: boolean, example: false }
  *       '403': { description: Only the owning seller or a platform administrator may fund the ad. }
- *       '409': { description: Insufficient wallet balance, inactive seller, archived/closed ad, or idempotency conflict. }
+ *       '409': { description: Insufficient wallet balance, inactive seller, archived/closed ad, idempotency conflict, or unsupported decrease operation. }
  *       '503': { description: Wallet-based advertisement funding is disabled during rollout. }
- */
-router.put(
-  "/deposit/:id",
-  isAuth,
-  validateZod({
-    params: adminValidation.advertisement.idParams,
-    body: adminValidation.advertisement.depositBody,
-  }),
-  AdvertisementController.depositAdBalance,
-);
-
-/**
- * @swagger
- * /api/admin/advertisement/budget/{id}:
- *   put:
- *     tags: [Advertisement]
- *     summary: Increase or set an advertisement budget
- *     description: increase funds the requested amount. set may only keep or raise the current balance and funds the difference. decrease and set-lower return 409 because funded ad money cannot be withdrawn.
- *     security: [{ bearerAuth: [] }]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: string, format: uuid }
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [operation, amount, idempotencyKey]
- *             properties:
- *               operation: { type: string, enum: [increase, decrease, set] }
- *               amount: { oneOf: [{ type: string }, { type: number }], example: "200.00" }
- *               idempotencyKey: { type: string, minLength: 8, maxLength: 200 }
- *               metadata: { type: object, additionalProperties: true }
- *     responses:
- *       '200': { description: Updated ad budget and wallet ledger links. }
- *       '409': { description: Insufficient wallet balance, idempotency conflict, decrease, or set-lower. }
  */
 router.put(
   "/budget/:id",
@@ -1297,7 +1275,7 @@ router.post(
  *   post:
  *     tags: [Advertisement]
  *     summary: Transfer archived ad balance to its replacement
- *     description: Moves available currency from a financially closed source ad to its direct replacement for the same product and seller. Neither ad is automatically activated. Reusing the same idempotencyKey returns the original transfer.
+ *     description: Moves available currency from a financially closed source ad to its direct replacement for the same product and seller. Neither ad is automatically activated. Reusing the same idempotencyKey and transfer parameters returns the original transfer; a key collision or changed parameters returns 409. Amount must have at most two decimal places. Balances are locked against withdrawal and settlement updates.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -1371,3 +1349,273 @@ router.post(
 );
 
 export default router;
+
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     AdvertisementWithdrawalPreview:
+ *       type: object
+ *       properties:
+ *         advertisementId:
+ *           type: string
+ *           format: uuid
+ *         sellerId:
+ *           type: string
+ *           format: uuid
+ *         eligible:
+ *           type: boolean
+ *         reasons:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               code:
+ *                 type: string
+ *               message:
+ *                 type: string
+ *         balance:
+ *           type: string
+ *           pattern: ^\d+\.\d{2}$
+ *           example: "300.00"
+ *           description: Exact decimal TWD amount; do not parse through floating point for accounting.
+ *         withdrawableAmount:
+ *           type: string
+ *           pattern: ^\d+\.\d{2}$
+ *           example: "300.00"
+ *           description: Exact decimal TWD amount; do not parse through floating point for accounting.
+ *         walletBalance:
+ *           type: string
+ *           pattern: ^\d+\.\d{2}$
+ *           example: "300.00"
+ *           description: Exact decimal TWD amount; do not parse through floating point for accounting.
+ *           nullable: true
+ *         currency:
+ *           type: string
+ *           enum:
+ *             - TWD
+ *         advertisementStatus:
+ *           type: string
+ *           enum:
+ *             - active
+ *             - paused
+ *             - depleted
+ *             - archived
+ *         financiallyClosedAt:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *         confirmationToken:
+ *           type: string
+ *           pattern: ^[a-f0-9]{64}$
+ *           description: >-
+ *             Opaque snapshot token from preview; bound to caller and advertisement. Obtain a new preview after
+ *             any conflict.
+ *     AdvertisementWithdrawalResult:
+ *       type: object
+ *       properties:
+ *         advertisementId:
+ *           type: string
+ *           format: uuid
+ *         mode:
+ *           type: string
+ *           enum:
+ *             - all
+ *             - amount
+ *         withdrawnAmount:
+ *           type: string
+ *           pattern: ^\d+\.\d{2}$
+ *           example: "300.00"
+ *           description: Exact decimal TWD amount; do not parse through floating point for accounting.
+ *         advertisementBalanceBefore:
+ *           type: string
+ *           pattern: ^\d+\.\d{2}$
+ *           example: "300.00"
+ *           description: Exact decimal TWD amount; do not parse through floating point for accounting.
+ *         advertisementBalanceAfter:
+ *           type: string
+ *           pattern: ^\d+\.\d{2}$
+ *           example: "300.00"
+ *           description: Exact decimal TWD amount; do not parse through floating point for accounting.
+ *         walletBalanceBefore:
+ *           type: string
+ *           pattern: ^\d+\.\d{2}$
+ *           example: "300.00"
+ *           description: Exact decimal TWD amount; do not parse through floating point for accounting.
+ *         walletBalanceAfter:
+ *           type: string
+ *           pattern: ^\d+\.\d{2}$
+ *           example: "300.00"
+ *           description: Exact decimal TWD amount; do not parse through floating point for accounting.
+ *         walletId:
+ *           type: string
+ *           format: uuid
+ *         walletTransactionId:
+ *           type: string
+ *           format: uuid
+ *         advertisementTransactionId:
+ *           type: string
+ *           format: uuid
+ *         advertisementStatus:
+ *           type: string
+ *           enum:
+ *             - archived
+ *         financiallyClosedAt:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *         idempotentReplay:
+ *           type: boolean
+ *     AdvertisementWithdrawalRequest:
+ *       oneOf:
+ *         - type: object
+ *           properties:
+ *             mode:
+ *               type: string
+ *               enum:
+ *                 - all
+ *             expectedBalance:
+ *               type: string
+ *               pattern: ^(?:0|[1-9]\d{0,13})(?:\.\d{1,2})?$
+ *               example: "300.00"
+ *               description: Exact decimal TWD amount; do not parse through floating point for accounting.
+ *             confirmationToken:
+ *               type: string
+ *               pattern: ^[a-f0-9]{64}$
+ *               description: >-
+ *                 Opaque snapshot token from preview; bound to caller and advertisement. Obtain a new preview
+ *                 after any conflict.
+ *             idempotencyKey:
+ *               type: string
+ *               minLength: 8
+ *               maxLength: 200
+ *           required:
+ *             - mode
+ *             - expectedBalance
+ *             - confirmationToken
+ *             - idempotencyKey
+ *           additionalProperties: false
+ *         - type: object
+ *           properties:
+ *             mode:
+ *               type: string
+ *               enum:
+ *                 - amount
+ *             expectedBalance:
+ *               type: string
+ *               pattern: ^(?:0|[1-9]\d{0,13})(?:\.\d{1,2})?$
+ *               example: "300.00"
+ *               description: Exact decimal TWD amount; do not parse through floating point for accounting.
+ *             confirmationToken:
+ *               type: string
+ *               pattern: ^[a-f0-9]{64}$
+ *               description: >-
+ *                 Opaque snapshot token from preview; bound to caller and advertisement. Obtain a new preview
+ *                 after any conflict.
+ *             idempotencyKey:
+ *               type: string
+ *               minLength: 8
+ *               maxLength: 200
+ *             amount:
+ *               type: string
+ *               pattern: ^(?:0|[1-9]\d{0,13})(?:\.\d{1,2})?$
+ *               example: "300.00"
+ *               description: Positive amount, at most the confirmed balance; max 14 whole digits.
+ *           required:
+ *             - mode
+ *             - expectedBalance
+ *             - confirmationToken
+ *             - idempotencyKey
+ *             - amount
+ *           additionalProperties: false
+ * /api/admin/advertisement/{id}/budget-withdrawal-preview:
+ *   get:
+ *     tags:
+ *       - Advertisement
+ *     summary: Preview 回收廣告費
+ *     description: >-
+ *       Active owning seller or platform admin. Read-only snapshot; eligibility requires archived, financially
+ *       closed, initialized seller wallet, no demand allocations or outstanding funding-account balances. Legacy
+ *       closed ads without a funding account are allowed. Ineligible valid ads return 200 with reasons.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       "200":
+ *         description: Success
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: "#/components/schemas/AdvertisementWithdrawalPreview"
+ *       "400":
+ *         description: Invalid request shape/decimal format; existing validation envelope (validationErrors).
+ *       "403":
+ *         description: "WITHDRAWAL_FORBIDDEN: active admin or owning seller required; employees prohibited."
+ *       "404":
+ *         description: ADVERTISEMENT_NOT_FOUND
+ *       "409":
+ *         description: >-
+ *           BALANCE_CHANGED, ZERO_BALANCE, INSUFFICIENT_AD_BALANCE, ADVERTISEMENT_NOT_FINANCIALLY_CLOSED,
+ *           IDEMPOTENCY_CONFLICT or WITHDRAWAL_BLOCKED. Failure envelope includes success=false, statusCode,
+ *           message and code.
+ * /api/admin/advertisement/{id}/budget-withdrawal:
+ *   post:
+ *     tags:
+ *       - Advertisement
+ *     summary: Return all or part of a closed ad budget to the owning seller wallet
+ *     description: >-
+ *       Requires archived and financially closed ad. No reactivation or top-up afterwards. Partial withdrawals
+ *       permitted with mode=amount. Ad debit, wallet credit and linked ledgers are atomic. Same
+ *       actor/key/normalized request replays the original result; changed request conflicts. Fresh preview
+ *       needed after balance/ledger changes. Funds go to walletBalance, not revenue or a bank payout. Late
+ *       settlement returns may be withdrawn using a fresh preview.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: "#/components/schemas/AdvertisementWithdrawalRequest"
+ *     responses:
+ *       "200":
+ *         description: Success
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: "#/components/schemas/AdvertisementWithdrawalResult"
+ *       "400":
+ *         description: Invalid request shape/decimal format; existing validation envelope (validationErrors).
+ *       "403":
+ *         description: "WITHDRAWAL_FORBIDDEN: active admin or owning seller required; employees prohibited."
+ *       "404":
+ *         description: ADVERTISEMENT_NOT_FOUND
+ *       "409":
+ *         description: >-
+ *           BALANCE_CHANGED, ZERO_BALANCE, INSUFFICIENT_AD_BALANCE, ADVERTISEMENT_NOT_FINANCIALLY_CLOSED,
+ *           IDEMPOTENCY_CONFLICT or WITHDRAWAL_BLOCKED. Failure envelope includes success=false, statusCode,
+ *           message and code.
+ */

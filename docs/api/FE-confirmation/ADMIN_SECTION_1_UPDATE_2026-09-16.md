@@ -27,7 +27,7 @@ below are under `/api/admin` and require an admin-side bearer token.
 | Delete category | `DELETE /product/categories/:id` | Detaches the category from associated products, preserves those products, and returns `detachedProductCount`. |
 | Soft-delete product | `DELETE /product/:id` | Owner/admin; deactivates variants and pauses non-archived ads. |
 | Permanently delete product | `DELETE /product/:id/permanent` | Platform admin; never-used products only. Blocker counts are included in the `409` message. |
-| Adjust ad budget | `PUT /advertisement/budget/:id` | Supports `increase` and `set` at/above current balance. `decrease` and set-lower return `409 operation_not_supported`. |
+| Adjust ad budget | `PUT /advertisement/budget/:id` | Supports `increase`. `decrease` returns `409 operation_not_supported`. `set` has been removed and returns `400`. |
 | Wallet summary | `GET /account-wallet/me/summary` | Wallet cash-flow summary, not sales revenue. |
 | Admin wallet summary | `GET /account-wallet/:accountId/summary` | Platform admin only. |
 | Dashboard KPI | `GET /dashboard/kpi` | Seller scope, date range, and timezone. |
@@ -43,7 +43,7 @@ Existing wallet operations remain canonical:
 
 - `POST /account-wallet/:accountId/credit` — platform-admin confirmed/manual
   credit;
-- `PUT /advertisement/deposit/:id` — atomic wallet-to-ad funding;
+- `PUT /advertisement/budget/:id` with `operation: "increase"` — atomic wallet-to-ad funding (the deposit endpoint was retired on 2026-10-01);
 - `GET /account-wallet/me/transactions` and
   `GET /account-wallet/:accountId/transactions` — transaction history.
 

@@ -167,6 +167,7 @@ export async function getAccountWalletSummary({
       adminCredits: sql<string>`coalesce(sum(case when ${schema.accountWalletTransactionTable.type} = 'admin_credit' then ${schema.accountWalletTransactionTable.amount} else 0 end), 0)::numeric(18,2)`,
       legacyOpeningCredits: sql<string>`coalesce(sum(case when ${schema.accountWalletTransactionTable.type} = 'legacy_opening_balance' then ${schema.accountWalletTransactionTable.amount} else 0 end), 0)::numeric(18,2)`,
       advertisementFundingDebits: sql<string>`coalesce(sum(case when ${schema.accountWalletTransactionTable.type} = 'advertisement_funding_debit' then ${schema.accountWalletTransactionTable.amount} else 0 end), 0)::numeric(18,2)`,
+      advertisementBudgetReturns: sql<string>`coalesce(sum(case when ${schema.accountWalletTransactionTable.type} = 'advertisement_budget_return' then ${schema.accountWalletTransactionTable.amount} else 0 end), 0)::numeric(18,2)`,
       transactionCount: count(),
     })
     .from(schema.accountWalletTransactionTable)
@@ -176,6 +177,7 @@ export async function getAccountWalletSummary({
     accountId,
     openingBalance: normalizeMoney(openingTransaction?.balanceAfter ?? "0"),
     adminCredits: normalizeMoney(totals.adminCredits),
+    advertisementBudgetReturns: normalizeMoney(totals.advertisementBudgetReturns),
     legacyOpeningCredits: normalizeMoney(totals.legacyOpeningCredits),
     advertisementFundingDebits: normalizeSignedMoney(
       totals.advertisementFundingDebits,

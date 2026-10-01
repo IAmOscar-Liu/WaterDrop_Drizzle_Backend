@@ -98,14 +98,17 @@ Example:
 GET /api/admin/account/list?sellerId=SELLER_UUID&accountGroupId=GROUP_UUID&page=1&limit=20
 ```
 
-## 6. Advertisement wallet/deposit
+## 6. Advertisement wallet funding
 
-Implemented. `PUT /advertisement/deposit/:id` now atomically transfers the
+Updated 2026-10-01: `PUT /advertisement/budget/:id` with `operation: "increase"` atomically transfers the
 requested amount from the product seller's account wallet into the
-advertisement balance. It requires `amount` and `idempotencyKey`; insufficient
+advertisement balance. It requires `operation`, `amount`, and `idempotencyKey`; insufficient
 wallet balance returns `409`. Full wallet, authorization, retry, response, and
 rollout details are documented in
 [ADMIN_ACCOUNT_WALLET_UPDATE_2026-09-16.md](ADMIN_ACCOUNT_WALLET_UPDATE_2026-09-16.md).
+
+The former deposit route is removed; see
+[the retirement guide](ADMIN_ADVERTISEMENT_DEPOSIT_RETIREMENT.md).
 
 ## 7. Advertisement status authorization and prerequisites
 

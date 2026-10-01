@@ -4,6 +4,12 @@ import { sendJsonResponse } from "../lib/general";
 import { RequestWithId } from "../type/request";
 
 class AdvertisementController {
+  async withdrawalPreview(req: RequestWithId, res: Response) {
+    sendJsonResponse(res, await advertisementService.withdrawalPreview(req.params.id, req.userId ?? ""));
+  }
+  async withdrawBudget(req: RequestWithId, res: Response) {
+    sendJsonResponse(res, await advertisementService.withdrawBudget({ ...req.body, advertisementId: req.params.id, requesterId: req.userId ?? "" }));
+  }
   async listMetrics(req: RequestWithId, res: Response): Promise<any> {
     const result = await advertisementService.listMetrics({
       requesterId: req.userId ?? "",
@@ -136,19 +142,6 @@ class AdvertisementController {
       endAt: endAt
         ? new Date(typeof endAt === "number" ? endAt : String(endAt))
         : undefined,
-    });
-    sendJsonResponse(res, result);
-  }
-
-  async depositAdBalance(req: RequestWithId, res: Response): Promise<any> {
-    const { id } = req.params;
-    const { amount, idempotencyKey, metadata } = req.body;
-    const result = await advertisementService.depositAdBalance({
-      advertisementId: id,
-      requesterId: req.userId ?? "",
-      amount,
-      idempotencyKey,
-      metadata,
     });
     sendJsonResponse(res, result);
   }

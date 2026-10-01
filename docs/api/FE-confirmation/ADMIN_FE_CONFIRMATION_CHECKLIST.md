@@ -40,7 +40,7 @@ Swagger `/api-docs` 與
 | 修改密碼         | `PUT /account/change-password`                                                   | 路由已有，本次隨登入流程整組保留，待上述確認後一起切換                                               |
 | 編輯帳號／頭像   | `PUT /account/update`                                                            | 舊端支援`avatarUrl`／`avatar_url`，你這邊更新欄位尚未接收頭像；需確認更新與清除方式              |
 | 子帳號列表       | `GET /account/list`                                                              | 需支援管理員的`sellerId/accountGroupId` 篩選；一般帳號列表已改接，只有子帳號篩選用途仍保留         |
-| 廣告加值         | `PUT /advertisement/deposit/:id`                                                 | 舊端會扣賣家錢包再增加廣告餘額；你這邊目前沒有相同錢包扣款步驟，需確認帳務處理                       |
+| 廣告加值         | `PUT /advertisement/budget/:id` (`operation: "increase"`)                                                 | 已實作扣賣家錢包並增加廣告餘額；2026-10-01 起 deposit 路徑已移除                       |
 | 廣告啟用／停用   | `PUT /advertisement/status/:id`                                                  | 需確認商品下架不得啟用廣告、餘額門檻、狀態值及操作權限                                               |
 | 批次觀看統計     | `GET /advertisement/list/view-count`                                             | 你這邊目前以登入者 ID 篩選賣家，與管理員全站查詢不同；單支廣告觀看統計已改接                         |
 | 儲存運費設定     | `POST /delivery/helper/fee`                                                      | 冷藏運費上限目前比較到一般宅配上限，需確認；GET 查詢已改接                                           |

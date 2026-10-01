@@ -15,9 +15,17 @@ function filters(req: RequestWithId) {
 
 class DashboardController {
   async kpi(req: RequestWithId, res: Response) {
+    if (req.query.report === "internal") {
+      sendJsonResponse(res, await dashboardService.getInternal({ requesterId: req.userId ?? "", startDate: String(req.query.startDate), endDate: String(req.query.endDate) }));
+      return;
+    }
     sendJsonResponse(res, await dashboardService.getKpi(filters(req)));
   }
   async timeSeries(req: RequestWithId, res: Response) {
+    if (req.query.report === "internal") {
+      sendJsonResponse(res, await dashboardService.getInternal({ requesterId: req.userId ?? "", startDate: String(req.query.startDate), endDate: String(req.query.endDate), dataset: req.query.dataset as "users" | "coin-flows" | "ad-finance" }, true));
+      return;
+    }
     sendJsonResponse(
       res,
       await dashboardService.getTimeSeries({
