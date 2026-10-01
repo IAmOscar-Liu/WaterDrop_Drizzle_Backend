@@ -1,3 +1,4 @@
+import { getInternalStatistics } from "../repository/internalStatistics";
 import { handleServiceError } from "../lib/error";
 import {
   getDashboardKpi,
@@ -15,6 +16,9 @@ class DashboardService {
     }
   }
 
+  getInternal(input: Parameters<typeof getInternalStatistics>[0], daily = false) {
+    return this.respond(() => getInternalStatistics(input, daily));
+  }
   getKpi(input: Parameters<typeof getDashboardKpi>[0]) {
     return this.respond(() => getDashboardKpi(input));
   }

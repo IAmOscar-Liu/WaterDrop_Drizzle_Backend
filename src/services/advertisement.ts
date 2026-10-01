@@ -1,8 +1,8 @@
+import { previewAdvertisementWithdrawal, withdrawAdvertisementBudget } from "../repository/advertisementWithdrawal";
 import * as schema from "../db/schema";
 import { handleServiceError } from "../lib/error";
 import {
   createAdvertisement,
-  depositAdBalance,
   financiallyCloseAdvertisement,
   getAdvertisement,
   getAdvertisementCoinLedger,
@@ -27,6 +27,14 @@ import {
 } from "../repository/advertisementReport";
 
 class AdvertisementService {
+  async withdrawalPreview(advertisementId: string, requesterId: string) {
+    try { return { success: true as const, data: await previewAdvertisementWithdrawal(advertisementId, requesterId) }; }
+    catch (error) { return handleServiceError(error); }
+  }
+  async withdrawBudget(input: Parameters<typeof withdrawAdvertisementBudget>[0]) {
+    try { return { success: true as const, data: await withdrawAdvertisementBudget(input) }; }
+    catch (error) { return handleServiceError(error); }
+  }
   async listMetrics(input: Parameters<typeof listAdvertisementMetrics>[0]) {
     try {
       return { success: true as const, data: await listAdvertisementMetrics(input) };
@@ -184,21 +192,6 @@ class AdvertisementService {
     try {
       const count = await listAdViewCount(input);
       return { success: true, data: count };
-    } catch (error) {
-      return handleServiceError(error);
-    }
-  }
-
-  async depositAdBalance(input: {
-    advertisementId: string;
-    requesterId: string;
-    amount: string;
-    idempotencyKey: string;
-    metadata?: Record<string, any>;
-  }): Promise<ServiceResponse<Awaited<ReturnType<typeof depositAdBalance>>>> {
-    try {
-      const result = await depositAdBalance(input);
-      return { success: true, data: result };
     } catch (error) {
       return handleServiceError(error);
     }

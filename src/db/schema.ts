@@ -104,6 +104,7 @@ export const advertisementStatusEnum = pgEnum("advertisement_status", [
 export const transactionTypeEnum = pgEnum("transaction_type", [
   "deposit",
   "wallet_funding",
+  "budget_withdrawal",
   "view_debit",
   "seller_return_credit",
   "balance_transfer_out",
@@ -113,7 +114,7 @@ export const transactionTypeEnum = pgEnum("transaction_type", [
 
 export const accountWalletTransactionTypeEnum = pgEnum(
   "account_wallet_transaction_type",
-  ["legacy_opening_balance", "admin_credit", "advertisement_funding_debit"],
+  ["legacy_opening_balance", "admin_credit", "advertisement_funding_debit", "advertisement_budget_return"],
 );
 
 export const adminSidebarSectionEnum = pgEnum("admin_sidebar_section", [
@@ -732,20 +733,20 @@ export const accountWalletTransactionTable = pgTable(
     check(
       "account_wallet_transactions_type_sign",
       sql`(
-        ${t.type} in ('legacy_opening_balance', 'admin_credit')
+        ${t.type}::text in ('legacy_opening_balance', 'admin_credit', 'advertisement_budget_return')
         and ${t.amount} > 0
       ) or (
-        ${t.type} = 'advertisement_funding_debit'
+        ${t.type}::text = 'advertisement_funding_debit'
         and ${t.amount} < 0
       )`,
     ),
     check(
       "account_wallet_transactions_funding_ad_required",
-      sql`${t.type} <> 'advertisement_funding_debit' or ${t.advertisementId} is not null`,
+      sql`${t.type}::text not in ('advertisement_funding_debit', 'advertisement_budget_return') or ${t.advertisementId} is not null`,
     ),
     check(
       "account_wallet_transactions_admin_actor_required",
-      sql`${t.type} <> 'admin_credit' or ${t.actorAccountId} is not null`,
+      sql`${t.type}::text not in ('admin_credit', 'advertisement_budget_return') or ${t.actorAccountId} is not null`,
     ),
   ],
 );

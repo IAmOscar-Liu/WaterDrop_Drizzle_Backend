@@ -7,6 +7,8 @@ import isAuth from "../../middleware/isAuth";
 import validateZod from "../../middleware/validateZod";
 
 const router = Router();
+// advertisement_budget_return is a positive wallet credit displayed as 回收廣告費.
+// Summary advertisementBudgetReturns is the positive total within the requested date filters.
 
 /**
  * @swagger
@@ -38,7 +40,7 @@ const router = Router();
  *         advertisementId: { type: string, format: uuid, nullable: true }
  *         type:
  *           type: string
- *           enum: [legacy_opening_balance, admin_credit, advertisement_funding_debit]
+ *           enum: [legacy_opening_balance, admin_credit, advertisement_funding_debit, advertisement_budget_return]
  *         amount: { type: string, example: "1000.00" }
  *         balanceBefore: { type: string, example: "0.00" }
  *         balanceAfter: { type: string, example: "1000.00" }
@@ -83,7 +85,7 @@ router.get("/me", isAuth, AccountWalletController.getOwnWallet);
  *         name: type
  *         schema:
  *           type: string
- *           enum: [legacy_opening_balance, admin_credit, advertisement_funding_debit]
+ *           enum: [legacy_opening_balance, admin_credit, advertisement_funding_debit, advertisement_budget_return]
  *       - { in: query, name: startAt, schema: { type: string, format: date-time } }
  *       - { in: query, name: endAt, schema: { type: string, format: date-time } }
  *     responses:
@@ -120,6 +122,7 @@ router.get(
  *                 adminCredits: "1000.00"
  *                 legacyOpeningCredits: "0.00"
  *                 advertisementFundingDebits: "-700.00"
+ *                 advertisementBudgetReturns: "300.00"
  *                 closingBalance: "800.00"
  *                 transactionCount: 2
  */
@@ -209,7 +212,7 @@ router.get(
  *         name: type
  *         schema:
  *           type: string
- *           enum: [legacy_opening_balance, admin_credit, advertisement_funding_debit]
+ *           enum: [legacy_opening_balance, admin_credit, advertisement_funding_debit, advertisement_budget_return]
  *       - { in: query, name: startAt, schema: { type: string, format: date-time } }
  *       - { in: query, name: endAt, schema: { type: string, format: date-time } }
  *     responses:

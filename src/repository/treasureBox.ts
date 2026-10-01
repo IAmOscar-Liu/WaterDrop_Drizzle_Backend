@@ -174,12 +174,14 @@ async function processVideoCompletionWithLedger(
     const [advertisement] = await tx
       .select({
         archivedAt: schema.advertisementTable.archivedAt,
+        financiallyClosedAt: schema.advertisementTable.financiallyClosedAt,
         archiveGraceEndsAt: schema.advertisementTable.archiveGraceEndsAt,
       })
       .from(schema.advertisementTable)
       .where(eq(schema.advertisementTable.id, advertisementId))
       .for("update");
     if (!advertisement) throw new CustomError("Advertisement not found.", 404);
+    if (advertisement.financiallyClosedAt) throw new CustomError("Advertisement is financially closed.", 409);
     if (
       advertisement.archivedAt &&
       (assignment.assignedAt >= advertisement.archivedAt ||

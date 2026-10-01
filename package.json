@@ -64,7 +64,9 @@
     "generate-dbml": "ts-node src/scripts/generate-dmbl.ts",
     "daily-reset": "NODE_ENV=stg ts-node src/scripts/daily-reset.ts",
     "getStoreList": "NODE_ENV=stg ts-node src/scripts/ecpay-storeList.ts",
-    "test-script": "NODE_ENV=stg ts-node src/scripts/test_script.ts"
+    "test-script": "NODE_ENV=stg ts-node src/scripts/test_script.ts",
+    "test:be1001": "NODE_ENV=test tsx src/tests/runTestSuite.ts be1001",
+    "_test:be1001": "NODE_ENV=test NO_CRON=true tsx src/tests/be1001.integration.ts"
   },
   "keywords": [],
   "author": "",

@@ -6,9 +6,9 @@ import { CustomError } from "../lib/error";
 import db from "../lib/initDB";
 import {
   moneyToMinorUnits,
-  minorUnitsToMoney,
   normalizeMoney,
   subtractMoney,
+  addMoney,
 } from "../lib/money";
 import {
   effectiveTimezone,
@@ -1002,7 +1002,7 @@ export async function adjustAdBudget({
 }: {
   advertisementId: string;
   requesterId: string;
-  operation: "increase" | "decrease" | "set";
+  operation: "increase" | "decrease";
   amount: string;
   idempotencyKey: string;
   metadata?: Record<string, any>;
@@ -1043,39 +1043,12 @@ export async function adjustAdBudget({
       409,
     );
   }
-  if (operation === "increase") {
-    return depositAdBalance({
-      advertisementId,
-      requesterId,
-      amount,
-      idempotencyKey,
-      metadata: { ...metadata, budgetOperation: operation },
-    });
-  }
-
-  const normalizedTarget = normalizeMoney(amount);
-
-  const current = moneyToMinorUnits(record.stats.balance.toFixed(2));
-  const target = moneyToMinorUnits(normalizedTarget);
-  if (target < current) {
-    throw new CustomError(
-      "operation_not_supported: advertisement budget cannot be set lower",
-      409,
-    );
-  }
-  if (target === current) {
-    return { ...record.stats, noChange: true, idempotentReplay: false };
-  }
   return depositAdBalance({
     advertisementId,
     requesterId,
-    amount: minorUnitsToMoney(target - current),
+    amount,
     idempotencyKey,
-    metadata: {
-      ...metadata,
-      budgetOperation: operation,
-      targetBalance: normalizedTarget,
-    },
+    metadata: { ...metadata, budgetOperation: operation },
   });
 }
 
@@ -1122,6 +1095,13 @@ export async function spendAdBalanceWithTx(
       `Cannot spend balance for ad with status: ${currentStats.status}`,
       400,
     );
+  }
+
+  const [adState] = await tx.select({ closedAt: schema.advertisementTable.financiallyClosedAt })
+    .from(schema.advertisementTable).where(eq(schema.advertisementTable.id, advertisementId));
+  if (adState?.closedAt) throw new CustomError("Financially closed advertisements cannot be charged.", 409);
+  if (!Number.isFinite(amount) || amount <= 0 || currentStats.balance < amount) {
+    throw new CustomError("Insufficient advertisement balance.", 409);
   }
 
   // 2. Decrease balance and update status if necessary
@@ -1433,7 +1413,15 @@ export async function transferArchivedAdvertisementBalance(params: {
   if (params.amount <= 0) {
     throw new CustomError("Transfer amount must be positive.", 400);
   }
+  normalizeMoney(params.amount);
   return db.transaction(async (tx) => {
+    await lockWalletIdempotencyKeyWithTx(tx, params.idempotencyKey);
+    const [walletKey] = await tx.select({ id: schema.accountWalletTransactionTable.id }).from(schema.accountWalletTransactionTable)
+      .where(eq(schema.accountWalletTransactionTable.idempotencyKey, params.idempotencyKey));
+    const [adKey] = await tx.select({ id: schema.advertisementTransactionTable.id }).from(schema.advertisementTransactionTable)
+      .where(eq(schema.advertisementTransactionTable.idempotencyKey, params.idempotencyKey));
+    if (walletKey || adKey) throw new CustomError("Idempotency key belongs to another operation.", 409);
+
     const orderedIds = [
       params.sourceAdvertisementId,
       params.destinationAdvertisementId,
@@ -1447,6 +1435,9 @@ export async function transferArchivedAdvertisementBalance(params: {
       .where(inArray(schema.advertisementTable.id, orderedIds))
       .orderBy(schema.advertisementTable.id)
       .for("update");
+    await tx.select({ id: schema.advertisementStatsTable.id }).from(schema.advertisementStatsTable)
+      .where(inArray(schema.advertisementStatsTable.advertisementId, orderedIds))
+      .orderBy(schema.advertisementStatsTable.advertisementId).for("update");
     const rows = await tx
       .select({
         advertisement: schema.advertisementTable,
@@ -1511,12 +1502,17 @@ export async function transferArchivedAdvertisementBalance(params: {
         params.idempotencyKey,
       ),
     });
-    if (existing) return existing;
+    if (existing) {
+      if (existing.sourceAdvertisementId !== params.sourceAdvertisementId || existing.destinationAdvertisementId !== params.destinationAdvertisementId || existing.currencyAmount !== normalizeMoney(params.amount)) {
+        throw new CustomError("Idempotency key belongs to a different transfer.", 409);
+      }
+      return existing;
+    }
     if (source.stats.balance < params.amount) {
       throw new CustomError("Insufficient archived advertisement balance.", 400);
     }
-    const sourceAfter = source.stats.balance - params.amount;
-    const destinationAfter = destination.stats.balance + params.amount;
+    const sourceAfter = Number(subtractMoney(source.stats.balance, params.amount));
+    const destinationAfter = Number(addMoney(destination.stats.balance, params.amount));
     const coinAmount = (params.amount * 10).toFixed(2);
     await tx
       .update(schema.advertisementStatsTable)

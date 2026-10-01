@@ -6,11 +6,15 @@ import path from "node:path";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
+import { getTableConfig, PgDialect } from "drizzle-orm/pg-core";
+import { accountWalletTransactionTable, accountWalletTransactionTypeEnum, transactionTypeEnum } from "../db/schema";
 
-type SuiteName = "all" | "api" | "coin-ledger" | "cron" | "order-date-filter" | "chatroom-auth" | "refund-auth" | "account-wallet";
+type SuiteName = "be1001" | "all" | "api" | "coin-ledger" | "cron" | "order-date-filter" | "chatroom-auth" | "refund-auth" | "account-wallet";
 
 const suiteCommands: Record<SuiteName, string[]> = {
+  be1001: ["_test:be1001"],
   all: [
+    "_test:be1001",
     "_test:coin-accounting",
     "_test:api",
     "_test:order-date-filter",
@@ -86,7 +90,7 @@ async function main() {
   const requestedSuite = process.argv[2] ?? "all";
   if (!(requestedSuite in suiteCommands)) {
     throw new Error(
-      `Unknown suite "${requestedSuite}". Use all, api, coin-ledger, cron, order-date-filter, chatroom-auth, refund-auth, or account-wallet.`,
+      `Unknown suite "${requestedSuite}". Use all, be1001, api, coin-ledger, cron, order-date-filter, chatroom-auth, refund-auth, or account-wallet.`,
     );
   }
   const suite = requestedSuite as SuiteName;
@@ -102,58 +106,78 @@ async function main() {
     );
   }
 
-  const temporaryName = `waterdrop_api_${Date.now()}_${randomBytes(4).toString("hex")}_test`;
-  const quotedTemporaryName = quoteIdentifier(temporaryName);
-  const temporaryUrl = databaseUrlWithName(configuredUrl, temporaryName);
-  const adminUrl = databaseUrlWithName(configuredUrl, "postgres");
-  const adminClient = postgres(adminUrl, { max: 1 });
+  // Keep suites independent: platform-wide assertions must not observe another suite's fixtures.
+  for (const script of suiteCommands[suite]) {
+    if (interruptedSignal) break;
+    const temporaryName = `waterdrop_api_${Date.now()}_${randomBytes(4).toString("hex")}_test`;
+    const quotedTemporaryName = quoteIdentifier(temporaryName);
+    const temporaryUrl = databaseUrlWithName(configuredUrl, temporaryName);
+    const adminUrl = databaseUrlWithName(configuredUrl, "postgres");
+    const adminClient = postgres(adminUrl, { max: 1 });
 
-  const stopChild = (signal: NodeJS.Signals) => {
-    interruptedSignal = signal;
-    activeChild?.kill(signal);
-  };
-  process.once("SIGINT", () => stopChild("SIGINT"));
-  process.once("SIGTERM", () => stopChild("SIGTERM"));
+    const stopChild = (signal: NodeJS.Signals) => {
+      interruptedSignal = signal;
+      activeChild?.kill(signal);
+    };
+    const onSigint = () => stopChild("SIGINT");
+    const onSigterm = () => stopChild("SIGTERM");
+    process.once("SIGINT", onSigint);
+    process.once("SIGTERM", onSigterm);
 
-  let created = false;
-  try {
-    console.log(`[test] Creating disposable database ${temporaryName}`);
-    await adminClient.unsafe(`CREATE DATABASE ${quotedTemporaryName}`);
-    created = true;
-
-    const migrationClient = postgres(temporaryUrl, {
-      max: 1,
-      onnotice: () => undefined,
-    });
+    let created = false;
     try {
-      await migrate(drizzle(migrationClient), {
-        migrationsFolder: path.resolve(process.cwd(), "drizzle_test"),
+      console.log(`[test] Creating disposable database ${temporaryName}`);
+      await adminClient.unsafe(`CREATE DATABASE ${quotedTemporaryName}`);
+      created = true;
+
+      const migrationClient = postgres(temporaryUrl, {
+        max: 1,
+        onnotice: () => undefined,
       });
-    } finally {
-      await migrationClient.end();
-    }
+      try {
+        await migrate(drizzle(migrationClient), {
+          migrationsFolder: path.resolve(process.cwd(), "drizzle_test"),
+        });
+        // The owner generates deployment migrations separately. Apply only these pending
+        // schema definitions to this newly CREATED disposable database, never .env.test's DB.
+        // Each enum addition commits before constraints reference its new value.
+        for (const enumType of [transactionTypeEnum, accountWalletTransactionTypeEnum]) {
+          for (const value of enumType.enumValues) {
+            await migrationClient.unsafe(`ALTER TYPE "${enumType.enumName}" ADD VALUE IF NOT EXISTS '${value}'`);
+          }
+        }
+        const dialect = new PgDialect();
+        for (const constraint of getTableConfig(accountWalletTransactionTable).checks.filter((c) =>
+          ["account_wallet_transactions_type_sign", "account_wallet_transactions_funding_ad_required", "account_wallet_transactions_admin_actor_required"].includes(c.name),
+        )) {
+          await migrationClient.unsafe(`ALTER TABLE account_wallet_transactions DROP CONSTRAINT "${constraint.name}"`);
+          await migrationClient.unsafe(`ALTER TABLE account_wallet_transactions ADD CONSTRAINT "${constraint.name}" CHECK (${dialect.sqlToQuery(constraint.value).sql})`);
+        }
+      } finally {
+        await migrationClient.end();
+      }
 
-    for (const script of suiteCommands[suite]) {
-      if (interruptedSignal) break;
       await runNpmScript(script, temporaryUrl);
-    }
 
-    if (interruptedSignal) {
-      throw new Error(`Test run interrupted by ${interruptedSignal}.`);
+      if (interruptedSignal) {
+        throw new Error(`Test run interrupted by ${interruptedSignal}.`);
+      }
+      console.log(`\n[test] ${script} passed`);
+    } finally {
+      if (created) {
+        console.log(`[test] Dropping disposable database ${temporaryName}`);
+        await adminClient`
+          select pg_terminate_backend(pid)
+          from pg_stat_activity
+          where datname = ${temporaryName}
+            and pid <> pg_backend_pid()
+        `;
+        await adminClient.unsafe(`DROP DATABASE ${quotedTemporaryName}`);
+      }
+      await adminClient.end();
+      process.removeListener("SIGINT", onSigint);
+      process.removeListener("SIGTERM", onSigterm);
     }
-    console.log(`\n[test] ${suite} suite passed`);
-  } finally {
-    if (created) {
-      console.log(`[test] Dropping disposable database ${temporaryName}`);
-      await adminClient`
-        select pg_terminate_backend(pid)
-        from pg_stat_activity
-        where datname = ${temporaryName}
-          and pid <> pg_backend_pid()
-      `;
-      await adminClient.unsafe(`DROP DATABASE ${quotedTemporaryName}`);
-    }
-    await adminClient.end();
   }
 }
 

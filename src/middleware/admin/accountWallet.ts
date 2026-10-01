@@ -12,6 +12,7 @@ const transactionType = z.enum([
   "legacy_opening_balance",
   "admin_credit",
   "advertisement_funding_debit",
+  "advertisement_budget_return",
 ]);
 
 export const accountWalletValidation = {

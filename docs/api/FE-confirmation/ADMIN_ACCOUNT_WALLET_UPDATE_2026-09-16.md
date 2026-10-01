@@ -60,10 +60,13 @@ Retry rules:
 - same key with a different financial payload: `409`;
 - FE must generate a stable key per intended credit and reuse it on retries.
 
-## Changed advertisement deposit API
+## Advertisement funding API
+
+Updated 2026-10-01: the deposit endpoint has been retired. See
+[the frontend migration guide](ADMIN_ADVERTISEMENT_DEPOSIT_RETIREMENT.md).
 
 ```http
-PUT /advertisement/deposit/:id
+PUT /advertisement/budget/:id
 ```
 
 The endpoint no longer creates advertisement balance without a source. It now
@@ -73,6 +76,7 @@ transfers the same amount from the product seller's account wallet to the ad.
 {
   "amount": "200.00",
   "idempotencyKey": "fund-ad-AD_UUID-20260916-0001",
+  "operation": "increase",
   "metadata": {}
 }
 ```

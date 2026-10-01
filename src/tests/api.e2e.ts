@@ -718,10 +718,11 @@ async function run() {
       ) as schema.Advertisement;
       advertisements.push(created);
       const funding = expectSuccess(
-        await request(`/api/admin/advertisement/deposit/${created.id}`, {
+        await request(`/api/admin/advertisement/budget/${created.id}`, {
           method: "PUT",
           token: sellerToken,
           body: {
+            operation: "increase",
             amount: "200.00",
             idempotencyKey: `api-ad-funding-${suffix}-${index}`,
           },
@@ -730,11 +731,28 @@ async function run() {
       assert.equal(funding.walletTransaction.amount, "-200.00");
       assert.equal(funding.advertisementTransaction.type, "wallet_funding");
       if (index === 0) {
+        const retiredDeposit: Awaited<ReturnType<typeof fetch>> = await fetch(
+          `${baseUrl}/api/admin/advertisement/deposit/${created.id}`,
+          {
+            method: "PUT",
+            headers: {
+              authorization: `Bearer ${sellerToken}`,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              amount: "1.00",
+              idempotencyKey: `retired-deposit-${suffix}`,
+            }),
+          },
+        );
+        assert.equal(retiredDeposit.status, 404);
+        await retiredDeposit.text();
         const replay = expectSuccess(
-          await request(`/api/admin/advertisement/deposit/${created.id}`, {
+          await request(`/api/admin/advertisement/budget/${created.id}`, {
             method: "PUT",
             token: sellerToken,
             body: {
+              operation: "increase",
               amount: 200,
               idempotencyKey: `api-ad-funding-${suffix}-${index}`,
             },
@@ -743,11 +761,12 @@ async function run() {
         assert.equal(replay.idempotentReplay, true);
         assert.equal(replay.wallet.walletBalance, "300.00");
         const conflictingReplay = await request(
-          `/api/admin/advertisement/deposit/${created.id}`,
+          `/api/admin/advertisement/budget/${created.id}`,
           {
             method: "PUT",
             token: sellerToken,
             body: {
+              operation: "increase",
               amount: "201.00",
               idempotencyKey: `api-ad-funding-${suffix}-${index}`,
             },
@@ -826,31 +845,33 @@ async function run() {
       },
     );
     assert.equal(crossSellerBudgetDecrease.status, 403);
-    const unsupportedBudgetSetLower = await request(
-      `/api/admin/advertisement/budget/${advertisements[0].id}`,
-      {
-        method: "PUT",
-        token: sellerToken,
-        body: {
-          operation: "set",
-          amount: "199.00",
-          idempotencyKey: `api-budget-lower-${suffix}`,
-        },
-      },
+    assert.equal(
+      unsupportedBudgetDecrease.json.message,
+      "operation_not_supported: advertisement budget cannot be withdrawn",
     );
-    assert.equal(unsupportedBudgetSetLower.status, 409);
-    const unchangedBudget = expectSuccess(
-      await request(`/api/admin/advertisement/budget/${advertisements[0].id}`, {
-        method: "PUT",
-        token: sellerToken,
-        body: {
-          operation: "set",
-          amount: "200.00",
-          idempotencyKey: `api-budget-same-${suffix}`,
+    for (const amount of ["199.00", "200.00", "201.00"]) {
+      const unsupportedBudgetSet = await request(
+        `/api/admin/advertisement/budget/${advertisements[0].id}`,
+        {
+          method: "PUT",
+          token: sellerToken,
+          body: {
+            operation: "set",
+            amount,
+            idempotencyKey: `api-budget-set-${suffix}-${amount}`,
+          },
         },
-      }),
+      );
+      assert.equal(unsupportedBudgetSet.status, 400);
+    }
+    const walletAfterRejectedBudgetChanges = expectSuccess(
+      await request("/api/admin/account-wallet/me", { token: sellerToken }),
     );
-    assert.equal(unchangedBudget.noChange, true);
+    assert.equal(walletAfterRejectedBudgetChanges.walletBalance, "100.00");
+    const adAfterRejectedBudgetChanges = await db.query.advertisementStatsTable.findFirst({
+      where: eq(schema.advertisementStatsTable.advertisementId, advertisements[0].id),
+    });
+    assert.equal(adAfterRejectedBudgetChanges?.balance, 200);
 
     const advertisementMetrics = expectSuccess(
       await request("/api/admin/advertisement/metrics?limit=100", {
@@ -912,11 +933,12 @@ async function run() {
     );
     assert.equal(olderSeen.lastSeenAt, firstSeen.lastSeenAt);
     const insufficientFunding = await request(
-      `/api/admin/advertisement/deposit/${advertisements[0].id}`,
+      `/api/admin/advertisement/budget/${advertisements[0].id}`,
       {
         method: "PUT",
         token: adminToken,
         body: {
+          operation: "increase",
           amount: "100.01",
           idempotencyKey: `api-ad-insufficient-${suffix}`,
         },
@@ -924,11 +946,12 @@ async function run() {
     );
     assert.equal(insufficientFunding.status, 409);
     const forbiddenFunding = await request(
-      `/api/admin/advertisement/deposit/${advertisements[0].id}`,
+      `/api/admin/advertisement/budget/${advertisements[0].id}`,
       {
         method: "PUT",
         token: otherSellerToken,
         body: {
+          operation: "increase",
           amount: "1.00",
           idempotencyKey: `api-ad-forbidden-${suffix}`,
         },
