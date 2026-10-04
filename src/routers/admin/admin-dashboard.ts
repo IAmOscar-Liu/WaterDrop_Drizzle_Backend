@@ -10,36 +10,21 @@ const router = Router();
  * @swagger
  * tags:
  *   name: Dashboard
- *   description: Seller-scoped operational and financial dashboard
+ *   description: Operational dashboards and separate company internal statistics
  * /api/admin/dashboard/kpi:
  *   get:
  *     tags: [Dashboard]
- *     summary: Get dashboard KPI totals
- *     description: Sellers are scoped to themselves; employees inherit their parent seller; platform admins may supply sellerId or omit it for platform totals.
+ *     summary: Get operational dashboard KPI totals
+ *     description: Sellers are scoped to themselves; employees inherit their parent seller; platform admins may supply sellerId or omit it for platform totals. Company statistics use /kpi/internal.
  *     security: [{ bearerAuth: [] }]
  *     parameters:
- *       - { in: query, name: report, schema: { type: string, enum: [internal] }, description: "Omit for legacy dashboard. Internal mode requires active platform admin; sellers and employees receive 403." }
- *       - { in: query, name: startDate, schema: { type: string, format: date }, description: "Required with report=internal. Inclusive Taipei date. Both dates required, at most 366 days. Do not mix internal mode with legacy filters." }
- *       - { in: query, name: endDate, schema: { type: string, format: date }, description: "Required with report=internal. Inclusive Taipei date, converted to exclusive next-day midnight. Current stocks remain current asOf even for a historical range." }
  *       - { in: query, name: sellerId, schema: { type: string, format: uuid } }
  *       - { in: query, name: startAt, schema: { type: string, format: date-time } }
  *       - { in: query, name: endAt, schema: { type: string, format: date-time } }
  *       - { in: query, name: timezone, schema: { type: string, default: Asia/Taipei } }
  *     responses:
- *       '200':
- *         description: "Legacy response unchanged. Internal response follows InternalStatisticsKpi; exact strings, coverage metadata, recorded lifetime and period flows, current stocks, and coin-pool-TWD / remaining-ad-balance ratio (10 coins per TWD)."
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success: { type: boolean }
- *                 data:
- *                   oneOf:
- *                     - { $ref: '#/components/schemas/InternalStatisticsKpi' }
- *                     - { type: object, description: Legacy dashboard KPI }
- *       '400': { description: Invalid date range or mixed internal/legacy filters. }
- *       '403': { description: Active platform admin required for internal mode. }
+ *       '200': { description: Existing orders, GMV, refunds, net sales, pending work, ad spend/status, and wallet balance response. }
+ *       '400': { description: Invalid filters. Internal report/date/dataset parameters are not accepted here. }
  */
 router.get("/kpi", isAuth, validateZod({ query: adminValidation.dashboard.kpiQuery }), DashboardController.kpi);
 
@@ -48,36 +33,76 @@ router.get("/kpi", isAuth, validateZod({ query: adminValidation.dashboard.kpiQue
  * /api/admin/dashboard/time-series:
  *   get:
  *     tags: [Dashboard]
- *     summary: Get a dashboard time series
+ *     summary: Get an operational dashboard time series
+ *     description: Existing seller-scoped operational series. Company statistics use /time-series/internal.
  *     security: [{ bearerAuth: [] }]
  *     parameters:
- *       - { in: query, name: report, schema: { type: string, enum: [internal] }, description: "Omit for legacy dashboard. Internal mode requires active platform admin; sellers and employees receive 403." }
- *       - { in: query, name: startDate, schema: { type: string, format: date }, description: "Required with report=internal. Inclusive Taipei date. Both dates required, at most 366 days. Do not mix internal mode with legacy filters." }
- *       - { in: query, name: endDate, schema: { type: string, format: date }, description: "Required with report=internal. Inclusive Taipei date, converted to exclusive next-day midnight. Current stocks remain current asOf even for a historical range." }
- *       - { in: query, name: dataset, schema: { type: string, enum: [users, coin-flows, ad-finance] }, description: "Required only for report=internal. Daily recorded flows; historical stocks unavailable. Unverified empty ledger days return null." }
- *       - { in: query, name: metric, description: "Required for legacy mode only.", schema: { type: string, enum: [sales, orders, refunds, adViews, adSpend] } }
+ *       - { in: query, name: metric, required: true, schema: { type: string, enum: [sales, orders, refunds, adViews, adSpend] } }
  *       - { in: query, name: interval, schema: { type: string, enum: [day, week, month], default: day } }
  *       - { in: query, name: sellerId, schema: { type: string, format: uuid } }
  *       - { in: query, name: startAt, schema: { type: string, format: date-time } }
  *       - { in: query, name: endAt, schema: { type: string, format: date-time } }
  *       - { in: query, name: timezone, schema: { type: string, default: Asia/Taipei } }
  *     responses:
+ *       '200': { description: Existing ordered bucket/value response. }
+ *       '400': { description: Invalid filters. Internal report/date/dataset parameters are not accepted here. }
+ */
+router.get("/time-series", isAuth, validateZod({ query: adminValidation.dashboard.timeSeriesQuery }), DashboardController.timeSeries);
+
+/**
+ * @swagger
+ * /api/admin/dashboard/kpi/internal:
+ *   get:
+ *     tags: [Dashboard]
+ *     summary: Get company internal KPI statistics
+ *     description: Active platform admins only. Fixed Asia/Taipei calendar days, maximum 366 days. Current stocks and ratio reflect asOf; historical stocks remain unavailable. Recorded flows include coverage metadata. Do not send report or operational dashboard filters.
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { in: query, name: startDate, required: true, schema: { type: string, format: date }, description: Inclusive Taipei calendar start date. }
+ *       - { in: query, name: endDate, required: true, schema: { type: string, format: date }, description: Inclusive Taipei calendar end date; queries end at exclusive next-day midnight. }
+ *     responses:
  *       '200':
- *         description: "Legacy bucket/value response unchanged. Internal mode returns InternalStatisticsTimeSeries."
+ *         description: Exact decimal/count strings with definitions and coverage metadata.
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
  *                 success: { type: boolean }
- *                 data:
- *                   oneOf:
- *                     - { $ref: '#/components/schemas/InternalStatisticsTimeSeries' }
- *                     - { type: object, description: Legacy dashboard series }
- *       '400': { description: Invalid dates, dataset or mixed filters. }
- *       '403': { description: Active platform admin required for internal mode. }
+ *                 data: { $ref: '#/components/schemas/InternalStatisticsKpi' }
+ *       '400': { description: Missing/invalid dates, range over 366 days, or unsupported query fields. }
+ *       '401': { description: Authentication required. }
+ *       '403': { description: Active platform admin required; sellers and employees are prohibited. }
  */
-router.get("/time-series", isAuth, validateZod({ query: adminValidation.dashboard.timeSeriesQuery }), DashboardController.timeSeries);
+router.get("/kpi/internal", isAuth, validateZod({ query: adminValidation.dashboard.internalKpiQuery }), DashboardController.internalKpi);
+
+/**
+ * @swagger
+ * /api/admin/dashboard/time-series/internal:
+ *   get:
+ *     tags: [Dashboard]
+ *     summary: Get company internal daily statistics
+ *     description: Active platform admins only. Fixed Asia/Taipei calendar days, maximum 366 days. Current stocks and ratio reflect asOf; historical stocks remain unavailable. Recorded flows include coverage metadata. Do not send report or operational dashboard filters.
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { in: query, name: startDate, required: true, schema: { type: string, format: date }, description: Inclusive Taipei calendar start date. }
+ *       - { in: query, name: endDate, required: true, schema: { type: string, format: date }, description: Inclusive Taipei calendar end date; queries end at exclusive next-day midnight. }
+ *       - { in: query, name: dataset, required: true, schema: { type: string, enum: [users, coin-flows, ad-finance] }, description: Daily registrations or recorded financial flows; unverified empty financial days return null. }
+ *     responses:
+ *       '200':
+ *         description: Exact decimal/count strings with definitions and coverage metadata.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 data: { $ref: '#/components/schemas/InternalStatisticsTimeSeries' }
+ *       '400': { description: Missing/invalid dates, range over 366 days, or unsupported query fields. }
+ *       '401': { description: Authentication required. }
+ *       '403': { description: Active platform admin required; sellers and employees are prohibited. }
+ */
+router.get("/time-series/internal", isAuth, validateZod({ query: adminValidation.dashboard.internalTimeSeriesQuery }), DashboardController.internalTimeSeries);
 
 /**
  * @swagger

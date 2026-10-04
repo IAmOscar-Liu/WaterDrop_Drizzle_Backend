@@ -139,20 +139,34 @@ async function run() {
       { advertisementId: ad.id, type: "deposit", amount: 99, createdAt: new Date("2025-01-01T16:00:00Z") },
       { advertisementId: ad.id, type: "wallet_funding", amount: 20, createdAt: new Date("2025-01-02T16:00:00Z") },
     ]);
-    const query = "report=internal&startDate=2025-01-02&endDate=2025-01-02";
-    expect(await request(`/dashboard/kpi?${query}`, seller.id), 403);
-    expect(await request(`/dashboard/time-series?${query}&dataset=users`, employee.id), 403);
-    expect(await request(`/dashboard/kpi?${query}&sellerId=${seller.id}`, admin.id), 400);
-    expect(await request("/dashboard/kpi?report=internal&startDate=2025-02-30&endDate=2025-03-01", admin.id), 400);
-    expect(await request("/dashboard/kpi?report=internal&startDate=2024-01-01&endDate=2025-01-02", admin.id), 400);
-    const kpi = expect(await request(`/dashboard/kpi?${query}`, admin.id));
+    const query = "startDate=2025-01-02&endDate=2025-01-02";
+    // Separate contracts: no report selector, no silent fallback to operational totals.
+    expect(await request(`/dashboard/kpi?report=internal&${query}`, admin.id), 400);
+    expect(await request(`/dashboard/time-series?report=internal&${query}&dataset=users`, admin.id), 400);
+    expect(await request(`/dashboard/kpi?${query}`, admin.id), 400);
+    expect(await request(`/dashboard/time-series?metric=orders&${query}`, admin.id), 400);
+    expect(await request(`/dashboard/kpi/internal?report=internal&${query}`, admin.id), 400);
+    expect(await request(`/dashboard/kpi/internal?${query}&startAt=2025-01-01T00:00:00Z`, admin.id), 400);
+    expect(await request(`/dashboard/kpi/internal?${query}&endAt=2025-01-03T00:00:00Z`, admin.id), 400);
+    expect(await request("/dashboard/kpi/internal?startDate=2025-01-02", admin.id), 400);
+    expect(await request(`/dashboard/time-series/internal?${query}`, admin.id), 400);
+    expect(await request(`/dashboard/time-series/internal?${query}&dataset=users&metric=orders`, admin.id), 400);
+    const operational = expect(await request("/dashboard/kpi", seller.id));
+    assert.equal(operational.ratio, undefined);
+
+    expect(await request(`/dashboard/kpi/internal?${query}`, seller.id), 403);
+    expect(await request(`/dashboard/time-series/internal?${query}&dataset=users`, employee.id), 403);
+    expect(await request(`/dashboard/kpi/internal?${query}&sellerId=${seller.id}`, admin.id), 400);
+    expect(await request("/dashboard/kpi/internal?startDate=2025-02-30&endDate=2025-03-01", admin.id), 400);
+    expect(await request("/dashboard/kpi/internal?startDate=2024-01-01&endDate=2025-01-02", admin.id), 400);
+    const kpi = expect(await request(`/dashboard/kpi/internal?${query}`, admin.id));
     assert.equal(kpi.users.periodRegistrations.value, "1");
     assert.equal(kpi.advertisements.period.fundingInflows.value, "10.01");
     assert.equal(kpi.advertisements.period.legacyDeposits.value, "99.00");
     assert.equal(kpi.advertisements.period.transfersIn.value, "500.00");
-    const daily = expect(await request(`/dashboard/time-series?${query}&dataset=users`, admin.id));
+    const daily = expect(await request(`/dashboard/time-series/internal?${query}&dataset=users`, admin.id));
     assert.equal(daily.points[0].metrics.registrations.value, "1");
-    const empty = expect(await request("/dashboard/time-series?report=internal&dataset=ad-finance&startDate=2020-01-01&endDate=2020-01-02", admin.id));
+    const empty = expect(await request("/dashboard/time-series/internal?dataset=ad-finance&startDate=2020-01-01&endDate=2020-01-02", admin.id));
     assert.equal(empty.points[0].metrics.fundingInflows.value, null);
     assert.equal(empty.historicalStocks.value, null);
     await db.insert(s.userCoinTransactionTable).values([
@@ -162,7 +176,7 @@ async function run() {
       { userId: users[0].id, type: "refund", direction: "credit", amount: "4.00", idempotencyKey: randomUUID(), metadata: { creditedToUser: false }, createdAt: new Date("2025-01-01T16:00:00Z") },
       { userId: users[0].id, type: "refund", direction: "credit", amount: "5.00", idempotencyKey: randomUUID(), metadata: { creditedToUser: true }, createdAt: new Date("2025-01-01T16:00:00Z") },
     ]);
-    const coinSeries = expect(await request(`/dashboard/time-series?${query}&dataset=coin-flows`, admin.id));
+    const coinSeries = expect(await request(`/dashboard/time-series/internal?${query}&dataset=coin-flows`, admin.id));
     const flow = coinSeries.points[0].metrics;
     assert.equal(flow.acquiredCoins.value, "1.23");
     assert.equal(flow.manualNetCoins.value, "0.00");
@@ -172,7 +186,7 @@ async function run() {
     // Batch volume and leap-year date filling; no per-user or per-day requests.
     await db.execute(sql`insert into users (email, oauth_provider, oauth_id, referral_code, created_at)
       select 'bulk-' || n || '@example.test', 'other', 'bulk-' || n, 'bulk-' || n, '2024-01-01T00:00:00Z'::timestamptz from generate_series(1,10000) n`);
-    const batch = expect(await request("/dashboard/time-series?report=internal&dataset=users&startDate=2024-01-01&endDate=2024-12-31", admin.id));
+    const batch = expect(await request("/dashboard/time-series/internal?dataset=users&startDate=2024-01-01&endDate=2024-12-31", admin.id));
     assert.equal(batch.points.length, 366);
     assert.equal(batch.points[0].metrics.registrations.value, "10000");
     assert.equal(batch.points[365].metrics.registrations.value, "0");
@@ -187,19 +201,19 @@ async function run() {
       { userId: users[0].id, coinsAwarded: 90, accountingStatus: "claimable", claimDeadlineAt: new Date(Date.now()-86400000) },
     ]);
     await db.update(s.advertisementStatsTable).set({ balance: 100 }).where(eq(s.advertisementStatsTable.advertisementId, replacement.id));
-    const pool = expect(await request(`/dashboard/kpi?${query}`, admin.id));
+    const pool = expect(await request(`/dashboard/kpi/internal?${query}`, admin.id));
     assert.equal(pool.coins.outstandingPool.value, "35.00");
     assert.equal(pool.coins.pendingExpiry.value, "10.00");
     assert.equal(pool.ratio.value, "0.03500000");
     await db.update(s.advertisementStatsTable).set({ balance: 0 });
-    const zero = expect(await request(`/dashboard/kpi?${query}`, admin.id));
+    const zero = expect(await request(`/dashboard/kpi/internal?${query}`, admin.id));
     assert.equal(zero.ratio.value, null); assert.equal(zero.ratio.coverage.reason, "NON_POSITIVE_DENOMINATOR");
     await db.update(s.userTable).set({ coins: 31 }).where(eq(s.userTable.id, users[0].id));
-    const mismatch = expect(await request(`/dashboard/kpi?${query}`, admin.id));
+    const mismatch = expect(await request(`/dashboard/kpi/internal?${query}`, admin.id));
     assert.equal(mismatch.coins.outstandingPool.value, null);
     assert.equal(mismatch.ratio.coverage.reason, "INCOMPLETE_COVERAGE");
     await db.update(s.accountTable).set({ status: "inactive" }).where(eq(s.accountTable.id, admin.id));
-    expect(await request(`/dashboard/kpi?${query}`, admin.id), 403);
+    expect(await request(`/dashboard/kpi/internal?${query}`, admin.id), 403);
     expect(await request(path + "-preview", admin.id), 403);
     console.log("BE1001 withdrawal and internal statistics integration passed");
   } finally {

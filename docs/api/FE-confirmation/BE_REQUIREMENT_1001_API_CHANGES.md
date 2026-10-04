@@ -1,8 +1,8 @@
-# BE requirement 1001 — 回收廣告費 and internal statistics
+# BE requirement 1001 — 回收廣告費, admin login integration, and internal statistics
 
 Date: 2026-10-01
 
-Status: implemented on `feat/be1001-implementation`, tested in disposable PostgreSQL databases. **Not deployed; local/development/staging migrations remain user-managed.** No environment files or existing database contents were changed. This delivers sections 1 and 3; login/session requirement 2 remains outside scope.
+Status: implemented on `feat/be1001-implementation`, tested in disposable PostgreSQL databases. **Not deployed; local/development/staging migrations remain user-managed.** No environment files or existing database contents were changed. This implements sections 1 and 3. For section 2, the agreed direction on 2026-10-04 is to retain the existing token-refresh setup and have FE integrate automatic renewal; no new 24-hour idle-session policy is requested.
 
 ## Schema and rollout
 
@@ -141,18 +141,116 @@ Business errors preserve `{success:false,statusCode,message}` and add `code`. Va
 
 Wallet transaction filters accept `advertisement_budget_return`; display **回收廣告費**. Wallet summaries add `advertisementBudgetReturns`, the positive sum within the supplied dates. Existing `me` and admin-selected-account paths reflect the credited balance. Ad metrics and product dashboards add exact positive `budgetWithdrawnAmount` and `periodBudgetWithdrawnAmount` strings. These totals do not change gross view spend or settlement-return totals. Product deactivation/deletion policies remain as implemented: a full withdrawal satisfies a zero-ad-balance prerequisite, but does not bypass other dependencies or restrictions.
 
-## Company internal statistics
+## Admin login and token refresh — FE integration
 
-Extend the existing routes without changing legacy dashboard responses:
+Reviewed: 2026-10-04. Sources: [token configuration](../../../src/lib/token.ts), [account controller](../../../src/controller/account.ts), [authentication middleware](../../../src/middleware/isAuth.ts), and [password changes](../../../src/repository/account.ts).
 
-```http
-GET /api/admin/dashboard/kpi?report=internal&startDate=2026-09-01&endDate=2026-09-30
-GET /api/admin/dashboard/time-series?report=internal&dataset=users&startDate=2026-09-01&endDate=2026-09-30
-GET /api/admin/dashboard/time-series?report=internal&dataset=coin-flows&startDate=2026-09-01&endDate=2026-09-30
-GET /api/admin/dashboard/time-series?report=internal&dataset=ad-finance&startDate=2026-09-01&endDate=2026-09-30
+**Agreed FE approach: keep the current access-token + refresh-cookie setup and use Axios interceptors (or an equivalent fetch wrapper) to renew access automatically.** The original section 2 proposal for a new server-enforced 24-hour inactivity policy is not being adopted in this change. Token refresh lets the user continue working while the refresh credential remains valid; it does not measure time since the last user operation.
+
+### Verified lifetime and renewal behavior
+
+| Item | Current backend behavior |
+| --- | --- |
+| Admin access token | Valid for 1 day in `local`, 1 hour in every other environment, measured from token issuance. Sent as `Authorization: Bearer TOKEN`. |
+| Refresh token | JWT valid for 30 days; stored in an HttpOnly cookie with a 30-day Max-Age. FE cannot read it through JavaScript. |
+| Successful refresh | Revalidates the account, issues a new access token and sets another refresh cookie valid for 30 days from issuance. The old refresh JWT is not tracked or explicitly invalidated server-side. |
+| Ordinary protected API request | Verifies JWT expiry and active/non-deleted admin account status; does not renew the JWT/cookie or record a session activity deadline. |
+| `/account/me` | Returns the account profile; does not renew tokens or expose an idle-expiry timestamp. `lastLogin` is login bookkeeping, not session activity. |
+| No user activity / background polling | No 24-hour inactivity check exists. A valid refresh cookie can renew access even after more than 24 hours without user interaction; background refresh can extend the refresh-cookie lifetime. |
+
+The local 1-day access-token lifetime is a fixed expiry after issuance, not a sliding 24-hour session. For example, outside local, an access token issued at 10:00 expires at 11:00. A refresh at 11:00 issues another token expiring at 12:00. It does not create a “last user operation + 24 hours” deadline.
+
+### Endpoints and response fields
+
+All paths below are under `/api/admin/account`.
+
+| Request | FE action / response |
+| --- | --- |
+| `POST /login`, body `{email,password}` | Use credentials-enabled requests so the browser accepts the cookie. Success is `{success:true,data:{user,token}}`; store `data.token` in the FE auth store. |
+| `POST /refresh-token`, no request body | Browser sends the refresh cookie; no Bearer token is required. Success is `{success:true,data:{token}}` plus a new cookie. Replace the stored access token. |
+| `GET /me` | Send the access token. Success is `{success:true,data:<account profile>}`. |
+| `POST /logout` | Send credentials so the cookie is cleared. Success is `{success:true,data:"OK"}`. Also clear FE access-token/profile state. |
+
+Use `withCredentials: true` for Axios, or `credentials: "include"` for fetch. Cookies use `SameSite=Strict`, `Path=/`, `HttpOnly`, and `Secure` in production. Production sets the cookie domain to `waterdropping.com`; other environments use the issuing host. Credentials settings do not override browser SameSite rules: FE and API must use a compatible deployment origin/site, and cross-origin requests must satisfy the backend's configured CORS allowlist.
+
+### Recommended Axios pattern
+
+Use a shared Axios instance for protected admin requests, with a request interceptor to attach the access token and a response interceptor to handle expired access tokens. Keep login/refresh/logout on a separate instance without the refresh response interceptor, preventing recursive refresh calls. Axios supports custom instances and request/response interceptors; its credentials option controls credentialed cross-origin requests. [Axios interceptors](https://axios-http.com/docs/interceptors), [Axios request configuration](https://axios-http.com/docs/req_config).
+
+```javascript
+import axios from "axios";
+
+// Example with a same-origin proxy; use your configured API origin if needed.
+const authHttp = axios.create({ baseURL: "/api/admin", withCredentials: true });
+const adminHttp = axios.create({ baseURL: "/api/admin", withCredentials: true });
+
+adminHttp.interceptors.request.use((config) => {
+  const token = authStore.getAccessToken(); // FE-provided auth store
+  if (token) config.headers.set("Authorization", `Bearer ${token}`);
+  else config.headers.delete("Authorization");
+  return config;
+});
 ```
 
-**Active platform admins only.** Sellers and employees get 403. Both dates are required, real `YYYY-MM-DD` dates, in ascending order, inclusive, at most 366 days. `Asia/Taipei` is fixed: September 1 starts at August 31 16:00 UTC; September 30 ends exclusively at September 30 16:00 UTC. Do not mix internal mode with `sellerId`, `startAt`, `endAt`, `timezone`, `metric` or `interval`. Invalid/mixed filters get 400. Omit `report` to use legacy mode.
+Implement the response interceptor with these rules (the auth store, refresh coordinator and navigation belong to the FE):
+
+1. On a confirmed **expired-access-token** 401, mark the request as retried and obtain a fresh token through `authHttp.post("/account/refresh-token")`. The current expiry response has `success:false`, `statusCode:401`, and message `Token validation error -  jwt expired`; there is no machine-readable auth error code yet. Do not treat every 401 as expiry: an incorrect old password on the change-password API also returns 401.
+2. Use one shared in-flight refresh promise per FE instance. Concurrent expired requests await it instead of issuing multiple refreshes. If the store already has a newer token than the one sent by a delayed failed request, reuse it rather than refreshing again.
+3. Replace the stored token from `response.data.data.token`, then retry the original request **once**, preserving method, URL, query, body and any existing idempotency key. Never generate a new payment/withdrawal key for that retry. A second authentication failure must not enter a refresh loop.
+4. If refresh returns 401 (missing cookie) or 403 (invalid/expired cookie or unavailable account), clear auth state and return to login. A network error or 5xx is a transient failure, not proof of logout: show a retryable error. Do not automatically replay mutations after a network timeout; use their documented idempotency contract.
+5. A regular API 403 can mean insufficient permissions or an inactive account. Do not refresh or log out indiscriminately on every 403; show the relevant error. Account-disabled/deleted responses should end the FE session.
+6. On page reload or waking a suspended tab, if there is no usable access token, the app may attempt one cookie refresh before loading `/account/me`. Avoid timer-driven keepalive refresh merely because a tab is open. Optional expiry-based refresh should happen when authenticated work is needed, not as evidence of user activity.
+
+The setup snippet illustrates Axios wiring, not a complete FE session manager. Stop/cancel pending refresh/retry work on logout or account switching and discard late results using an auth-state generation counter so an old response cannot restore a logged-out session. The retry coordinator must exclude login/refresh/logout and must not send the stored admin token to unrelated origins.
+
+### Tabs, devices, logout and account changes
+
+- Tabs sharing the same browser cookie scope share the refresh cookie; in-memory access-token stores are separate. A shared promise only coordinates one tab. Coordinate logout/account-switch state across tabs (for example, through `BroadcastChannel`); optionally coordinate refresh requests as well.
+- Different browser profiles/devices have separate cookie stores. There is no server-side session ID, device-session registry or per-session activity deadline in this implementation.
+- Logout clears the requesting browser's refresh cookie. It does not revoke already-issued JWTs or sign other devices out. FE must discard its own access token and notify sibling tabs.
+- Protected admin requests and refresh reject accounts that are inactive or deleted. Password changes update the password hash but do not revoke previously issued access/refresh JWTs.
+- This documents the admin/seller-side login flow. It does not change Flutter authentication or prescribe these refresh endpoints for the APP.
+
+### Scope and validation
+
+FE should describe this as automatic login renewal, not “every operation extends the session by 24 hours.” There is no activity-notification endpoint, `idleExpiresAt` field or session-idle error code to integrate. Do not add a 24-hour FE inactivity timer as a substitute for the current backend contract.
+
+The existing API suite verifies non-local access-token lifetime, 30-day refresh JWT/cookie lifetime, renewal and logout cookie clearing. No authentication runtime code or Flutter behavior was changed for this documentation update; the Axios integration remains FE work.
+
+## Company internal statistics
+
+### Recommended FE integration
+
+**Use the dedicated internal endpoints for new company-wide statistics screens:**
+
+- `GET /api/admin/dashboard/kpi/internal`
+- `GET /api/admin/dashboard/time-series/internal`
+
+Send `startDate` and `endDate` as calendar dates; the backend calculates the Taipei day boundaries. For time-series requests, also select a `dataset`. No `report` query parameter is needed or accepted.
+
+The existing `/kpi` and `/time-series` endpoints remain supported for operational and seller/employee dashboards. The internal endpoints are admin-only and have a different response shape.
+
+| Feature | Endpoints (under `/api/admin/dashboard`) | Date fields | Format and requirements |
+| --- | --- | --- | --- |
+| Company statistics — recommended for this feature | `/kpi/internal`, `/time-series/internal` | `startDate`, `endDate` | Both required; `YYYY-MM-DD`; inclusive Taipei calendar days; maximum 366 days. |
+| Existing operational dashboard | `/kpi`, `/time-series` | `startAt`, `endAt` | Optional exact timestamps, e.g. `2026-09-01T00:00:00Z`; either bound may be supplied alone. |
+
+Each Swagger operation now shows only its own query fields. Internal requests reject `startAt`, `endAt` and other operational filters with 400. Operational requests reject `startDate`, `endDate`, `dataset` and `report` with 400 instead of silently returning the wrong report. Internal response metadata still includes `startAt` and `endExclusive`; these are backend-calculated boundaries, not additional request parameters.
+
+In internal reports, the selected dates filter period activity. Current balances, the outstanding coin pool and the coin/ad ratio still describe the current `asOf` snapshot, not the historical closing balance at `endDate`.
+
+**2026-10-04 routing change:** replace `/kpi?report=internal&...` with `/kpi/internal?...`, and `/time-series?report=internal&...` with `/time-series/internal?...`. Remove `report=internal`; keep the same calendar dates and dataset. The former selector-based URLs now return 400; there is no alias or redirect. The internal response shapes and statistics calculations are unchanged. This routing change requires no database migration.
+
+### Requests and responses
+
+```http
+GET /api/admin/dashboard/kpi/internal?startDate=2026-09-01&endDate=2026-09-30
+GET /api/admin/dashboard/time-series/internal?dataset=users&startDate=2026-09-01&endDate=2026-09-30
+GET /api/admin/dashboard/time-series/internal?dataset=coin-flows&startDate=2026-09-01&endDate=2026-09-30
+GET /api/admin/dashboard/time-series/internal?dataset=ad-finance&startDate=2026-09-01&endDate=2026-09-30
+```
+
+**Active platform admins only.** Sellers and employees get 403. Both dates are required, real `YYYY-MM-DD` dates, in ascending order, inclusive, at most 366 days. `Asia/Taipei` is fixed: September 1 starts at August 31 16:00 UTC; September 30 ends exclusively at September 30 16:00 UTC. Do not send `report`, `sellerId`, `startAt`, `endAt`, `timezone`, `metric` or `interval` to the internal endpoints. Missing/invalid dates or unsupported fields get 400. Use the original endpoints for operational reports.
 
 Responses use `{success:true,data:{...}}`. Every metric uses this form:
 

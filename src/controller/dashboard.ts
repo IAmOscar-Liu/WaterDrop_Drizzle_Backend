@@ -15,17 +15,9 @@ function filters(req: RequestWithId) {
 
 class DashboardController {
   async kpi(req: RequestWithId, res: Response) {
-    if (req.query.report === "internal") {
-      sendJsonResponse(res, await dashboardService.getInternal({ requesterId: req.userId ?? "", startDate: String(req.query.startDate), endDate: String(req.query.endDate) }));
-      return;
-    }
     sendJsonResponse(res, await dashboardService.getKpi(filters(req)));
   }
   async timeSeries(req: RequestWithId, res: Response) {
-    if (req.query.report === "internal") {
-      sendJsonResponse(res, await dashboardService.getInternal({ requesterId: req.userId ?? "", startDate: String(req.query.startDate), endDate: String(req.query.endDate), dataset: req.query.dataset as "users" | "coin-flows" | "ad-finance" }, true));
-      return;
-    }
     sendJsonResponse(
       res,
       await dashboardService.getTimeSeries({
@@ -34,6 +26,21 @@ class DashboardController {
         interval: String(req.query.interval ?? "day") as any,
       }),
     );
+  }
+  async internalKpi(req: RequestWithId, res: Response) {
+    sendJsonResponse(res, await dashboardService.getInternal({
+      requesterId: req.userId ?? "",
+      startDate: String(req.query.startDate),
+      endDate: String(req.query.endDate),
+    }));
+  }
+  async internalTimeSeries(req: RequestWithId, res: Response) {
+    sendJsonResponse(res, await dashboardService.getInternal({
+      requesterId: req.userId ?? "",
+      startDate: String(req.query.startDate),
+      endDate: String(req.query.endDate),
+      dataset: req.query.dataset as "users" | "coin-flows" | "ad-finance",
+    }, true));
   }
   async pendingTasks(req: RequestWithId, res: Response) {
     sendJsonResponse(res, await dashboardService.getPendingTasks(filters(req)));

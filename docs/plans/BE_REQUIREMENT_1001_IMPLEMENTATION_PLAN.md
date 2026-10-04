@@ -12,7 +12,7 @@ contract, limitations, and validation are in [the FE handoff](../api/FE-confirma
 The selected ratio is current outstanding coin pool in TWD / current remaining ad balance.
 All retained app-user rows are counted; unreconstructable historical stocks remain unavailable.
 
-Source: [BE-requirement-1001.md](../../BE-requirement-1001.md), sections 1 and 3,
+Source: [BE-requirement-1001.md](../BE-requirement-1001.md), sections 1 and 3,
 plus the user's subsequent decisions. Section 2 (login inactivity/session expiry)
 remains outside scope. Withdrawal concerns ad funds returned to the seller's
 account wallet, not seller revenue settlement or bank payouts.
@@ -507,18 +507,20 @@ GET /api/admin/dashboard/kpi
 GET /api/admin/dashboard/time-series
 ```
 
-Add an explicit opt-in internal-report mode, provisionally `report=internal`,
-with a separate validated query contract. Legacy requests retain their existing
-seller-scoped behavior and response shapes. Example proposed requests:
+The 2026-10-04 routing decision separates company statistics into dedicated
+endpoints with their own validated query contracts. The original endpoints keep
+operational seller-scoped behavior and response shapes.
 
 ```http
-GET /api/admin/dashboard/kpi?report=internal&startDate=2026-10-01&endDate=2026-10-31
-GET /api/admin/dashboard/time-series?report=internal&dataset=ad-finance&startDate=2026-10-01&endDate=2026-10-31
+GET /api/admin/dashboard/kpi/internal?startDate=2026-10-01&endDate=2026-10-31
+GET /api/admin/dashboard/time-series/internal?dataset=ad-finance&startDate=2026-10-01&endDate=2026-10-31
 ```
 
-These parameters/datasets are proposals, not available API features. Suggested
-batched datasets are `users`, `coin-flows`, and `ad-finance`. Do not require one
-frontend request per metric or per date.
+The previous `report=internal` query selector is removed and rejected with 400.
+Internal endpoints accept calendar dates and the series dataset only; operational
+endpoints retain timestamp filters and reject internal date/dataset parameters.
+Batched datasets are `users`, `coin-flows`, and `ad-finance`. No frontend request
+per metric or per date is needed. This routing change requires no schema change.
 
 - Internal mode requires an active platform admin. Explicitly reject sellers and
   employees with `403`; never append platform aggregates to their legacy KPI
