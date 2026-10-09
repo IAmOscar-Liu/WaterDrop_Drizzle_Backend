@@ -188,6 +188,7 @@ class OrderService {
         sendEmail({
           to: simpleUser.email,
           subject: `[${getAppScheme()}]訂單建立通知`,
+          includePlatformLogo: true,
           html: generateOrderCompletedEmailHtml({
             userName: simpleUser.name || "",
             merchantTradeNo: order.merchantTradeNo || "",
