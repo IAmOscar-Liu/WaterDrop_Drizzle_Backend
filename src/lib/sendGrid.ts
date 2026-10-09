@@ -35,7 +35,8 @@ export async function sendEmail({
           filename: "appstore.png",
           type: "image/png",
           disposition: "inline",
-          contentId: PLATFORM_LOGO_CONTENT_ID,
+          // SendGrid passes plain attachment objects through without renaming keys.
+          content_id: PLATFORM_LOGO_CONTENT_ID,
         }]
       : undefined;
     await sgMail.send({ ...msg, attachments });

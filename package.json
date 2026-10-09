@@ -48,6 +48,7 @@
     "test:coin-ledger": "NODE_ENV=test tsx src/tests/runTestSuite.ts coin-ledger",
     "test:cron": "NODE_ENV=test tsx src/tests/runTestSuite.ts cron",
     "test:coin-accounting": "npm run _test:coin-accounting",
+    "email:order:development": "NODE_ENV=development tsx src/scripts/sendOrderEmail.ts",
     "coin:add:local": "NODE_ENV=local tsx src/scripts/manualCoinCredit.ts",
     "coin:add:development": "NODE_ENV=development tsx src/scripts/manualCoinCredit.ts",
     "_test:coin-accounting": "tsx src/tests/coinAccounting.test.ts",
