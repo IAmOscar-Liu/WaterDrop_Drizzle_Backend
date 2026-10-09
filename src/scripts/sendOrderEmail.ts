@@ -48,7 +48,6 @@ async function main() {
     to: values.to,
     subject: `[水滴寄信測試] 訂單明細與 Logo — ${reference}`,
     html,
-    includePlatformLogo: true,
   });
   if (!result.success) {
     // Do not log the full SDK error: it can contain authorization headers.

@@ -1,6 +1,18 @@
 import type { Order, OrderItem } from "../db/schema";
 
 export const PLATFORM_LOGO_CONTENT_ID = "waterdrop-platform-logo";
+const platformLogoHtml = `<img src="cid:${PLATFORM_LOGO_CONTENT_ID}" alt="水滴 Logo" width="80" height="80" style="display:block;width:80px;height:80px;margin-bottom:16px;border:0;border-radius:16px;background-color:#ffffff;" />`;
+
+// Templates can position the logo in their header. Other emails get a default header.
+export function ensurePlatformLogo(html: string): string {
+  if (html.includes(`cid:${PLATFORM_LOGO_CONTENT_ID}`)) return html;
+
+  const header = `<div style="padding:24px;background-color:#f4f7fb;">${platformLogoHtml}</div>`;
+  if (/<body\b[^>]*>/i.test(html)) {
+    return html.replace(/<body\b[^>]*>/i, (bodyTag) => `${bodyTag}${header}`);
+  }
+  return `${header}${html}`;
+}
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => {
@@ -110,7 +122,7 @@ export function generateOrderCompletedEmailHtml({
     <div style="margin:0;padding:32px 16px;background-color:#f4f7fb;font-family:Arial,'Noto Sans TC',sans-serif;color:#1f2937;">
       <div style="max-width:560px;margin:0 auto;background-color:#ffffff;border-radius:20px;overflow:hidden;box-shadow:0 12px 32px rgba(15,23,42,0.08);">
         <div style="padding:32px 32px 24px;background:linear-gradient(135deg,#0ea5e9 0%,#2563eb 100%);color:#ffffff;">
-          <img src="cid:${PLATFORM_LOGO_CONTENT_ID}" alt="水滴 Logo" width="80" height="80" style="display:block;width:80px;height:80px;margin-bottom:16px;border:0;border-radius:16px;background-color:#ffffff;" />
+          ${platformLogoHtml}
           <div style="font-size:14px;letter-spacing:1px;opacity:0.9;">水滴</div>
           <h1 style="margin:12px 0 0;font-size:28px;line-height:1.3;">訂單建立成功</h1>
           <p style="margin:12px 0 0;font-size:15px;line-height:1.8;opacity:0.95;">
@@ -188,6 +200,7 @@ export function generateRefundCreatedEmailHtml({
     <div style="margin:0;padding:32px 16px;background-color:#f4f7fb;font-family:Arial,'Noto Sans TC',sans-serif;color:#1f2937;">
       <div style="max-width:560px;margin:0 auto;background-color:#ffffff;border-radius:20px;overflow:hidden;box-shadow:0 12px 32px rgba(15,23,42,0.08);">
         <div style="padding:32px 32px 24px;background:linear-gradient(135deg,#0ea5e9 0%,#2563eb 100%);color:#ffffff;">
+          ${platformLogoHtml}
           <div style="font-size:14px;letter-spacing:1px;opacity:0.9;">水滴</div>
           <h1 style="margin:12px 0 0;font-size:28px;line-height:1.3;">退貨申請已送出</h1>
           <p style="margin:12px 0 0;font-size:15px;line-height:1.8;opacity:0.95;">
