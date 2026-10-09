@@ -442,6 +442,13 @@
       "when": 1789539339775,
       "tag": "0062_powerful_magus",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1791373861105,
+      "tag": "0063_gorgeous_squadron_sinister",
+      "breakpoints": true
     }
   ]
 }

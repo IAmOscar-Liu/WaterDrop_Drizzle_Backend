@@ -192,6 +192,21 @@ class OrderService {
             userName: simpleUser.name || "",
             merchantTradeNo: order.merchantTradeNo || "",
             orderId: order.id,
+            details: {
+              subTotal: order.subTotal,
+              discountCoin: order.discountCoin,
+              shippingCost: order.shippingCost,
+              shippingCostDeduction: order.shippingCostDeduction,
+              transactionFee: order.transactionFee,
+              totalAmount: order.totalAmount,
+              items: order.items.map((item) => ({
+                productNameAtSale: item.productNameAtSale,
+                variantNameAtSale: item.variantAtSale.name,
+                unitPriceAtSale: item.unitPriceAtSale,
+                quantity: item.quantity,
+                lineTotal: item.lineTotal,
+              })),
+            },
           }),
         });
       }
