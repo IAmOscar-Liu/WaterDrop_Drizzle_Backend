@@ -3,6 +3,7 @@ import { relations, sql } from "drizzle-orm";
 import { convertIndexToString } from "drizzle-orm/mysql-core";
 import {
   boolean,
+  bigint,
   bigserial,
   check,
   date,
@@ -280,8 +281,11 @@ export const chatRoomTable = pgTable(
       .$onUpdate(() => new Date())
       .notNull(),
     status: chatRoomStatusEnum("status").default("active").notNull(),
+    version: integer("version").default(1).notNull(),
+    accessVersion: integer("access_version").default(1).notNull(),
   },
   (t) => ({
+    versionCheck: check("chat_rooms_version_ck", sql`${t.version} > 0 and ${t.accessVersion} > 0`),
     chatRoomProductVariantCheck: check(
       "chat_rooms_product_variant_pair_ck",
       sql`(${t.productId} is null and ${t.productVariantId} is null) or (${t.productId} is not null and ${t.productVariantId} is not null)`,
@@ -308,6 +312,10 @@ export const chatMessageTable = pgTable("chat_messages", {
     .references(() => chatRoomTable.id, { onDelete: "cascade" }),
   senderType: chatMessageSenderEnum("sender_type").notNull(),
   content: text("content"),
+  clientMessageId: uuid("client_message_id"),
+  senderIdentity: text("sender_identity"),
+  requestFingerprint: text("request_fingerprint"),
+  version: integer("version").default(1).notNull(),
   isRead: boolean("is_read").default(false).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
@@ -316,7 +324,87 @@ export const chatMessageTable = pgTable("chat_messages", {
     .defaultNow()
     .$onUpdate(() => new Date())
     .notNull(),
-});
+}, (t) => ({
+  versionCheck: check("chat_messages_version_ck", sql`${t.version} > 0`),
+  unreadIdx: index("chat_messages_unread_room_idx").on(t.chatRoomId, t.senderType).where(sql`${t.isRead} = false`),
+  historyIdx: index("chat_messages_room_history_idx").on(t.chatRoomId, t.createdAt.desc(), t.id.desc()),
+  clientMessageUnique: uniqueIndex("chat_messages_client_retry_uk").on(t.chatRoomId, t.senderIdentity, t.clientMessageId),
+  retryIdentityCheck: check("chat_messages_retry_identity_ck", sql`${t.clientMessageId} is null or (${t.senderIdentity} is not null and ${t.requestFingerprint} is not null)`),
+}));
+
+// Head allocation is protected by the user row lock, never by a global sequence.
+export const chatFeedTable = pgTable("chat_user_feeds", {
+  userId: uuid("user_id").primaryKey().references(() => userTable.id, { onDelete: "cascade" }),
+  head: bigint("head", { mode: "number" }).default(0).notNull(),
+  retainedAfter: bigint("retained_after", { mode: "number" }).default(0).notNull(),
+  listVersion: bigint("list_version", { mode: "number" }).default(1).notNull(),
+}, (t) => ({
+  sequenceCheck: check("chat_user_feeds_sequence_ck", sql`${t.retainedAfter} >= 0 and ${t.head} >= ${t.retainedAfter} and ${t.head} < 9007199254740991 and ${t.listVersion} > 0 and ${t.listVersion} < 9007199254740991`),
+}));
+
+export const chatFeedEventTable = pgTable("chat_feed_events", {
+  userId: uuid("user_id").notNull().references(() => chatFeedTable.userId, { onDelete: "cascade" }),
+  sequence: bigint("sequence", { mode: "number" }).notNull(),
+  // No room FK: removal tombstones must survive room deletion.
+  chatRoomId: uuid("chat_room_id").notNull(),
+  accessVersion: integer("access_version").notNull(),
+  eventType: text("event_type").notNull(),
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`clock_timestamp()`).notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.userId, t.sequence] }),
+  retentionIdx: index("chat_feed_events_retention_idx").on(t.createdAt, t.userId),
+  eventCheck: check("chat_feed_events_valid_ck", sql`${t.sequence} > 0 and ${t.accessVersion} > 0 and ${t.eventType} in ('message.created', 'messages.read', 'chatroom.updated', 'chatroom.removed', 'stream.reset')`),
+}));
+
+export const chatListSnapshotTable = pgTable("chat_list_snapshots", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => chatFeedTable.userId, { onDelete: "cascade" }),
+  pageSize: integer("page_size").notNull(),
+  rooms: jsonb("rooms").$type<{ id: string; accessVersion: number }[]>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+}, (t) => ({
+  userIdx: index("chat_list_snapshots_user_idx").on(t.userId, t.createdAt),
+  expiryIdx: index("chat_list_snapshots_expiry_idx").on(t.expiresAt),
+  pageSizeCheck: check("chat_list_snapshots_page_size_ck", sql`${t.pageSize} between 1 and 100`),
+}));
+
+// Separate admin audiences: platform support, or one seller (including its employees).
+export const adminChatFeedTable = pgTable("admin_chat_feeds", {
+  scope: text("scope").primaryKey(),
+  head: bigint("head", { mode: "number" }).default(0).notNull(),
+  retainedAfter: bigint("retained_after", { mode: "number" }).default(0).notNull(),
+  listVersion: bigint("list_version", { mode: "number" }).default(1).notNull(),
+}, (t) => ({
+  sequenceCheck: check("admin_chat_feeds_sequence_ck", sql`${t.retainedAfter} >= 0 and ${t.head} >= ${t.retainedAfter} and ${t.head} < 9007199254740991 and ${t.listVersion} > 0 and ${t.listVersion} < 9007199254740991`),
+}));
+export const adminChatFeedEventTable = pgTable("admin_chat_feed_events", {
+  scope: text("scope").notNull().references(() => adminChatFeedTable.scope, { onDelete: "cascade" }),
+  sequence: bigint("sequence", { mode: "number" }).notNull(),
+  chatRoomId: uuid("chat_room_id").notNull(),
+  accessVersion: integer("access_version").notNull(),
+  eventType: text("event_type").notNull(),
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`clock_timestamp()`).notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.scope, t.sequence] }),
+  retentionIdx: index("admin_chat_events_retention_idx").on(t.createdAt, t.scope),
+  eventCheck: check("admin_chat_events_valid_ck", sql`${t.sequence} > 0 and ${t.accessVersion} > 0 and ${t.eventType} in ('message.created', 'messages.read', 'chatroom.updated', 'chatroom.removed', 'stream.reset')`),
+}));
+export const adminChatListSnapshotTable = pgTable("admin_chat_list_snapshots", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  accountId: uuid("account_id").notNull().references(() => accountTable.id, { onDelete: "cascade" }),
+  scope: text("scope").notNull().references(() => adminChatFeedTable.scope, { onDelete: "cascade" }),
+  queryKey: text("query_key").notNull(),
+  pageSize: integer("page_size").notNull(),
+  rooms: jsonb("rooms").$type<{ id: string; accessVersion: number }[]>().notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+}, (t) => ({
+  accountIdx: index("admin_chat_snapshots_account_idx").on(t.accountId),
+  expiryIdx: index("admin_chat_snapshots_expiry_idx").on(t.expiresAt),
+  pageSizeCheck: check("admin_chat_snapshots_page_size_ck", sql`${t.pageSize} between 1 and 100`),
+}));
 
 export const chatMessageAttachmentTable = pgTable("chat_message_attachments", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -1264,6 +1352,9 @@ export const userNotificationTable = pgTable(
     }),
     // A generic metadata field for other links (e.g., product, URL)
     metadata: jsonb("metadata"),
+    version: integer("version").default(1).notNull(),
+    // Keep recipient/id/version tombstones for idempotent deletion retries.
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -1278,8 +1369,46 @@ export const userNotificationTable = pgTable(
       t.userId,
       t.isRead,
     ),
+    versionCheck: check("user_notifications_version_ck", sql`${t.version} > 0`),
+    historyIdx: index("user_notifications_user_history_idx").on(t.userId, t.createdAt.desc(), t.id.desc()).where(sql`${t.deletedAt} is null`),
   }),
 );
+
+export const notificationFeedTable = pgTable("notification_user_feeds", {
+  userId: uuid("user_id").primaryKey().references(() => userTable.id, { onDelete: "cascade" }),
+  head: bigint("head", { mode: "number" }).default(0).notNull(),
+  retainedAfter: bigint("retained_after", { mode: "number" }).default(0).notNull(),
+  version: bigint("version", { mode: "number" }).default(1).notNull(),
+}, (t) => ({
+  sequenceCheck: check("notification_user_feeds_sequence_ck", sql`${t.retainedAfter} >= 0 and ${t.head} >= ${t.retainedAfter} and ${t.head} < 9007199254740991 and ${t.version} > 0 and ${t.version} < 9007199254740991`),
+}));
+
+export const notificationFeedEventTable = pgTable("notification_feed_events", {
+  userId: uuid("user_id").notNull().references(() => notificationFeedTable.userId, { onDelete: "cascade" }),
+  sequence: bigint("sequence", { mode: "number" }).notNull(),
+  notificationId: uuid("notification_id").notNull(),
+  eventType: text("event_type").notNull(),
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).default(sql`clock_timestamp()`).notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.userId, t.sequence] }),
+  retentionIdx: index("notification_feed_events_retention_idx").on(t.createdAt, t.userId),
+  eventCheck: check("notification_feed_events_valid_ck", sql`${t.sequence} > 0 and ${t.eventType} in ('notification.created', 'notification.updated', 'notification.deleted', 'stream.reset')`),
+}));
+
+export const notificationListSnapshotTable = pgTable("notification_list_snapshots", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => notificationFeedTable.userId, { onDelete: "cascade" }),
+  queryKey: text("query_key").notNull(),
+  pageSize: integer("page_size").notNull(),
+  notificationIds: jsonb("notification_ids").$type<string[]>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+}, (t) => ({
+  queryUnique: uniqueIndex("notification_snapshots_user_query_uk").on(t.userId, t.queryKey),
+  expiryIdx: index("notification_snapshots_expiry_idx").on(t.expiresAt),
+  pageSizeCheck: check("notification_snapshots_page_size_ck", sql`${t.pageSize} between 1 and 100`),
+}));
 
 export const idempotencyKeyTable = pgTable(
   "idempotency_keys",

@@ -771,6 +771,27 @@
       "when": 1790822934095,
       "tag": "0109_condemned_wilson_fisk",
       "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "7",
+      "when": 1791726914381,
+      "tag": "0110_thin_devos",
+      "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1791734989227,
+      "tag": "0111_foamy_invaders",
+      "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1791739386736,
+      "tag": "0112_minor_orphan",
+      "breakpoints": true
     }
   ]
 }

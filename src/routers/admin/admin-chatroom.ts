@@ -1,3 +1,4 @@
+import adminChatroomSyncRouter from "./admin-chatroom-sync";
 import { Router } from "express";
 import ChatroomController from "../../controller/chatroom";
 import isAuth from "../../middleware/isAuth";
@@ -5,6 +6,7 @@ import validateZod from "../../middleware/validateZod";
 import { adminValidation } from "../../middleware/admin";
 
 const router = Router();
+router.use(adminChatroomSyncRouter);
 /**
  * @swagger
  * tags:
@@ -419,7 +421,7 @@ router.get(
  * /api/admin/chatroom/message/{chatRoomId}:
  *   post:
  *     summary: Send a message as an admin
- *     description: Requires an active room within the authenticated account scope. Platform admins use senderType admin; sellers and seller employees use seller. A mismatched role returns 403; an inaccessible room returns 404.
+ *     description: Requires an active room within the authenticated account scope. Platform admins use senderType admin; sellers and seller employees use seller. A mismatched role returns 403; an inaccessible room returns 404. After saving, attempts FCM push to the room owner's registered devices. Product rooms use the product name as the notification title; rooms without a product use 水滴客服. Push is best-effort and does not change the saved message response.
  *     tags: [Chatroom]
  *     security:
  *       - bearerAuth: []

@@ -45,6 +45,7 @@ export default async function isAuth(
   }
   if (decodedPayload.data?.id) req.userId = decodedPayload.data.id;
   if (!req.userId) return next(new CustomError("Token is invalid", 401));
+  req.tokenExpiresAt = decodedPayload.exp;
 
   try {
     // App users and admin-side accounts share this middleware and token shape.

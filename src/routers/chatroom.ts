@@ -1,10 +1,15 @@
 import { Router } from "express";
+import ChatroomSyncController from "../controller/chatroomSync";
+import chatroomSyncRouter from "./chatroomSync";
 import ChatroomController from "../controller/chatroom";
 import isAuth from "../middleware/isAuth";
 import { chatroomValidation } from "../middleware/chatroom";
 import validateZod from "../middleware/validateZod";
 
 const router = Router();
+
+router.get("/events", isAuth, ChatroomSyncController.events);
+router.use("/sync", chatroomSyncRouter);
 
 /**
  * @swagger

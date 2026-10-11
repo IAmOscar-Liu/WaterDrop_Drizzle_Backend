@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { decodeChatCursor, encodeChatCursor } from "../lib/chatCursor";
+import { appendChatEvent, canonicalChatMessage, chatListState, lockChatFeed, lockRoomFeed, publishChatRead, publishChatRoom, readChatSummaries, listChatSnapshot, visibleChatRoomCondition } from "./chatroomSync";
 import {
   and,
   count,
@@ -16,6 +19,16 @@ import { CustomError } from "../lib/error";
 import { resolveAdminSellerScope } from "./adminScope";
 import { minimumVariantPrice } from "./utils/product";
 import { compactConditions, getPagination, getTotalPages } from "./utils/query";
+
+function legacyChatRoom<T extends { version: number; accessVersion: number }>(room: T) {
+  const { version, accessVersion, ...legacy } = room;
+  return legacy;
+}
+
+function legacyChatMessage<T extends { version: number; clientMessageId: string | null; senderIdentity?: string | null; requestFingerprint?: string | null }>(message: T) {
+  const { version, clientMessageId, senderIdentity, requestFingerprint, ...legacy } = message;
+  return legacy;
+}
 
 export type ChatroomActor =
   | { kind: "user"; id: string }
@@ -167,6 +180,7 @@ export async function findOrCreateChatRoom({
   }
 
   return db.transaction(async (tx) => {
+    let roomChanged = false;
     const [user] = await tx
       .select({ id: schema.userTable.id })
       .from(schema.userTable)
@@ -175,6 +189,7 @@ export async function findOrCreateChatRoom({
     if (!user) {
       throw new CustomError("User not found", 404);
     }
+    await lockChatFeed(tx, userId);
 
     // These referenced rows are read-only here. Avoid taking locks in the
     // reverse order of refund writes, which may concurrently create this room.
@@ -227,10 +242,11 @@ export async function findOrCreateChatRoom({
 
       const [updatedRoom] = await tx
         .update(schema.chatRoomTable)
-        .set({ status: "active" })
+        .set({ status: "active", accessVersion: room.accessVersion + 1 })
         .where(eq(schema.chatRoomTable.id, room.id))
         .returning();
 
+      roomChanged = true;
       return updatedRoom ?? room;
     };
 
@@ -249,11 +265,14 @@ export async function findOrCreateChatRoom({
           .returning();
 
         existingRoom = updatedRoom ?? existingRoom;
+        roomChanged = true;
       }
     }
 
     if (existingRoom) {
-      return activateChatRoom(existingRoom);
+      const room = await activateChatRoom(existingRoom);
+      if (roomChanged) await publishChatRoom(tx, room.id);
+      return legacyChatRoom((await tx.query.chatRoomTable.findFirst({ where: eq(schema.chatRoomTable.id, room.id) }))!);
     }
 
     const [newRoom] = await tx
@@ -265,13 +284,14 @@ export async function findOrCreateChatRoom({
       throw new CustomError("Chat room could not be created", 500);
     }
 
-    return newRoom;
+    await publishChatRoom(tx, newRoom.id);
+    return legacyChatRoom((await tx.query.chatRoomTable.findFirst({ where: eq(schema.chatRoomTable.id, newRoom.id) }))!);
   });
 }
 
 export async function getChatRoomById(chatRoomId: string, actor: ChatroomActor) {
   const access = await resolveChatroomAccess(actor);
-  return db.query.chatRoomTable.findFirst({
+  const room = await db.query.chatRoomTable.findFirst({
     with: {
       product: {
         extras: (products) => ({
@@ -282,6 +302,7 @@ export async function getChatRoomById(chatRoomId: string, actor: ChatroomActor) 
     },
     where: accessibleRoomCondition(chatRoomId, access),
   });
+  return room ? legacyChatRoom(room) : room;
 }
 
 /**
@@ -294,6 +315,7 @@ export async function getChatRoomById(chatRoomId: string, actor: ChatroomActor) 
  * @returns The newly created chat message.
  */
 type SendChatMessageInput = {
+  clientMessageId?: string;
   chatRoomId: string;
   senderType: schema.ChatMessage["senderType"];
   content?: string;
@@ -306,69 +328,71 @@ type SendChatMessageInput = {
 export async function sendChatMessage(input: SendChatMessageInput & { actor: ChatroomActor }) {
   const access = await resolveChatroomAccess(input.actor);
   requireActorRole(input.senderType, access);
-  return writeChatMessage(input, access);
+  const { message } = await writeChatMessage({ ...input, clientMessageId: undefined }, access, `${input.actor.kind}:${input.actor.id}`);
+  return legacyChatMessage(message);
+}
+
+export async function sendSyncChatMessage(input: SendChatMessageInput & { actor: ChatroomActor }) {
+  if (input.actor.kind !== "user") throw new CustomError("Chat synchronization is app-only", 403);
+  const access = await resolveChatroomAccess(input.actor);
+  requireActorRole(input.senderType, access);
+  return writeChatMessage(input, access, `${input.actor.kind}:${input.actor.id}`);
+}
+
+export async function sendAdminSyncChatMessage(input: Omit<SendChatMessageInput, "senderType"> & { actor: ChatroomActor; senderType?: "admin" | "seller" }) {
+  if (input.actor.kind !== "account") throw new CustomError("Admin chat synchronization requires an account", 403);
+  const access = await resolveChatroomAccess(input.actor);
+  if (input.senderType) requireActorRole(input.senderType, access);
+  return writeChatMessage({ ...input, senderType: access.senderType }, access, `account:${input.actor.id}`);
 }
 
 // Only server-generated workflows may use this entry point; HTTP services require an actor.
 export async function sendSystemChatMessage(input: SendChatMessageInput) {
-  return writeChatMessage(input, { senderType: input.senderType });
+  return legacyChatMessage((await writeChatMessage({ ...input, clientMessageId: undefined }, { senderType: input.senderType }, `system:${input.senderType}`)).message);
 }
 
 async function writeChatMessage(
-  { chatRoomId, content, attachments }: SendChatMessageInput,
+  { chatRoomId, content, attachments, clientMessageId }: SendChatMessageInput,
   access: ChatroomAccess,
+  senderIdentity: string,
 ) {
   const senderType = access.senderType;
+  const canonicalAttachments = (attachments ?? []).map((a) => ({
+    url: a.url, name: a.name ?? null, mimeType: a.mimeType ?? null, size: a.size ?? null,
+  }));
+  const requestFingerprint = createHash("sha256").update(JSON.stringify({ content: content ?? null, attachments: canonicalAttachments })).digest("hex");
   return db.transaction(async (tx) => {
-    // check if both content and attachments are null
-    if (!content && (!attachments || attachments.length === 0)) {
-      throw new CustomError("Content and attachments cannot both be null", 400);
+    if (!content && canonicalAttachments.length === 0) throw new CustomError("Content and attachments cannot both be null", 400);
+    const userId = await lockRoomFeed(tx, chatRoomId);
+    const [room] = await tx.select().from(schema.chatRoomTable)
+      .where(and(accessibleRoomCondition(chatRoomId, access), eq(schema.chatRoomTable.userId, userId))).for("update");
+    if (!room) throw new CustomError("Chat room not found or not active", 404);
+    if (clientMessageId) {
+      const existing = await tx.query.chatMessageTable.findFirst({
+        where: and(eq(schema.chatMessageTable.chatRoomId, chatRoomId), eq(schema.chatMessageTable.senderIdentity, senderIdentity), eq(schema.chatMessageTable.clientMessageId, clientMessageId)),
+        with: { attachments: true },
+      });
+      if (existing) {
+        if (existing.requestFingerprint !== requestFingerprint) throw new CustomError("clientMessageId was already used for different content or attachments", 409, "CLIENT_MESSAGE_ID_CONFLICT");
+        return { message: canonicalChatMessage(existing), replayed: true };
+      }
     }
-
-    // check if chatroom is active
-    const [existingRoom] = await tx.select().from(schema.chatRoomTable)
-      .where(accessibleRoomCondition(chatRoomId, access)).for("update");
-    if (!existingRoom) {
-      throw new CustomError("Chat room not found or not active", 404);
-    }
-
-    // Insert the new message
-    const [newMessage] = await tx
-      .insert(schema.chatMessageTable)
-      .values({
-        chatRoomId,
-        senderType,
-        content,
-      })
-      .returning();
-
-    if (attachments && attachments.length > 0) {
-      await tx.insert(schema.chatMessageAttachmentTable).values(
-        attachments.map((a) => ({
-          ...a,
-          chatMessageId: newMessage.id,
-        })),
-      );
-    }
-
-    await tx
-      .update(schema.chatMessageTable)
-      .set({ isRead: true, updatedAt: new Date() })
-      .where(
-        and(
-          eq(schema.chatMessageTable.chatRoomId, chatRoomId),
-          ne(schema.chatMessageTable.senderType, senderType), // Mark messages from the *other* party
-          eq(schema.chatMessageTable.isRead, false), // Only update unread messages
-        ),
-      );
-
-    return tx.query.chatMessageTable.findFirst({
-      where: eq(schema.chatMessageTable.id, newMessage.id),
-      with: {
-        attachments: true,
-      },
-    });
+    const [message] = await tx.insert(schema.chatMessageTable).values({ chatRoomId, senderType, content, clientMessageId, senderIdentity, requestFingerprint }).returning();
+    if (canonicalAttachments.length) await tx.insert(schema.chatMessageAttachmentTable).values(canonicalAttachments.map((a) => ({ ...a, chatMessageId: message.id })));
+    const changed = await tx.update(schema.chatMessageTable)
+      .set({ isRead: true, version: sql`${schema.chatMessageTable.version} + 1`, updatedAt: new Date() })
+      .where(and(eq(schema.chatMessageTable.chatRoomId, chatRoomId), unreadSenderCondition(senderType), eq(schema.chatMessageTable.isRead, false))).returning();
+    const canonical = canonicalChatMessage((await tx.query.chatMessageTable.findFirst({ where: eq(schema.chatMessageTable.id, message.id), with: { attachments: true } }))!);
+    await appendChatEvent(tx, room, "message.created", { message: canonical });
+    await publishChatRead(tx, room, senderType, changed);
+    await publishChatRoom(tx, chatRoomId);
+    return { message: canonical, replayed: false };
   });
+}
+
+function unreadSenderCondition(reader: schema.ChatMessage["senderType"]) {
+  // Preserve existing sender-role inequality for legacy/admin/system writes.
+  return ne(schema.chatMessageTable.senderType, reader);
 }
 
 export interface GetChatHistoryParams {
@@ -429,7 +453,7 @@ export async function getChatHistory({
     });
 
     return {
-      messages,
+      messages: messages.map(legacyChatMessage),
       total,
       page: pagination.page,
       limit: pagination.limit,
@@ -438,15 +462,61 @@ export async function getChatHistory({
   });
 }
 
+export async function getSyncChatHistory(input: GetChatHistoryParams & { before?: string }) {
+  if (input.actor.kind !== "user") throw new CustomError("Chat synchronization is app-only", 403);
+  return getVersionedChatHistory(input);
+}
+
+export async function getAdminSyncChatHistory(input: GetChatHistoryParams & { before?: string }) {
+  if (input.actor.kind !== "account") throw new CustomError("Admin chat synchronization requires an account", 403);
+  return getVersionedChatHistory(input);
+}
+
+async function getVersionedChatHistory({ actor, chatRoomId, page, limit = 20, startAt, endAt, before }: GetChatHistoryParams & { before?: string }) {
+  const access = await resolveChatroomAccess(actor);
+  if (before && (page !== undefined || startAt || endAt)) throw new CustomError("before cannot be combined with page/startAt/endAt", 400, "CHAT_HISTORY_CURSOR_INVALID");
+  const cursor = before ? decodeChatCursor(before, "history") : undefined;
+  if (cursor && cursor.roomId !== chatRoomId) throw new CustomError("History cursor belongs to another room", 400, "CHAT_HISTORY_CURSOR_INVALID");
+  return db.transaction(async (tx) => {
+    const [room] = await tx.select({ id: schema.chatRoomTable.id }).from(schema.chatRoomTable)
+      .where(accessibleRoomCondition(chatRoomId, access)).for("share");
+    if (!room) throw new CustomError("Chat room not found or not active", 404);
+    const pagination = getPagination(page ?? 1, limit);
+    const conditions = compactConditions([
+      eq(schema.chatMessageTable.chatRoomId, chatRoomId),
+      startAt ? gte(schema.chatMessageTable.createdAt, startAt) : undefined,
+      endAt ? lte(schema.chatMessageTable.createdAt, endAt) : undefined,
+      cursor ? sql`(${schema.chatMessageTable.createdAt}, ${schema.chatMessageTable.id}) < (${cursor.timestamp}::timestamptz, ${cursor.id}::uuid)` : undefined,
+    ]);
+    const [{ total }] = await tx.select({ total: count() }).from(schema.chatMessageTable).where(conditions);
+    const rows = await tx.query.chatMessageTable.findMany({
+      where: conditions, limit: pagination.limit + 1, offset: cursor ? 0 : pagination.offset,
+      orderBy: (messages, { desc }) => [desc(messages.createdAt), desc(messages.id)],
+      extras: { cursorTimestamp: sql<string>`to_char(${schema.chatMessageTable.createdAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.as("cursor_timestamp") },
+      with: { attachments: true },
+    });
+    const hasMore = rows.length > pagination.limit;
+    const pageRows = rows.slice(0, pagination.limit);
+    const oldest = pageRows[pageRows.length - 1];
+    // Date-filtered pages stay on legacy pagination; they cannot start an unfiltered cursor chain.
+    const nextCursor = hasMore && oldest && !startAt && !endAt ? encodeChatCursor({ kind: "history", roomId: chatRoomId, id: oldest.id, timestamp: oldest.cursorTimestamp }) : null;
+    return {
+      messages: pageRows.map(({ cursorTimestamp, ...message }) => canonicalChatMessage(message)),
+      ...(cursor ? {} : { total, page: pagination.page, totalPages: getTotalPages(total, pagination.limit) }),
+      limit: pagination.limit, hasMore, nextCursor,
+    };
+  });
+}
+
 /**
  * Marks all unread messages in a chat room as read for a specific reader.
- * For instance, if the reader is a 'user', it marks messages from 'seller' or 'admin' as read.
+ * Preserves existing behavior: mark messages from other sender roles as read.
  *
  * @param chatRoomId The ID of the chat room.
  * @param readerType The type of the entity reading the messages ('user', 'admin', or 'seller').
  * @returns A promise that resolves to an array of the updated messages.
  */
-export async function markMessagesAsRead(
+async function writeMessagesAsRead(
   chatRoomId: string,
   readerType: schema.ChatMessage["senderType"],
   actor: ChatroomActor,
@@ -454,17 +524,56 @@ export async function markMessagesAsRead(
   const access = await resolveChatroomAccess(actor);
   requireActorRole(readerType, access);
   return db.transaction(async (tx) => {
-    const [room] = await tx.select({ id: schema.chatRoomTable.id }).from(schema.chatRoomTable)
-      .where(accessibleRoomCondition(chatRoomId, access)).for("update");
+    const userId = await lockRoomFeed(tx, chatRoomId);
+    const [room] = await tx.select().from(schema.chatRoomTable)
+      .where(and(accessibleRoomCondition(chatRoomId, access), eq(schema.chatRoomTable.userId, userId))).for("update");
     if (!room) throw new CustomError("Chat room not found or not active", 404);
-    return tx.update(schema.chatMessageTable)
-      .set({ isRead: true, updatedAt: new Date() })
-      .where(and(
-        eq(schema.chatMessageTable.chatRoomId, chatRoomId),
-        ne(schema.chatMessageTable.senderType, access.senderType),
-        eq(schema.chatMessageTable.isRead, false),
-      ))
+    const messages = await tx.update(schema.chatMessageTable)
+      .set({ isRead: true, version: sql`${schema.chatMessageTable.version} + 1`, updatedAt: new Date() })
+      .where(and(eq(schema.chatMessageTable.chatRoomId, chatRoomId), unreadSenderCondition(access.senderType), eq(schema.chatMessageTable.isRead, false)))
       .returning();
+    if (messages.length) {
+      await publishChatRead(tx, room, readerType, messages);
+      await publishChatRoom(tx, chatRoomId);
+    }
+    return messages.map(canonicalChatMessage);
+  });
+}
+
+export async function markMessagesAsRead(chatRoomId: string, readerType: schema.ChatMessage["senderType"], actor: ChatroomActor) {
+  return (await writeMessagesAsRead(chatRoomId, readerType, actor)).map(legacyChatMessage);
+}
+
+export async function markSyncMessagesAsRead(chatRoomId: string, actor: ChatroomActor) {
+  if (actor.kind !== "user") throw new CustomError("Chat synchronization is app-only", 403);
+  return writeMessagesAsRead(chatRoomId, "user", actor);
+}
+
+export async function markAdminSyncMessagesAsRead(chatRoomId: string, actor: ChatroomActor, readerType?: "admin" | "seller") {
+  if (actor.kind !== "account") throw new CustomError("Admin chat synchronization requires an account", 403);
+  const access = await resolveChatroomAccess(actor);
+  if (readerType) requireActorRole(readerType, access);
+  return writeMessagesAsRead(chatRoomId, access.senderType, actor);
+}
+
+export type ListSyncChatRoomsParams = {
+  userId: string;
+  page?: number;
+  limit?: number;
+  snapshot?: boolean;
+  listSnapshot?: string;
+};
+
+export async function listSyncChatRooms({ userId, page = 1, limit = 20, snapshot, listSnapshot }: ListSyncChatRoomsParams) {
+  await resolveChatroomAccess({ kind: "user", id: userId });
+  const pagination = getPagination(page, limit);
+  if (snapshot || listSnapshot) return listChatSnapshot(userId, pagination.page, pagination.limit, listSnapshot);
+  return db.transaction(async (tx) => {
+    await lockChatFeed(tx, userId);
+    // Legacy clients continue to hide empty rooms.
+    const [{ total }] = await tx.select({ total: count() }).from(schema.chatRoomTable).where(and(eq(schema.chatRoomTable.userId, userId), eq(schema.chatRoomTable.status, "active"), visibleChatRoomCondition()));
+    const rooms = (await readChatSummaries(tx, userId, undefined, pagination)).map(({ accessVersion, ...room }) => room);
+    return { rooms, total, page: pagination.page, limit: pagination.limit, totalPages: getTotalPages(total, pagination.limit), listState: await chatListState(tx, userId) };
   });
 }
 
@@ -603,10 +712,10 @@ export async function listChatRooms({
       : roomProduct;
 
     return {
-      ...rest,
+      ...legacyChatRoom(rest),
       product,
       totalUnread: Number(unreadCount),
-      lastMessage: lastMessage || null,
+      lastMessage: lastMessage ? legacyChatMessage(lastMessage) : null,
       order: order
         ? {
             id: order.id,
@@ -803,10 +912,10 @@ export async function listAdminChatRooms({
       : roomProduct;
 
     return {
-      ...rest,
+      ...legacyChatRoom(rest),
       product,
       totalUnread: Number(unreadCount),
-      lastMessage: lastMessage || null,
+      lastMessage: lastMessage ? legacyChatMessage(lastMessage) : null,
       order: order
         ? {
             id: order.id,

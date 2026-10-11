@@ -25,9 +25,10 @@ class NotificationService {
 
   async getNotificationById(
     notificationId: string,
+    userId: string,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof getNotificationById>>>> {
     try {
-      const notification = await getNotificationById(notificationId);
+      const notification = await getNotificationById(notificationId, userId);
       if (notification) {
         return { success: true, data: notification };
       } else {
@@ -88,9 +89,10 @@ class NotificationService {
 
   async deleteNotifications(
     notificationIds: string[],
+    userId: string,
   ): Promise<ServiceResponse<string>> {
     try {
-      const deletedCount = await deleteNotifications(notificationIds);
+      const deletedCount = await deleteNotifications(notificationIds, userId);
       if (deletedCount > 0) {
         return {
           success: true,

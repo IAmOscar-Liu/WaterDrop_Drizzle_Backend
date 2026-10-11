@@ -1,5 +1,5 @@
 import admin from "./firebase_admin";
-import { Message, MulticastMessage } from "firebase-admin/messaging";
+import { BatchResponse, Message, MulticastMessage } from "firebase-admin/messaging";
 import db from "../lib/initDB";
 import * as schema from "../db/schema";
 import { inArray } from "drizzle-orm";
@@ -32,7 +32,7 @@ export async function sendPushNotification(message: Message) {
  * Sends the same push notification to multiple devices.
  * @param fcmTokens An array of FCM tokens for the target devices.
  */
-export async function sendMulticastPushNotification(message: MulticastMessage) {
+export async function sendMulticastPushNotification(message: MulticastMessage): Promise<BatchResponse | void> {
   if (message.tokens.length === 0) {
     console.log("No FCM tokens provided to sendMulticastPushNotification.");
     return;
@@ -67,7 +67,7 @@ export async function sendMulticastPushNotification(message: MulticastMessage) {
       const invalidTokens: string[] = [];
       response.responses.forEach((resp, idx) => {
         if (!resp.success) {
-          console.error(`  - Token ${message.tokens[idx]}: ${resp.error}`);
+          console.error(`  - Device index ${idx}: ${resp.error?.code ?? "unknown_error"}`);
 
           if (
             resp.error?.code === "messaging/invalid-registration-token" ||
@@ -84,7 +84,9 @@ export async function sendMulticastPushNotification(message: MulticastMessage) {
           .where(inArray(schema.deviceTokenTable.fcmToken, invalidTokens));
       }
     }
+    return response;
   } catch (e) {
-    console.error("Error sending multicast push notification:", e);
+    const code = typeof e === "object" && e !== null && "code" in e ? e.code : "unknown_error";
+    console.error("Error sending multicast push notification:", code);
   }
 }

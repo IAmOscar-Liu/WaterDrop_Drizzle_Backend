@@ -1,3 +1,4 @@
+import { adminChatroomSyncValidation } from "./chatroomSync";
 import { accountValidation } from "./account";
 import { accountWalletValidation } from "./accountWallet";
 import { advertisementValidation } from "./advertisement";
@@ -16,6 +17,7 @@ export const adminValidation = {
   accountWallet: accountWalletValidation,
   advertisement: advertisementValidation,
   chatroom: chatroomValidation,
+  chatroomSync: adminChatroomSyncValidation,
   delivery: deliveryValidation,
   file: fileValidation,
   order: orderValidation,

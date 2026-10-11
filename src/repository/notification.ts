@@ -1,6 +1,7 @@
-import { and, count, eq, ilike, inArray, or } from "drizzle-orm";
+import { and, count, eq, ilike, inArray, isNull, or } from "drizzle-orm";
 import * as schema from "../db/schema";
 import db from "../lib/initDB";
+import { canonicalNotification, createNotificationRecord, getSyncNotification, legacyNotification, mutateNotifications, requireNotificationUser } from "./notificationSync";
 import {
   compactConditions,
   getPagination,
@@ -8,39 +9,16 @@ import {
   PaginationParams,
 } from "./utils/query";
 
-export async function createNotification(
-  notificationData: schema.NewUserNotification,
-) {
-  const [newNotification] = await db
-    .insert(schema.userNotificationTable)
-    .values(notificationData)
-    .returning();
-
-  return newNotification;
+export async function createNotification(notificationData: schema.NewUserNotification) {
+  return legacyNotification(await createNotificationRecord(notificationData));
 }
 
-export async function markNotificationsAsRead(
-  userId: string,
-  notificationIds: string[],
-) {
-  const updatedNotifications = await db
-    .update(schema.userNotificationTable)
-    .set({ isRead: true })
-    .where(
-      and(
-        eq(schema.userNotificationTable.userId, userId),
-        inArray(schema.userNotificationTable.id, notificationIds),
-      ),
-    )
-    .returning();
-
-  return updatedNotifications;
+export async function markNotificationsAsRead(userId: string, notificationIds: string[]) {
+  return (await mutateNotifications(userId, notificationIds, "read")).legacyReadItems.map(legacyNotification);
 }
 
-export async function getNotificationById(notificationId: string) {
-  return db.query.userNotificationTable.findFirst({
-    where: eq(schema.userNotificationTable.id, notificationId),
-  });
+export async function getNotificationById(notificationId: string, userId: string) {
+  return legacyNotification(await getSyncNotification(userId, notificationId));
 }
 
 export interface ListNotificationsParams extends PaginationParams {
@@ -58,10 +36,12 @@ export async function listNotifications({
   types,
   onlyUnread = false,
 }: ListNotificationsParams) {
+  await requireNotificationUser(db, userId);
   const pagination = getPagination(page, limit);
 
   const whereClause = compactConditions([
     eq(schema.userNotificationTable.userId, userId),
+    isNull(schema.userNotificationTable.deletedAt),
     onlyUnread ? eq(schema.userNotificationTable.isRead, false) : undefined,
     types && types.length > 0
       ? inArray(schema.userNotificationTable.type, types)
@@ -91,7 +71,7 @@ export async function listNotifications({
   });
 
   return {
-    notifications,
+    notifications: notifications.map((row) => legacyNotification(canonicalNotification(row))),
     total,
     page: pagination.page,
     limit: pagination.limit,
@@ -105,6 +85,7 @@ export async function listNotifications({
  * @returns An object where keys are notification types and values are the counts of unread notifications.
  */
 export async function getNotificationStats(userId: string) {
+  await requireNotificationUser(db, userId);
   const stats = await db
     .select({
       type: schema.userNotificationTable.type,
@@ -114,6 +95,7 @@ export async function getNotificationStats(userId: string) {
     .where(
       and(
         eq(schema.userNotificationTable.userId, userId),
+        isNull(schema.userNotificationTable.deletedAt),
         eq(schema.userNotificationTable.isRead, false),
       ),
     )
@@ -130,14 +112,8 @@ export async function getNotificationStats(userId: string) {
   return statsMap;
 }
 
-export async function deleteNotifications(notificationIds: string[]) {
-  const deletedCount = await db
-    .delete(schema.userNotificationTable)
-    .where(inArray(schema.userNotificationTable.id, notificationIds))
-    .returning()
-    .then((rows) => rows.length);
-
-  return deletedCount;
+export async function deleteNotifications(notificationIds: string[], userId: string) {
+  return (await mutateNotifications(userId, notificationIds, "delete")).changedCount;
 }
 
 export async function resolveAppPushAudience({

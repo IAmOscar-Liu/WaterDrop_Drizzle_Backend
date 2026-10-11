@@ -2,16 +2,14 @@ import "../lib/env";
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import path from "node:path";
-import { drizzle } from "drizzle-orm/postgres-js";
-import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
-import { getTableConfig, PgDialect } from "drizzle-orm/pg-core";
-import { accountWalletTransactionTable, accountWalletTransactionTypeEnum, transactionTypeEnum } from "../db/schema";
 
-type SuiteName = "be1001" | "all" | "api" | "coin-ledger" | "cron" | "order-date-filter" | "chatroom-auth" | "refund-auth" | "account-wallet";
+type SuiteName = "be1001" | "all" | "api" | "coin-ledger" | "cron" | "order-date-filter" | "chatroom-auth" | "refund-auth" | "account-wallet" | "chatroom-sse" | "notification-sse" | "admin-chatroom-sse";
 
 const suiteCommands: Record<SuiteName, string[]> = {
+  "admin-chatroom-sse": ["_test:admin-chatroom-sse", "_test:chatroom-auth", "_test:chatroom-legacy", "_test:chatroom-sse"],
+  "notification-sse": ["_test:notification-sse", "_test:chatroom-legacy", "_test:chatroom-sse"],
+  "chatroom-sse": ["_test:chatroom-auth", "_test:chatroom-legacy", "_test:chatroom-sse"],
   be1001: ["_test:be1001"],
   all: [
     "_test:be1001",
@@ -90,7 +88,7 @@ async function main() {
   const requestedSuite = process.argv[2] ?? "all";
   if (!(requestedSuite in suiteCommands)) {
     throw new Error(
-      `Unknown suite "${requestedSuite}". Use all, be1001, api, coin-ledger, cron, order-date-filter, chatroom-auth, refund-auth, or account-wallet.`,
+      `Unknown suite "${requestedSuite}". Use ${Object.keys(suiteCommands).join(", ")}.`,
     );
   }
   const suite = requestedSuite as SuiteName;
@@ -135,24 +133,13 @@ async function main() {
         onnotice: () => undefined,
       });
       try {
-        await migrate(drizzle(migrationClient), {
-          migrationsFolder: path.resolve(process.cwd(), "drizzle_test"),
-        });
-        // The owner generates deployment migrations separately. Apply only these pending
-        // schema definitions to this newly CREATED disposable database, never .env.test's DB.
-        // Each enum addition commits before constraints reference its new value.
-        for (const enumType of [transactionTypeEnum, accountWalletTransactionTypeEnum]) {
-          for (const value of enumType.enumValues) {
-            await migrationClient.unsafe(`ALTER TYPE "${enumType.enumName}" ADD VALUE IF NOT EXISTS '${value}'`);
-          }
-        }
-        const dialect = new PgDialect();
-        for (const constraint of getTableConfig(accountWalletTransactionTable).checks.filter((c) =>
-          ["account_wallet_transactions_type_sign", "account_wallet_transactions_funding_ad_required", "account_wallet_transactions_admin_actor_required"].includes(c.name),
-        )) {
-          await migrationClient.unsafe(`ALTER TABLE account_wallet_transactions DROP CONSTRAINT "${constraint.name}"`);
-          await migrationClient.unsafe(`ALTER TABLE account_wallet_transactions ADD CONSTRAINT "${constraint.name}" CHECK (${dialect.sqlToQuery(constraint.value).sql})`);
-        }
+        // Each test script gets the current schema in a newly created disposable DB.
+        // Shared notification/chat writers now require SSE tables even in older suites.
+        // No configured database or generated migration file is changed here.
+        const { generateDrizzleJson, generateMigration } = await import("drizzle-kit/api");
+        const schema = await import("../db/schema");
+        const statements = await generateMigration(generateDrizzleJson({}), generateDrizzleJson(schema));
+        for (const statement of statements) await migrationClient.unsafe(statement);
       } finally {
         await migrationClient.end();
       }

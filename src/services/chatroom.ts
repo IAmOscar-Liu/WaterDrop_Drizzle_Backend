@@ -1,6 +1,6 @@
 import * as schema from "../db/schema";
 import { handleServiceError } from "../lib/error";
-import { sendMulticastPushNotification } from "../lib/sendNotification";
+import { sendChatMessagePush } from "./chatroomNotification";
 import {
   ChatroomActor,
   findOrCreateChatRoom,
@@ -14,7 +14,6 @@ import {
   markMessagesAsRead,
   sendChatMessage,
 } from "../repository/chatroom";
-import { getFcmTokensInUserIds } from "../repository/user";
 import { ServiceResponse } from "../type/general";
 
 class ChatroomService {
@@ -66,7 +65,7 @@ class ChatroomService {
       const message = await sendChatMessage(input);
       if (message) {
         if (input.senderType !== "user")
-          this.sendMessagePushNotification(input);
+          void this.sendMessagePushNotification(input);
         return { success: true, data: message };
       } else {
         return {
@@ -86,37 +85,9 @@ class ChatroomService {
     try {
       const chatroom = await getChatRoomById(input.chatRoomId, input.actor);
       if (!chatroom) throw new Error("Chat room not found");
-      if (!chatroom.product) throw new Error("Product not found in chat room");
-
-      const getChatMessage = () => {
-        if (input.content) return input.content;
-        if (input.attachments && input.attachments.length > 0) {
-          return `${input.attachments.length}個附件`;
-        }
-        return null;
-      };
-
-      const notificationBody = getChatMessage();
-      if (!notificationBody)
-        throw new Error("No content to send in notification");
-
-      const fcmTokens = await getFcmTokensInUserIds([chatroom.userId]);
-      if (fcmTokens.length === 0)
-        throw new Error("No FCM tokens found for user");
-
-      sendMulticastPushNotification({
-        tokens: fcmTokens,
-        notification: {
-          title: chatroom.product.name,
-          body: `賣家: ${notificationBody}`,
-        },
-        data: {
-          command: "chat_message",
-          chatRoomId: input.chatRoomId,
-        },
-      });
-    } catch (error) {
-      console.error("Error sending push notification:", error);
+      await sendChatMessagePush({ room: chatroom, senderType: input.senderType, content: input.content, attachments: input.attachments });
+    } catch {
+      console.error(`[chat-push] Room ${input.chatRoomId}: notification context unavailable; message remains saved.`);
     }
   }
 

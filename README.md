@@ -227,8 +227,8 @@ npm test
 ```
 
 The command first type-checks/builds the project, then reads the PostgreSQL
-server from `.env.test`, creates a new temporary `*_test` database, applies
-every migration in `drizzle_test`, and runs:
+server from `.env.test`, creates a separate temporary `*_test` database for each
+test script, derives its schema in memory from `src/db/schema.ts`, and runs:
 
 - coin/timezone unit tests;
 - real HTTP API end-to-end tests against the Express app;
@@ -237,7 +237,9 @@ every migration in `drizzle_test`, and runs:
 
 The temporary database is dropped in a `finally` cleanup whether the suite
 passes or fails. The configured `waterdrop_coin_test` database is only used as
-the connection template and is not populated or reset. The configured
+the connection template and is not populated or reset. No migration files are
+generated and no configured database is migrated. These suites validate the
+current application schema, not the deployment migration history. The configured
 PostgreSQL user must have `CREATE DATABASE` and `DROP DATABASE` privileges.
 
 Smaller disposable-database suites are available while developing:
@@ -247,6 +249,8 @@ npm run test:api
 npm run test:coin-ledger
 npm run test:cron
 npm run test:coin-accounting
+npm run test:admin-chatroom-sse
+npm run test:notification-sse
 ```
 
 Tests import `src/app.ts`, so they exercise the real routers, middleware,

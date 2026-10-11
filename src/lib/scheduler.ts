@@ -1,4 +1,6 @@
 import cron from "node-cron";
+import { pruneNotificationSyncData } from "../repository/notificationSync";
+import { pruneChatSyncData } from "../repository/chatroomSync";
 import { resetDailyStats } from "../repository/treasureBox";
 import {
   deleteUnusedDeviceTokens,
@@ -435,3 +437,22 @@ export const deleteIdempotencyKeysTask = cron.schedule(
   },
   { noOverlap: true },
 );
+
+// Each user is pruned under the same lock used for publication; safe across API instances.
+export const chatSyncCleanupTask = cron.schedule("17 * * * *", async () => {
+  if (process.env.NO_CRON === "true") return;
+  try {
+    await withPostgresAdvisoryLock("waterdrop:cleanup:chat-sync", pruneChatSyncData);
+  } catch (error) {
+    console.error("Chat sync cleanup failed:", error instanceof Error ? error.message : "Unknown error");
+  }
+}, { noOverlap: true, timezone: "Asia/Taipei" });
+
+export const notificationSyncCleanupTask = cron.schedule("23 * * * *", async () => {
+  if (process.env.NO_CRON === "true") return;
+  try {
+    await withPostgresAdvisoryLock("waterdrop:cleanup:notification-sync", pruneNotificationSyncData);
+  } catch (error) {
+    console.error("Notification sync cleanup failed:", error instanceof Error ? error.message : "Unknown error");
+  }
+}, { noOverlap: true, timezone: "Asia/Taipei" });
