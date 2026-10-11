@@ -1,5 +1,7 @@
 # Chatroom SSE API proposal
 
+**2026-10-11 backend follow-up:** See [the implemented PostgreSQL contract](FLUTTER_CHATROOM_SSE_API_CHANGES.md) for the agreed behavior. New capabilities are app-only at `/api/chatroom/sync/*` plus `/api/chatroom/events`; original app/admin REST contracts and admin Swagger remain unchanged. It hides empty list rooms and refreshes unrelated product/order/delivery metadata through REST. Migrations and deployment remain pending. This document retains the original Flutter proposal below.
+
 Status: **proposed for backend review; not implemented or BE-confirmed**. Inspected Flutter branch: `feat/chatroom-sse`.
 
 Replace the open chatroom's 15-second polling with **one authenticated, user-scoped Server-Sent Events (SSE) connection per foreground app session**, covering every chatroom the authenticated user can access. The app routes events by type and `chatRoomId` to update the chatroom list, unread counts, and loaded conversation messages. Opening or switching rooms does not create another SSE connection. Keep REST for loading the list/history, uploading attachments, sending messages, and marking messages read. Keep FCM for notifications outside the active chatroom and when the app is in the background.

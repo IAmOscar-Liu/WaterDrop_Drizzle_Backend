@@ -24,5 +24,6 @@ export const errorHandler = (
     success: false,
     statusCode,
     message,
+    ...(err instanceof CustomError && err.code ? { code: err.code } : {}),
   });
 };

@@ -1,4 +1,4 @@
-import { Response, Request } from "express";
+import { Response } from "express";
 import { sendJsonResponse } from "../lib/general";
 import notificationService from "../services/notification";
 import * as schema from "../db/schema";
@@ -22,9 +22,9 @@ class NotificationController {
     sendJsonResponse(res, result);
   }
 
-  async getNotification(req: Request, res: Response): Promise<any> {
+  async getNotification(req: RequestWithId, res: Response): Promise<any> {
     const { id } = req.params;
-    const result = await notificationService.getNotificationById(id);
+    const result = await notificationService.getNotificationById(id, req.userId ?? "");
     sendJsonResponse(res, result);
   }
 
@@ -47,10 +47,10 @@ class NotificationController {
     sendJsonResponse(res, result);
   }
 
-  async deleteNotifications(req: Request, res: Response): Promise<any> {
+  async deleteNotifications(req: RequestWithId, res: Response): Promise<any> {
     const { notificationIds } = req.body;
     const result = await notificationService.deleteNotifications(
-      notificationIds
+      notificationIds, req.userId ?? ""
     );
     sendJsonResponse(res, result);
   }

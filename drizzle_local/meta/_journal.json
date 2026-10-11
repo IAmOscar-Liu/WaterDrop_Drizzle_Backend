@@ -764,6 +764,27 @@
       "when": 1789539338836,
       "tag": "0108_powerful_daredevil",
       "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "7",
+      "when": 1791726914381,
+      "tag": "0109_thin_devos",
+      "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "7",
+      "when": 1791734989227,
+      "tag": "0110_foamy_invaders",
+      "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1791739386736,
+      "tag": "0111_minor_orphan",
+      "breakpoints": true
     }
   ]
 }

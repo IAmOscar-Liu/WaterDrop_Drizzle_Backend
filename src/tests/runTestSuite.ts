@@ -7,7 +7,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
-type SuiteName = "all" | "api" | "coin-ledger" | "cron" | "order-date-filter" | "chatroom-auth" | "refund-auth";
+type SuiteName = "all" | "api" | "coin-ledger" | "cron" | "order-date-filter" | "chatroom-auth" | "refund-auth" | "chatroom-sse" | "notification-sse" | "admin-chatroom-sse";
 
 const suiteCommands: Record<SuiteName, string[]> = {
   all: [
@@ -23,6 +23,9 @@ const suiteCommands: Record<SuiteName, string[]> = {
   api: ["_test:api"],
   "refund-auth": ["_test:refund-auth"],
   "chatroom-auth": ["_test:chatroom-auth"],
+  "admin-chatroom-sse": ["_test:admin-chatroom-sse", "_test:chatroom-auth", "_test:chatroom-legacy", "_test:chatroom-sse"],
+  "notification-sse": ["_test:notification-sse", "_test:chatroom-legacy", "_test:chatroom-sse"],
+  "chatroom-sse": ["_test:chatroom-auth", "_test:chatroom-legacy", "_test:chatroom-sse"],
   "order-date-filter": ["_test:order-date-filter"],
   "coin-ledger": ["_test:coin-ledger"],
   cron: ["_test:cron"],
@@ -85,7 +88,7 @@ async function main() {
   const requestedSuite = process.argv[2] ?? "all";
   if (!(requestedSuite in suiteCommands)) {
     throw new Error(
-      `Unknown suite "${requestedSuite}". Use all, api, coin-ledger, cron, order-date-filter, chatroom-auth, or refund-auth.`,
+      `Unknown suite "${requestedSuite}". Use all, api, coin-ledger, cron, order-date-filter, chatroom-auth, chatroom-sse, admin-chatroom-sse, notification-sse, or refund-auth.`,
     );
   }
   const suite = requestedSuite as SuiteName;
@@ -125,9 +128,17 @@ async function main() {
       onnotice: () => undefined,
     });
     try {
-      await migrate(drizzle(migrationClient), {
-        migrationsFolder: path.resolve(process.cwd(), "drizzle_test"),
-      });
+      if (suite === "chatroom-sse" || suite === "notification-sse" || suite === "admin-chatroom-sse") {
+        // This newly created disposable database has no data. Never push a configured DB.
+        const { generateDrizzleJson, generateMigration } = await import("drizzle-kit/api");
+        const schema = await import("../db/schema");
+        const statements = await generateMigration(generateDrizzleJson({}), generateDrizzleJson(schema));
+        for (const statement of statements) await migrationClient.unsafe(statement);
+      } else {
+        await migrate(drizzle(migrationClient), {
+          migrationsFolder: path.resolve(process.cwd(), "drizzle_test"),
+        });
+      }
     } finally {
       await migrationClient.end();
     }

@@ -8,7 +8,7 @@ export type ZodValidationIssue = {
 export class CustomError extends Error {
   public statusCode: number;
 
-  constructor(message: string, statusCode: number) {
+  constructor(message: string, statusCode: number, public code?: string) {
     super(message);
     this.statusCode = statusCode;
     Object.setPrototypeOf(this, new.target.prototype);
@@ -35,6 +35,7 @@ export function handleServiceError(error: any): ServiceResponseFailure {
       success: false,
       statusCode: error.statusCode,
       message: error.message,
+      ...(error.code ? { code: error.code } : {}),
     };
   } else {
     return {

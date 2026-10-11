@@ -2,6 +2,8 @@
 
 Date: 2026-09-29
 
+**2026-10-11 implementation follow-up:** PostgreSQL synchronization is implemented locally in additive app-only `/api/chatroom/sync/*` endpoints plus `/api/chatroom/events`; original app/admin REST contracts and admin Swagger remain unchanged. Migrations/deployment remain pending. See [the implemented contract, agreed scope and rollout steps](FLUTTER_CHATROOM_SSE_API_CHANGES.md). The review below records the original feasibility assessment; its statements that SSE is unimplemented are historical.
+
 Status: **SSE reviewed; SSE implementation and deployment have not started**. The room authorization prerequisite is now implemented locally; see [authorization changes](CHATROOM_AUTHORIZATION_API_CHANGES.md). This is a response to [FLUTTER_CHATROOM_SSE_API_PLAN.md](FLUTTER_CHATROOM_SSE_API_PLAN.md), not confirmation that its proposed endpoints are available.
 
 ## Decision
