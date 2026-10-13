@@ -30,7 +30,10 @@ export const advertisementValidation = {
     z.object({ ...withdrawalBase, mode: z.literal("all") }).strict(),
     z.object({ ...withdrawalBase, mode: z.literal("amount"), amount: decimalMoney.refine((v) => Number(v) > 0) }).strict(),
   ]),
-  listQuery: paginationQuery.extend({ sellerId: uuid.optional() }),
+  listQuery: paginationQuery.extend({
+    sellerId: uuid.optional(),
+    status: advertisementStatus.optional(),
+  }),
   idParams,
   createBody: z.object({
     productId: uuid,

@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import advertisementService from "../services/advertisement";
 import { sendJsonResponse } from "../lib/general";
 import { RequestWithId } from "../type/request";
+import type { ListAdminAdvertisementsParams } from "../repository/advertisement";
 
 class AdvertisementController {
   async withdrawalPreview(req: RequestWithId, res: Response) {
@@ -47,12 +48,13 @@ class AdvertisementController {
     req: RequestWithId,
     res: Response,
   ): Promise<any> {
-    const { page, limit, sellerId } = req.query;
+    const { page, limit, sellerId, status } = req.query;
     const result = await advertisementService.listAdminAdvertisements({
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
       requesterId: req.userId ?? "",
       sellerId: sellerId ? String(sellerId) : undefined,
+      status: status as ListAdminAdvertisementsParams["status"],
     });
     sendJsonResponse(res, result);
   }

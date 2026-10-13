@@ -92,9 +92,10 @@ class ProductService {
 
   async listProducts(
     params: ListProductsParams,
+    userId: string,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof listProducts>>>> {
     try {
-      const products = await listProducts(params);
+      const products = await listProducts(params, userId);
       return { success: true, data: products };
     } catch (error) {
       // console.error(error);
@@ -124,11 +125,12 @@ class ProductService {
 
   async getProductWithSellerById(
     id: string,
+    userId: string,
   ): Promise<
     ServiceResponse<Awaited<ReturnType<typeof getProductWithSellerById>>>
   > {
     try {
-      const product = await getProductWithSellerById(id);
+      const product = await getProductWithSellerById(id, userId);
       if (product) {
         return { success: true, data: product };
       } else {

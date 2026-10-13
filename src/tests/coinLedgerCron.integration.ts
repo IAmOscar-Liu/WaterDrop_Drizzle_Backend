@@ -1,6 +1,7 @@
 import "../lib/env";
 
 import assert from "node:assert/strict";
+import { verifyAutomaticFinancialClose } from "./advertisementFinancialClose";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import * as schema from "../db/schema";
 import { getLocalDate } from "../lib/coinAccounting";
@@ -475,6 +476,7 @@ async function run() {
 
     const retry = await runCoinLedgerMaintenanceJob();
     assert.equal(retry.skipped, true);
+    await verifyAutomaticFinancialClose();
     console.log("coin-ledger cron integration test passed");
   } finally {
     await client.end();

@@ -33,7 +33,7 @@ class ProductController {
     sendJsonResponse(res, result);
   }
 
-  async listProducts(req: Request, res: Response): Promise<any> {
+  async listProducts(req: RequestWithId, res: Response): Promise<any> {
     const { page, limit, categoryId, search, minPrice, maxPrice } = req.query;
     const result = await productService.listProducts({
       page: page ? Number(page) : undefined,
@@ -43,7 +43,7 @@ class ProductController {
       status: "active",
       minPrice: minPrice ? Number(minPrice) : undefined,
       maxPrice: maxPrice ? Number(maxPrice) : undefined,
-    });
+    }, req.userId ?? "");
     sendJsonResponse(res, result);
   }
 
@@ -86,9 +86,9 @@ class ProductController {
     sendJsonResponse(res, result);
   }
 
-  async getProductWithSeller(req: Request, res: Response): Promise<any> {
+  async getProductWithSeller(req: RequestWithId, res: Response): Promise<any> {
     const { id } = req.params;
-    const result = await productService.getProductWithSellerById(id);
+    const result = await productService.getProductWithSellerById(id, req.userId ?? "");
     sendJsonResponse(res, result);
   }
 

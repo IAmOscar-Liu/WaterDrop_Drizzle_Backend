@@ -36,11 +36,39 @@ Tests apply the pending schema definitions **only to newly created disposable da
 
 The retired standalone top-up API is **deposit**. The budget `increase` operation is still supported. Archived or financially closed ads cannot be topped up or reactivated.
 
+## Replacement ads after archive — 2026-10-13 update
+
+See [the consolidated product/ad and automatic financial-close handoff](ADMIN_ADVERTISEMENT_LIFECYCLE_API_CHANGES.md) for the latest lifecycle. The 30-minute maintenance job now closes eligible archived ads automatically; a fixed 24-hour wait is no longer required. `archiveGraceEndsAt` still protects prior assignments, while `financiallyClosedAt` confirms closure.
+
+`POST /api/admin/advertisement/create` now allows a replacement for the same product **as soon as its previous ad is archived**. FE should not wait for `financiallyClosedAt` or for the archive grace period to end before enabling creation. This change needs backend deployment only; **no additional schema change or migration** is required.
+
+Admin product list (`GET /api/admin/product/list`), detail (`GET /api/admin/product/:id`), update and soft-delete responses now expose only the **current non-archived ad** in `advertisement`. If the product has no ad, or all its ads are archived, the field is `null` even while financial close is pending. If a replacement exists, the field returns that replacement. Paused and depleted ads still count as current ads. FE can use `advertisement === null` to offer creation, subject to the caller's permissions; handle a 409 if another request creates an ad first. Archived records remain accessible through the ad APIs. App product responses are unchanged.
+
+Use the existing request body and response envelope:
+
+```http
+POST /api/admin/advertisement/create
+Authorization: Bearer ACCESS_TOKEN
+Content-Type: application/json
+
+{"productId":"PRODUCT_UUID","title":"New campaign","video_url":"https://example.com/new-ad.mp4"}
+```
+
+The response remains `{success:true,data:<advertisement>}`. The backend sets `replacementOfAdvertisementId` to the previous ad; FE does not supply it. A first ad has no predecessor. The new ad's stats start at **paused / balance 0**. Only the owning seller or a platform admin can create it; employees and other sellers remain rejected.
+
+- A product may still have only **one non-archived ad**. Active, paused and depleted ads all block another creation with 409; concurrent creates cannot produce two replacements.
+- Fund the new ad independently with the existing budget `increase` API, then activate it using the existing status endpoint. Existing wallet, balance and product/variant eligibility checks still apply.
+- The old ad remains permanently archived and continues its existing grace/claim/settlement process. Creating the new ad does not close it, move its balance or alter existing user rewards.
+- Withdrawal and balance-transfer from the old ad still require **financial close**. An early withdrawal preview returns `eligible:false`; an early withdrawal or transfer returns 409.
+- After close, the old balance can be withdrawn or transferred to its **direct replacement** using the existing APIs. If multiple replacements are later archived, direct-replacement restrictions still apply; this change does not permit transferring to an arbitrary later ad.
+
+Example: archive A → immediately create/fund/activate B → finish A's financial close when eligible → optionally withdraw A's remaining funds or transfer them to B if B is still eligible. There is no automatic funding or activation.
+
 ## 回收廣告費
 
 Only an **active owning seller or active platform admin** may preview or withdraw; employees, app users and other sellers cannot. The product's current seller receives the credit, including when an admin acts. The owning seller must also be active. Product ownership is locked and rechecked before writing.
 
-1. Archive the ad and use the existing financial-close API after its grace/claim prerequisites are met.
+1. Archive the ad and wait for automatic financial close, or call the existing financial-close API when eligible. There is no fixed 24-hour waiting requirement; pending assignments, reward cycles and claims still block closure. Confirm `financiallyClosedAt` before proceeding.
 2. Request a preview and show its balance and blocking reasons.
 3. Send the chosen amount or `mode: "all"`, with the preview's expected balance and token.
 4. Keep the same idempotency key and body on timeout/retry. After a conflict, obtain a fresh preview and a new key for a newly confirmed request.

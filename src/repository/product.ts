@@ -230,11 +230,34 @@ export async function listCategory() {
 
 // --- Product Functions ---
 
+// Admin product responses expose the current ad, never an arbitrary archived
+// row from the historical one-to-one relation. Batch pages to avoid N+1 reads.
+type ProductQueryDatabase = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
+async function withCurrentAdvertisements<T extends { id: string }>(
+  products: T[],
+  database: ProductQueryDatabase = db,
+  includeStats = false,
+) {
+  const byProduct = new Map<string, schema.Advertisement & { stats?: schema.AdvertisementStats }>();
+  if (products.length) {
+    const ads = await database.select({ advertisement: schema.advertisementTable, stats: schema.advertisementStatsTable })
+      .from(schema.advertisementTable)
+      .innerJoin(schema.advertisementStatsTable, eq(schema.advertisementStatsTable.advertisementId, schema.advertisementTable.id))
+      .where(and(inArray(schema.advertisementTable.productId, products.map((product) => product.id)), ne(schema.advertisementStatsTable.status, "archived")))
+      .orderBy(sql`${schema.advertisementTable.createdAt} desc`, sql`${schema.advertisementTable.id} desc`);
+    for (const { advertisement, stats } of ads) {
+      if (!byProduct.has(advertisement.productId)) {
+        byProduct.set(advertisement.productId, includeStats ? { ...advertisement, stats } : advertisement);
+      }
+    }
+  }
+  return products.map((product) => ({ ...product, advertisement: byProduct.get(product.id) ?? null }));
+}
+
 export async function getProductById(productId: string, requesterId?: string) {
   const product = await db.query.productTable.findFirst({
     where: eq(schema.productTable.id, productId),
     with: {
-      advertisement: true,
       variants: {
         orderBy: (variants, { asc }) => [asc(variants.sortOrder)],
       },
@@ -252,7 +275,9 @@ export async function getProductById(productId: string, requesterId?: string) {
       throw new CustomError("You cannot view another seller's product", 403);
     }
   }
-  return product ? withProductVariantAggregates(product, "all") : product;
+  if (!product) return product;
+  const [current] = await withCurrentAdvertisements([product]);
+  return withProductVariantAggregates(current, "all");
 }
 
 export async function softDeleteProduct(
@@ -323,10 +348,11 @@ export async function softDeleteProduct(
       .delete(schema.collectionTable)
       .where(eq(schema.collectionTable.productId, productId));
 
-    return tx.query.productTable.findFirst({
+    const deletedProduct = await tx.query.productTable.findFirst({
       where: eq(schema.productTable.id, productId),
-      with: { variants: true, advertisement: { with: { stats: true } } },
+      with: { variants: true },
     });
+    return deletedProduct ? (await withCurrentAdvertisements([deletedProduct], tx, true))[0] : deletedProduct;
   });
 }
 
@@ -384,7 +410,20 @@ export async function permanentlyDeleteProduct(
   });
 }
 
-export async function getProductWithSellerById(productId: string) {
+async function withCollectionStatus<T extends { id: string }>(products: T[], userId: string) {
+  const collections = products.length > 0
+    ? await db.select({ productId: schema.collectionTable.productId })
+      .from(schema.collectionTable)
+      .where(and(
+        eq(schema.collectionTable.userId, userId),
+        inArray(schema.collectionTable.productId, products.map((product) => product.id)),
+      ))
+    : [];
+  const collectedIds = new Set(collections.map((collection) => collection.productId));
+  return products.map((product) => ({ ...product, isCollected: collectedIds.has(product.id) }));
+}
+
+export async function getProductWithSellerById(productId: string, userId: string) {
   const product = await db.query.productTable.findFirst({
     where: eq(schema.productTable.id, productId),
     with: {
@@ -411,7 +450,9 @@ export async function getProductWithSellerById(productId: string) {
     },
   });
 
-  return product ? withProductVariantAggregates(product) : product;
+  if (!product) return product;
+  const [withCollection] = await withCollectionStatus([product], userId);
+  return withProductVariantAggregates(withCollection);
 }
 
 /**
@@ -684,7 +725,6 @@ export async function updateProduct(
     return tx.query.productTable.findFirst({
       where: eq(schema.productTable.id, productId),
       with: {
-        advertisement: true,
         productsToCategories: {
           with: {
             category: true,
@@ -694,8 +734,8 @@ export async function updateProduct(
           orderBy: (variants, { asc }) => [asc(variants.sortOrder)],
         },
       },
-    }).then((product) =>
-      product ? withProductVariantAggregates(product, "all") : product,
+    }).then(async (product) =>
+      product ? withProductVariantAggregates((await withCurrentAdvertisements([product], tx))[0], "all") : product,
     );
   });
 }
@@ -792,7 +832,6 @@ export async function listAdminProducts({
   const products = await db.query.productTable.findMany({
     where: whereClause,
     with: {
-      advertisement: true,
       variants: {
         orderBy: (variants, { asc }) => [asc(variants.sortOrder)],
       },
@@ -808,7 +847,7 @@ export async function listAdminProducts({
   });
 
   return {
-    products: products.map((product) =>
+    products: (await withCurrentAdvertisements(products)).map((product) =>
       withProductVariantAggregates(product, "all"),
     ),
     total,
@@ -839,7 +878,7 @@ export async function listProducts({
   status,
   minPrice,
   maxPrice,
-}: ListProductsParams) {
+}: ListProductsParams, userId: string) {
   const pagination = getPagination(page, limit);
   const conditions: (SQL | undefined)[] = [];
 
@@ -925,8 +964,9 @@ export async function listProducts({
     orderBy: (products, { desc }) => [desc(products.createdAt)],
   });
 
+  const productsWithCollection = await withCollectionStatus(products, userId);
   return {
-    products: products.map((product) => withProductVariantAggregates(product)),
+    products: productsWithCollection.map((product) => withProductVariantAggregates(product)),
     total,
     page: pagination.page,
     limit: pagination.limit,

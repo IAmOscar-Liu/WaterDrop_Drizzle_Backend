@@ -20,7 +20,6 @@ import { lockWalletIdempotencyKeyWithTx } from "./accountWallet";
 import { recordAdminActivityWithTx } from "./adminActivity";
 import { getActiveAdminAccount, resolveAdminSellerScope } from "./adminScope";
 import { withProductVariantAggregates } from "./utils/product";
-import { returnCoinsToSellerWithTx } from "./coinLedger";
 import {
   compactConditions,
   getPagination,
@@ -95,21 +94,14 @@ export async function createAdvertisement(
       );
     }
 
+    // Archiving releases the product for a replacement; settlement remains
+    // isolated to the old ad. Transfers/withdrawals still require financial close.
     const [previousAdvertisement] = await tx
-      .select({
-        id: schema.advertisementTable.id,
-        financiallyClosedAt: schema.advertisementTable.financiallyClosedAt,
-      })
+      .select({ id: schema.advertisementTable.id })
       .from(schema.advertisementTable)
       .where(eq(schema.advertisementTable.productId, advertisementData.productId))
       .orderBy(sql`${schema.advertisementTable.createdAt} desc`)
       .limit(1);
-    if (previousAdvertisement && !previousAdvertisement.financiallyClosedAt) {
-      throw new CustomError(
-        "The archived advertisement must be financially closed before replacement.",
-        409,
-      );
-    }
 
     const [newAd] = await tx
       .insert(schema.advertisementTable)
@@ -343,10 +335,26 @@ export async function listAdvertisements({
       }];
     });
     if (values.length > 0) {
-      await db
-        .insert(schema.advertisementAssignmentTable)
-        .values(values)
-        .onConflictDoNothing();
+      await db.transaction(async (tx) => {
+        // Serialize issuance with archive/close and recheck the earlier list read.
+        // Never create a valid pre-archive assignment after closure has checked it.
+        const eligible = await tx.select({ id: schema.advertisementTable.id })
+          .from(schema.advertisementTable)
+          .innerJoin(schema.advertisementStatsTable,
+            eq(schema.advertisementStatsTable.advertisementId, schema.advertisementTable.id))
+          .where(and(
+            inArray(schema.advertisementTable.id, values.map((value) => value.advertisementId)),
+            eq(schema.advertisementStatsTable.status, "active"),
+            sql`${schema.advertisementTable.archivedAt} is null`,
+            sql`${schema.advertisementTable.financiallyClosedAt} is null`,
+          ))
+          .orderBy(schema.advertisementTable.id)
+          .for("no key update", { of: schema.advertisementTable });
+        const eligibleIds = new Set(eligible.map((ad) => ad.id));
+        const issued = values.filter((value) => eligibleIds.has(value.advertisementId));
+        if (issued.length > 0) await tx.insert(schema.advertisementAssignmentTable)
+          .values(issued).onConflictDoNothing();
+      });
     }
   })();
   const [variants] = await Promise.all([variantsPromise, assignmentPromise]);
@@ -379,6 +387,7 @@ export async function listAdvertisements({
 export interface ListAdminAdvertisementsParams extends PaginationParams {
   requesterId: string;
   sellerId?: string;
+  status?: schema.AdvertisementStats["status"];
 }
 
 /**
@@ -391,13 +400,15 @@ export async function listAdminAdvertisements({
   limit = 10,
   requesterId,
   sellerId,
+  status,
 }: ListAdminAdvertisementsParams) {
   const pagination = getPagination(page, limit);
 
   const scope = await resolveAdminSellerScope(requesterId, sellerId);
-  const whereClause = scope.sellerId
-    ? eq(schema.productTable.sellerId, scope.sellerId)
-    : undefined;
+  const whereClause = compactConditions([
+    scope.sellerId ? eq(schema.productTable.sellerId, scope.sellerId) : undefined,
+    status ? eq(schema.advertisementStatsTable.status, status) : undefined,
+  ]);
 
   const [totalResult, results] = await Promise.all([
     db
@@ -1275,130 +1286,7 @@ export async function setAdStatus(
   });
 }
 
-export async function financiallyCloseAdvertisement(
-  advertisementId: string,
-  requesterId?: string,
-) {
-  if (!isCoinLedgerEnabled()) {
-    throw new CustomError("Coin ledger is not enabled.", 409);
-  }
-  return db.transaction(async (tx) => {
-    const [advertisement] = await tx
-      .select()
-      .from(schema.advertisementTable)
-      .where(eq(schema.advertisementTable.id, advertisementId))
-      .for("update");
-    const [stats] = await tx
-      .select()
-      .from(schema.advertisementStatsTable)
-      .where(
-        eq(schema.advertisementStatsTable.advertisementId, advertisementId),
-      )
-      .for("update");
-    if (!advertisement || !stats) {
-      throw new CustomError("Advertisement not found.", 404);
-    }
-    if (requesterId) {
-      const [product] = await tx
-        .select({ sellerId: schema.productTable.sellerId })
-        .from(schema.productTable)
-        .where(eq(schema.productTable.id, advertisement.productId));
-      if (
-        product?.sellerId !== requesterId &&
-        !(await isAccountAdmin(requesterId))
-      ) {
-        throw new CustomError("You cannot close this advertisement.", 403);
-      }
-    }
-    if (stats.status !== "archived" || !advertisement.archivedAt) {
-      throw new CustomError(
-        "Advertisement must be archived before financial closure.",
-        409,
-      );
-    }
-    if (
-      advertisement.archiveGraceEndsAt &&
-      advertisement.archiveGraceEndsAt > new Date()
-    ) {
-      throw new CustomError(
-        "Advertisement archive grace period has not ended.",
-        409,
-      );
-    }
-    if (advertisement.financiallyClosedAt) return advertisement;
-
-    const [account] = await tx
-      .select()
-      .from(schema.advertisementCoinFundingAccountTable)
-      .where(
-        eq(
-          schema.advertisementCoinFundingAccountTable.advertisementId,
-          advertisementId,
-        ),
-      )
-      .for("update");
-    if (account) {
-      const [{ pendingDemand }] = await tx
-        .select({
-          pendingDemand: sql<number>`count(*)`,
-        })
-        .from(schema.treasureBoxRewardAllocationTable)
-        .where(
-          and(
-            eq(
-              schema.treasureBoxRewardAllocationTable.fundingAccountId,
-              account.id,
-            ),
-            eq(schema.treasureBoxRewardAllocationTable.status, "demand"),
-          ),
-        );
-      if (Number(pendingDemand) > 0) {
-        throw new CustomError(
-          "Advertisement still has unsettled treasure-box claims.",
-          409,
-        );
-      }
-      const availableUnits = Math.round(
-        Number(account.sellerFundingAvailableAmount) * 100,
-      );
-      if (availableUnits > 0) {
-        await returnCoinsToSellerWithTx(tx, {
-          fundingAccountId: account.id,
-          reason: "unacquired_surplus",
-          coinUnits: availableUnits,
-          idempotencyKey: `financial-close-surplus:${advertisementId}`,
-        });
-      }
-      const outstanding = Number(account.platformAdvanceOutstandingAmount);
-      if (outstanding > 0) {
-        await tx.insert(schema.advertisementCoinFundingTransactionTable).values({
-          fundingAccountId: account.id,
-          type: "platform_advance_written_off_archive",
-          coinAmount: outstanding.toFixed(2),
-          currencyEquivalent: (outstanding / 10).toFixed(2),
-          coinToCurrencyRate: account.coinToCurrencyRate,
-          idempotencyKey: `archive-writeoff:${advertisementId}`,
-        });
-      }
-      await tx
-        .update(schema.advertisementCoinFundingAccountTable)
-        .set({
-          sellerFundingAvailableAmount: "0.00",
-          platformAdvanceOutstandingAmount: "0.00",
-          platformPromotionalExpenseAmount: sql`${schema.advertisementCoinFundingAccountTable.platformPromotionalExpenseAmount} + ${account.platformAdvanceOutstandingAmount}`,
-          status: "closed",
-          closedAt: new Date(),
-        })
-        .where(eq(schema.advertisementCoinFundingAccountTable.id, account.id));
-    }
-    const [closed] = await tx
-      .update(schema.advertisementTable)
-      .set({ financiallyClosedAt: new Date() })
-      .where(eq(schema.advertisementTable.id, advertisementId))
-      .returning();
-    return closed;
-  });
-}
+export { financiallyCloseAdvertisement } from "./coinLedger";
 
 export async function transferArchivedAdvertisementBalance(params: {
   sourceAdvertisementId: string;

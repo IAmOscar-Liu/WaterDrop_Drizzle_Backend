@@ -39,10 +39,10 @@ import {
 // );
 // getTreasureBoxesByUserId("018dffd0-f397-4085-9413-215aa83e1592");
 
-async function main() {
+async function main(userId: string) {
   try {
     console.log("--- Listing products (Page 1, Limit 5) ---");
-    const results = await listProducts({ page: 1, limit: 10 });
+    const results = await listProducts({ page: 1, limit: 10 }, userId);
     console.log(JSON.stringify(results, null, 2));
 
     console.log("\n--- Searching for products with '電源' (Power) ---");
@@ -50,7 +50,7 @@ async function main() {
       page: 1,
       limit: 10,
       search: "電源",
-    });
+    }, userId);
     console.log(JSON.stringify(searchResults.products.map((p) => p.name)));
     console.log("\n--- Listing advertisements (Page 1, Limit 5) ---");
     const adResults = await listAdvertisements({

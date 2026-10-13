@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import * as schema from "../db/schema";
 import {
   effectiveTimezone,
@@ -9,6 +9,8 @@ import {
   toCoinUnits,
 } from "../lib/coinAccounting";
 import db, { client } from "../lib/initDB";
+import { CustomError } from "../lib/error";
+import { isAccountAdmin } from "./account";
 
 type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -798,6 +800,199 @@ export async function deleteCoinLedgerJobRuns(
     .returning({ id: schema.coinLedgerJobRunTable.id });
 }
 
+export async function financiallyCloseAdvertisement(
+  advertisementId: string,
+  requesterId?: string,
+) {
+  if (!isCoinLedgerEnabled()) {
+    throw new CustomError("Coin ledger is not enabled.", 409);
+  }
+  return db.transaction(async (tx) => {
+    const [advertisement] = await tx
+      .select()
+      .from(schema.advertisementTable)
+      .where(eq(schema.advertisementTable.id, advertisementId))
+      .for("no key update");
+    const [stats] = await tx
+      .select()
+      .from(schema.advertisementStatsTable)
+      .where(
+        eq(schema.advertisementStatsTable.advertisementId, advertisementId),
+      );
+    if (!advertisement || !stats) {
+      throw new CustomError("Advertisement not found.", 404);
+    }
+    if (requesterId) {
+      const [product] = await tx
+        .select({ sellerId: schema.productTable.sellerId })
+        .from(schema.productTable)
+        .where(eq(schema.productTable.id, advertisement.productId));
+      if (
+        product?.sellerId !== requesterId &&
+        !(await isAccountAdmin(requesterId))
+      ) {
+        throw new CustomError("You cannot close this advertisement.", 403);
+      }
+    }
+    if (stats.status !== "archived" || !advertisement.archivedAt) {
+      throw new CustomError(
+        "Advertisement must be archived before financial closure.",
+        409,
+      );
+    }
+    if (advertisement.financiallyClosedAt) return advertisement;
+
+    const [account] = await tx
+      .select()
+      .from(schema.advertisementCoinFundingAccountTable)
+      .where(
+        eq(
+          schema.advertisementCoinFundingAccountTable.advertisementId,
+          advertisementId,
+        ),
+      )
+      .for("update");
+    // NO KEY UPDATE excludes completions/assignment issuance without blocking
+    // foreign-key inserts from coin returns that already hold the account.
+    // Lock account before stats, matching coin returns/expiry; never lock
+    // cycles/cohorts after the account.
+    await tx.select({ id: schema.advertisementStatsTable.id })
+      .from(schema.advertisementStatsTable)
+      .where(eq(schema.advertisementStatsTable.advertisementId, advertisementId))
+      .for("update");
+
+    // One statement gives one MVCC snapshot: a second ad completing a cycle
+    // atomically replaces the collecting-cycle blocker with demand allocations.
+    // Separate reads in the opposite order could miss both during that commit.
+    const [blockers] = await tx.select({
+      assignments: sql<boolean>`exists (
+        select 1 from ${schema.advertisementAssignmentTable} a
+        where a.advertisement_id = ${advertisementId}::uuid
+          and a.status = 'issued'
+          and a.assigned_at < ${schema.advertisementTable}.archived_at
+          and ${schema.advertisementTable}.archive_grace_ends_at > clock_timestamp()
+          and a.user_local_date = (clock_timestamp() at time zone a.timezone_snapshot)::date
+      )`,
+      cycles: sql<boolean>`exists (
+        select 1 from ${schema.adViewCountTable} v
+        join ${schema.treasureBoxRewardCycleTable} c on c.id = v.reward_cycle_id
+        where v.advertisement_id = ${advertisementId}::uuid
+          and c.status = 'collecting'
+      )`,
+      claims: sql<boolean>`exists (
+        select 1 from ${schema.treasureBoxRewardAllocationTable} a
+        where (a.advertisement_id = ${advertisementId}::uuid
+          or a.funding_account_id = ${account?.id ?? null}::uuid)
+          and a.status = 'demand'
+      )`,
+    }).from(schema.advertisementTable)
+      .where(eq(schema.advertisementTable.id, advertisementId));
+    if (blockers.assignments) {
+      throw new CustomError("Advertisement still has valid issued assignments.", 409,
+        "AD_FINANCIAL_CLOSE_ASSIGNMENTS_PENDING");
+    }
+    if (blockers.cycles) {
+      throw new CustomError("Advertisement still has collecting reward cycles.", 409,
+        "AD_FINANCIAL_CLOSE_CYCLES_PENDING");
+    }
+    if (blockers.claims) {
+      throw new CustomError("Advertisement still has unsettled treasure-box claims.", 409,
+        "AD_FINANCIAL_CLOSE_CLAIMS_PENDING");
+    }
+    if (account) {
+      const availableUnits = Math.round(
+        Number(account.sellerFundingAvailableAmount) * 100,
+      );
+      if (availableUnits > 0) {
+        await returnCoinsToSellerWithTx(tx, {
+          fundingAccountId: account.id,
+          reason: "unacquired_surplus",
+          coinUnits: availableUnits,
+          idempotencyKey: `financial-close-surplus:${advertisementId}`,
+        });
+      }
+      const outstanding = Number(account.platformAdvanceOutstandingAmount);
+      if (outstanding > 0) {
+        await tx.insert(schema.advertisementCoinFundingTransactionTable).values({
+          fundingAccountId: account.id,
+          type: "platform_advance_written_off_archive",
+          coinAmount: outstanding.toFixed(2),
+          currencyEquivalent: (outstanding / 10).toFixed(2),
+          coinToCurrencyRate: account.coinToCurrencyRate,
+          idempotencyKey: `archive-writeoff:${advertisementId}`,
+        });
+      }
+      await tx
+        .update(schema.advertisementCoinFundingAccountTable)
+        .set({
+          sellerFundingAvailableAmount: "0.00",
+          platformAdvanceOutstandingAmount: "0.00",
+          platformPromotionalExpenseAmount: sql`${schema.advertisementCoinFundingAccountTable.platformPromotionalExpenseAmount} + ${account.platformAdvanceOutstandingAmount}`,
+          status: "closed",
+          closedAt: new Date(),
+        })
+        .where(eq(schema.advertisementCoinFundingAccountTable.id, account.id));
+    }
+    const [closed] = await tx
+      .update(schema.advertisementTable)
+      .set({ financiallyClosedAt: new Date() })
+      .where(eq(schema.advertisementTable.id, advertisementId))
+      .returning();
+    return closed;
+  });
+}
+
+/** Scan all candidates in bounded pages, so blocked old ads cannot starve later ones. */
+export async function closeEligibleArchivedAdvertisements() {
+  const result = {
+    checked: 0, closed: 0, blocked: 0, failed: 0,
+    failures: [] as { advertisementId: string; message: string }[],
+  };
+  if (!isCoinLedgerEnabled()) return result;
+  const candidateConditions = [
+    eq(schema.advertisementStatsTable.status, "archived"),
+    isNull(schema.advertisementTable.financiallyClosedAt),
+  ];
+  const [last] = await db.select({ id: schema.advertisementTable.id })
+    .from(schema.advertisementTable)
+    .innerJoin(schema.advertisementStatsTable,
+      eq(schema.advertisementStatsTable.advertisementId, schema.advertisementTable.id))
+    .where(and(...candidateConditions))
+    .orderBy(desc(schema.advertisementTable.id)).limit(1);
+  if (!last) return result;
+  let after: string | undefined;
+  while (true) {
+    const candidates: { id: string }[] = await db.select({ id: schema.advertisementTable.id })
+      .from(schema.advertisementTable)
+      .innerJoin(schema.advertisementStatsTable,
+        eq(schema.advertisementStatsTable.advertisementId, schema.advertisementTable.id))
+      .where(and(...candidateConditions, lte(schema.advertisementTable.id, last.id),
+        after ? gt(schema.advertisementTable.id, after) : undefined))
+      .orderBy(asc(schema.advertisementTable.id)).limit(100);
+    if (candidates.length === 0) break;
+    await mapWithConcurrency(candidates, getMaintenanceConcurrency(), async ({ id }) => {
+      result.checked += 1;
+      try {
+        await financiallyCloseAdvertisement(id);
+        result.closed += 1;
+      } catch (error) {
+        if (error instanceof CustomError && error.code?.startsWith("AD_FINANCIAL_CLOSE_")) {
+          result.blocked += 1;
+        } else {
+          result.failed += 1;
+          // Keep job metadata bounded, while counting every failed candidate.
+          if (result.failures.length < 20) result.failures.push({
+            advertisementId: id,
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    });
+    after = candidates[candidates.length - 1].id;
+  }
+  return result;
+}
+
 export async function runCoinLedgerMaintenance() {
   if (!isCoinLedgerEnabled()) return { skipped: true } as const;
   const lockConnection = await client.reserve();
@@ -827,6 +1022,7 @@ export async function runCoinLedgerMaintenance() {
       const cohorts = await settleAdvertisementCoinCohorts();
       const assignmentsExpired = await expireIssuedAdvertisementAssignments();
       const assignmentsPurged = await purgeTerminalAdvertisementAssignments();
+      const financialClose = await closeEligibleArchivedAdvertisements();
       const result = {
         boxes: boxes.length,
         cycles: cycles.length,
@@ -834,6 +1030,7 @@ export async function runCoinLedgerMaintenance() {
         cohorts: cohorts.length,
         assignmentsExpired: assignmentsExpired.length,
         assignmentsPurged: assignmentsPurged.length,
+        financialClose,
       };
       await db
         .update(schema.coinLedgerJobRunTable)

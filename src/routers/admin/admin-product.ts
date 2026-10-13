@@ -147,8 +147,10 @@ const router = Router();
  *               items:
  *                 $ref: '#/components/schemas/ProductVariant'
  *             advertisement:
- *               $ref: '#/components/schemas/Advertisement'
  *               nullable: true
+ *               description: Current non-archived ad (active, paused or depleted), or null if none exists. Archived ads remain in ad history, even before financial close. If a replacement exists, this field returns the replacement.
+ *               allOf:
+ *                 - $ref: '#/components/schemas/Advertisement'
  *             productsToCategories:
  *               type: array
  *               items:

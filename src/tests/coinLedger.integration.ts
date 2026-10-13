@@ -17,6 +17,7 @@ import {
 import {
   creditManualUserCoins,
   expireUnclaimedTreasureBoxes,
+  expireCollectingRewardCycles,
   expireUserCoinLots,
   refundOrderCoinsWithTx,
   settleAdvertisementCoinCohorts,
@@ -457,6 +458,12 @@ async function run() {
     .update(schema.advertisementTable)
     .set({ archiveGraceEndsAt: new Date(Date.now() - 1000) })
     .where(eq(schema.advertisementTable.id, advertisements[0].id));
+  await assert.rejects(financiallyCloseAdvertisement(advertisements[0].id),
+    (error: any) => error.code === "AD_FINANCIAL_CLOSE_CYCLES_PENDING");
+  await db.update(schema.treasureBoxRewardCycleTable)
+    .set({ claimDeadlineAt: new Date(Date.now() - 1000) })
+    .where(eq(schema.treasureBoxRewardCycleTable.userId, secondUser.id));
+  await expireCollectingRewardCycles();
   await financiallyCloseAdvertisement(advertisements[0].id);
   const replacement = await createAdvertisement({
     productId: products[0].id,

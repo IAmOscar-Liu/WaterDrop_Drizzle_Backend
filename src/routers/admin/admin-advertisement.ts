@@ -41,10 +41,12 @@ router.post("/:id/budget-withdrawal", isAuth, validateZod({ params: adminValidat
  *           type: string
  *           format: date-time
  *           nullable: true
+ *           description: Completion deadline for pre-archive assignments (also limited by their local day). Defaults to archivedAt plus 24 hours; not a minimum financial-close time. Safe closure may happen earlier.
  *         financiallyClosedAt:
  *           type: string
  *           format: date-time
  *           nullable: true
+ *           description: Successful automatic or manual financial-close timestamp. Null means not closed. Closure is permanent and does not withdraw or transfer the ad balance.
  *         replacementOfAdvertisementId:
  *           type: string
  *           format: uuid
@@ -503,6 +505,7 @@ router.post("/:id/budget-withdrawal", isAuth, validateZod({ params: adminValidat
  *   get:
  *     tags: [Advertisement]
  *     summary: List advertisements with pagination
+ *     description: Returns all statuses by default, including archived and financially closed ads. Optional status filtering preserves the caller's seller scope. Pagination totals use the same filters.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -520,7 +523,16 @@ router.post("/:id/budget-withdrawal", isAuth, validateZod({ params: adminValidat
  *         name: sellerId
  *         schema: { type: string, format: uuid }
  *         description: Platform-admin seller filter. Seller and employee callers are server-scoped.
+ *       - in: query
+ *         name: status
+ *         required: false
+ *         schema:
+ *           type: string
+ *           enum: [active, paused, depleted, archived]
+ *         description: Filter by one exact status. Omit for all statuses; status=all is not supported.
  *     responses:
+ *       '400':
+ *         description: Invalid status or pagination query.
  *       '200':
  *         description: A paginated list of advertisements.
  *         content:
@@ -660,6 +672,14 @@ router.get(
  *   post:
  *     tags: [Advertisement]
  *     summary: Create a new advertisement
+ *     description: >-
+ *       Only the product seller or a platform admin may create its ad. At most one non-archived
+ *       ad (active, paused or depleted) may exist per product. Once the previous ad is archived,
+ *       a replacement can be created immediately, even during its archive grace period and before
+ *       financial close. The replacement starts paused with zero balance and automatically links
+ *       to the previous ad through replacementOfAdvertisementId. Fund it independently through
+ *       the budget increase API. Creating it does not settle or transfer the old balance;
+ *       transfers and withdrawals from the old ad still require financial close.
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -692,6 +712,12 @@ router.get(
  *                   type: boolean
  *                 data:
  *                   $ref: '#/components/schemas/Advertisement'
+ *       '403':
+ *         description: Caller is not the owning seller or a platform admin.
+ *       '404':
+ *         description: Product not found.
+ *       '409':
+ *         description: This product already has a non-archived advertisement, including a paused or depleted ad.
  */
 router.post(
   "/create",
@@ -1164,7 +1190,7 @@ router.put(
  *   put:
  *     tags: [Advertisement]
  *     summary: Update advertisement status
- *     description: Only the owning seller or a platform admin may change the status. Activation additionally requires an active product, an active variant with stock greater than reserve, and sufficient advertisement balance.
+ *     description: Only the owning seller or a platform admin may change the status. Activation additionally requires an active product, an active variant with stock greater than reserve, and sufficient advertisement balance. Archiving is permanent and immediately permits a new ad for the product. The 30-minute maintenance job financially closes the archived ad once outstanding assignment/reward obligations are resolved; archiving itself does not move its balance.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -1219,7 +1245,7 @@ router.put(
  *   post:
  *     tags: [Advertisement]
  *     summary: Financially close an archived advertisement
- *     description: Returns settled seller surplus, writes any remaining platform advance off as promotional expense, and permanently closes the funding account. The archive grace period must have ended and no treasure-box claims may remain.
+ *     description: The 30-minute coin-ledger maintenance job automatically performs this same operation for eligible archived ads. This endpoint remains an optional manual attempt for the owning seller or platform admin. No fixed 24-hour wait is required, but valid pre-archive assignments, collecting reward cycles and demand allocations must all be absent. Expired cycles/claims need maintenance cleanup first. Checks and closure are atomic. Seller funding surplus returns to the ad balance, outstanding platform advances become promotional expense, and financiallyClosedAt is set. Existing acquired user coins remain valid. Does not credit the seller wallet or transfer funds. Repeated calls, including after automatic closure, succeed without repeating accounting changes.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -1231,7 +1257,7 @@ router.put(
  *           format: uuid
  *     responses:
  *       '200':
- *         description: The financially closed advertisement.
+ *         description: The financially closed advertisement, including an unchanged original timestamp if already closed.
  *         content:
  *           application/json:
  *             schema:
@@ -1260,7 +1286,21 @@ router.put(
  *       '404':
  *         description: Advertisement not found.
  *       '409':
- *         description: The ad is not archived, grace is active, claims remain, or the ledger is disabled.
+ *         description: Not archived, ledger disabled, or outstanding obligations. Grace being in the future alone is not a blocker.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                 code:
+ *                   type: string
+ *                   description: Present for outstanding-obligation errors; other existing 409 errors may omit it.
+ *                   enum: [AD_FINANCIAL_CLOSE_ASSIGNMENTS_PENDING, AD_FINANCIAL_CLOSE_CYCLES_PENDING, AD_FINANCIAL_CLOSE_CLAIMS_PENDING]
  */
 router.post(
   "/:id/financial-close",

@@ -1110,6 +1110,48 @@ async function run() {
     );
     assert.equal(validationFailure.status, 400);
 
+    // Admin status filtering must preserve seller scope and pagination totals.
+    // App callers cannot override the active-only predicate with a query string.
+    for (const status of ["active", "paused", "depleted", "archived"] as const) {
+      await db.update(schema.advertisementStatsTable).set({ status })
+        .where(eq(schema.advertisementStatsTable.advertisementId, advertisements[0].id));
+      const filtered = expectSuccess(await request(
+        `/api/admin/advertisement/list?status=${status}&limit=100`, { token: sellerToken },
+      ));
+      assert.ok(filtered.advertisements.some((ad: schema.Advertisement) => ad.id === advertisements[0].id));
+      assert.ok(filtered.advertisements.every((ad: { stats: schema.AdvertisementStats }) => ad.stats.status === status));
+      assert.equal(filtered.total, filtered.advertisements.length);
+      const paged = expectSuccess(await request(
+        `/api/admin/advertisement/list?status=${status}&limit=1`, { token: sellerToken },
+      ));
+      assert.equal(paged.advertisements.length, 1);
+      assert.equal(paged.total, filtered.total);
+      assert.equal(paged.totalPages, filtered.total);
+      const scopedAdmin = expectSuccess(await request(
+        `/api/admin/advertisement/list?status=${status}&sellerId=${seller.id}&limit=100`, { token: adminToken },
+      ));
+      assert.equal(scopedAdmin.total, filtered.total);
+      const otherSellerList = expectSuccess(await request(
+        `/api/admin/advertisement/list?status=${status}&limit=100`, { token: otherSellerToken },
+      ));
+      assert.ok(!otherSellerList.advertisements.some((ad: schema.Advertisement) => ad.id === advertisements[0].id));
+      const unfiltered = expectSuccess(await request("/api/admin/advertisement/list?limit=100", { token: sellerToken }));
+      assert.ok(unfiltered.advertisements.some((ad: schema.Advertisement) => ad.id === advertisements[0].id));
+      const appActive = expectSuccess(await request(
+        "/api/advertisement/list?status=archived&limit=100", { token: user.token },
+      ));
+      assert.equal(appActive.advertisements.some((ad: schema.Advertisement) => ad.id === advertisements[0].id), status === "active");
+      const returnedStats = await db.select().from(schema.advertisementStatsTable)
+        .where(inArray(schema.advertisementStatsTable.advertisementId,
+          appActive.advertisements.map((ad: schema.Advertisement) => ad.id)));
+      assert.ok(returnedStats.every((stats) => stats.status === "active"));
+    }
+    await db.update(schema.advertisementStatsTable).set({ status: "active" })
+      .where(eq(schema.advertisementStatsTable.advertisementId, advertisements[0].id));
+    for (const query of ["status=invalid", "status=all", "status=", "status=active,paused", "status=active&status=paused"]) {
+      assert.equal((await request(`/api/admin/advertisement/list?${query}`, { token: sellerToken })).status, 400);
+    }
+
     const adList = expectSuccess(
       await request("/api/advertisement/list?limit=100", {
         token: user.token,
@@ -1383,6 +1425,79 @@ async function run() {
       ),
     );
 
+    // Products with archived-only ad history must let FE offer a new campaign.
+    const archivedProductDetail = expectSuccess(await request(`/api/admin/product/${products[0].id}`, { token: sellerToken }));
+    assert.equal(archivedProductDetail.advertisement, null);
+    const archivedProductList = expectSuccess(await request("/api/admin/product/list?limit=100", { token: sellerToken }));
+    assert.equal(archivedProductList.products.find((product: { id: string }) => product.id === products[0].id).advertisement, null);
+    const archivedProductUpdate = expectSuccess(await request(`/api/admin/product/${products[0].id}`, {
+      method: "PUT", token: sellerToken, body: { description: "Archived ad remains in history" },
+    }));
+    assert.equal(archivedProductUpdate.advertisement, null);
+
+    // Replacement creation no longer waits for financial close. The product
+    // lock must still permit only one winner when two creates race.
+    const replacementAttempts = await Promise.all([1, 2].map(() =>
+      request("/api/admin/advertisement/create", {
+        method: "POST",
+        token: sellerToken,
+        body: {
+          productId: products[0].id,
+          title: `API Replacement ${suffix}`,
+          video_url: "https://example.test/replacement.mp4",
+        },
+      }),
+    ));
+    assert.deepEqual(replacementAttempts.map((result) => result.status).sort(), [200, 409]);
+    const replacement = expectSuccess(replacementAttempts.find((result) => result.status === 200)!) as schema.Advertisement;
+    assert.equal(replacement.replacementOfAdvertisementId, advertisements[0].id);
+    const replacementStats = await db.query.advertisementStatsTable.findFirst({
+      where: eq(schema.advertisementStatsTable.advertisementId, replacement.id),
+    });
+    assert.equal(replacementStats!.status, "paused");
+    assert.equal(replacementStats!.balance, 0);
+    const currentProductDetail = expectSuccess(await request(`/api/admin/product/${products[0].id}`, { token: sellerToken }));
+    assert.equal(currentProductDetail.advertisement.id, replacement.id);
+    const currentProductList = expectSuccess(await request("/api/admin/product/list?limit=100", { token: sellerToken }));
+    assert.equal(currentProductList.products.find((product: { id: string }) => product.id === products[0].id).advertisement.id, replacement.id);
+    const currentProductUpdate = expectSuccess(await request(`/api/admin/product/${products[0].id}`, {
+      method: "PUT", token: sellerToken, body: { description: "Current replacement ad" },
+    }));
+    assert.equal(currentProductUpdate.advertisement.id, replacement.id);
+    const archivedAd = await db.query.advertisementTable.findFirst({
+      where: eq(schema.advertisementTable.id, advertisements[0].id),
+    });
+    assert.equal(archivedAd!.financiallyClosedAt, null);
+    assert.ok(archivedAd!.archiveGraceEndsAt!.getTime() > Date.now());
+    const earlyTransfer = await request(
+      `/api/admin/advertisement/${advertisements[0].id}/balance-transfer`,
+      { method: "POST", token: sellerToken, body: {
+        destinationAdvertisementId: replacement.id, amount: 1.25,
+        idempotencyKey: `api-early-transfer-${suffix}`,
+      } },
+    );
+    assert.equal(earlyTransfer.status, 409);
+    const earlyPreview = expectSuccess(await request(
+      `/api/admin/advertisement/${advertisements[0].id}/budget-withdrawal-preview`,
+      { token: sellerToken },
+    ));
+    assert.equal(earlyPreview.eligible, false);
+    assert.ok(earlyPreview.reasons.some((reason: { code: string }) => reason.code === "ADVERTISEMENT_NOT_FINANCIALLY_CLOSED"));
+    const earlyWithdrawal = await request(
+      `/api/admin/advertisement/${advertisements[0].id}/budget-withdrawal`,
+      { method: "POST", token: sellerToken, body: {
+        mode: "all", expectedBalance: earlyPreview.balance,
+        confirmationToken: earlyPreview.confirmationToken,
+        idempotencyKey: `api-early-withdrawal-${suffix}`,
+      } },
+    );
+    assert.equal(earlyWithdrawal.status, 409);
+    const reactivateArchived = await request(
+      `/api/admin/advertisement/status/${advertisements[0].id}`,
+      { method: "PUT", token: sellerToken, body: { status: "active" } },
+    );
+    assert.equal(reactivateArchived.status, 409);
+
     const postArchiveUser = await login(`post-archive-${suffix}`);
     const postArchiveList = expectSuccess(
       await request("/api/advertisement/list?limit=100", {
@@ -1413,27 +1528,21 @@ async function run() {
       .update(schema.advertisementTable)
       .set({ archiveGraceEndsAt: new Date(Date.now() - 1_000) })
       .where(eq(schema.advertisementTable.id, advertisements[0].id));
+    // Grace expiry alone is insufficient: the first view's unfinished cycle
+    // must also be expired by maintenance before its funding can close.
+    const cycleBlockedClose = await request(
+      `/api/admin/advertisement/${advertisements[0].id}/financial-close`,
+      { method: "POST", token: sellerToken },
+    );
+    assert.equal(cycleBlockedClose.status, 409);
+    await db.update(schema.treasureBoxRewardCycleTable).set({ status: "expired" })
+      .where(and(eq(schema.treasureBoxRewardCycleTable.userId, graceUser.user.id),
+        eq(schema.treasureBoxRewardCycleTable.status, "collecting")));
     expectSuccess(
       await request(
         `/api/admin/advertisement/${advertisements[0].id}/financial-close`,
         { method: "POST", token: sellerToken },
       ),
-    );
-
-    const replacement = expectSuccess(
-      await request("/api/admin/advertisement/create", {
-        method: "POST",
-        token: sellerToken,
-        body: {
-          productId: products[0].id,
-          title: `API Replacement ${suffix}`,
-          video_url: "https://example.test/replacement.mp4",
-        },
-      }),
-    ) as schema.Advertisement;
-    assert.equal(
-      replacement.replacementOfAdvertisementId,
-      advertisements[0].id,
     );
 
     const idempotencyKey = `api-transfer-${suffix}`;
@@ -1523,6 +1632,19 @@ async function run() {
       })
       .returning();
 
+    async function assertProductCollected(token: string, expected: boolean, query = "") {
+      const detail = expectSuccess(await request(`/api/product/${virtualProduct.id}${query}`, { token }));
+      assert.equal(detail.isCollected, expected);
+      const list = expectSuccess(await request(
+        `/api/product/list?limit=100&search=${encodeURIComponent(virtualProduct.name)}${query.replace("?", "&")}`,
+        { token },
+      ));
+      const listed = list.products.find((product: { id: string }) => product.id === virtualProduct.id);
+      assert.ok(listed);
+      assert.equal(listed.isCollected, expected);
+    }
+    await assertProductCollected(orderUser.token, false);
+
     expectSuccess(
       await request("/api/collection", {
         method: "POST",
@@ -1530,6 +1652,13 @@ async function run() {
         body: { productId: virtualProduct.id },
       }),
     );
+    await assertProductCollected(orderUser.token, true);
+    await assertProductCollected(postArchiveUser.token, false, `?userId=${orderUser.user.id}`);
+    const adminProductWithoutCollection = expectSuccess(await request(
+      `/api/admin/product/${virtualProduct.id}`, { token: sellerToken },
+    ));
+    assert.equal(Object.prototype.hasOwnProperty.call(adminProductWithoutCollection, "isCollected"), false);
+
     expectSuccess(
       await request("/api/cart/item", {
         method: "POST",
@@ -1666,6 +1795,7 @@ async function run() {
         body: { status: "active" },
       }),
     );
+    await assertProductCollected(orderUser.token, false);
     const collectionsAfterManualInactiveRemoval = expectSuccess(
       await request("/api/collection/list", { token: orderUser.token }),
     );
@@ -2047,6 +2177,18 @@ async function run() {
       await request("/api/auth/profile", { token: orderUser.token }),
     ) as schema.User;
     assert.equal(userAfterConversionExpiry.coins, 49.75);
+
+    // Deleting a product must not restore an archived ad into its response.
+    expectSuccess(await request(`/api/admin/advertisement/status/${replacement.id}`, {
+      method: "PUT", token: sellerToken, body: { status: "archived" },
+    }));
+    const deletedWithAdHistory = expectSuccess(await request(`/api/admin/product/${products[0].id}`, {
+      method: "DELETE", token: sellerToken,
+    }));
+    assert.equal(deletedWithAdHistory.advertisement, null);
+    const retainedAds = await db.select({ id: schema.advertisementTable.id }).from(schema.advertisementTable)
+      .where(eq(schema.advertisementTable.productId, products[0].id));
+    assert.deepEqual(retainedAds.map((ad) => ad.id).sort(), [advertisements[0].id, replacement.id].sort());
 
     console.log("API end-to-end tests passed");
   } finally {
