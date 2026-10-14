@@ -21,7 +21,10 @@ export async function sendEmail({
   }
   const msg = {
     to,
-    from: from || process.env.SENDGRID_FROM_EMAIL!,
+    from: {
+      email: from || process.env.SENDGRID_FROM_EMAIL!,
+      name: "水滴",
+    },
     subject,
     html: ensurePlatformLogo(html),
   };
