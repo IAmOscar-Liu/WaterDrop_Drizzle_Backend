@@ -1,6 +1,6 @@
 import { Router } from "express";
 import AccountController from "../../controller/account";
-import isAuth from "../../middleware/isAuth";
+import isAuth, { isAccountAuthenticated } from "../../middleware/isAuth";
 import isAdmin from "../../middleware/isAdmin";
 import validateZod from "../../middleware/validateZod";
 import { adminValidation } from "../../middleware/admin";
@@ -17,6 +17,7 @@ import { adminValidation } from "../../middleware/admin";
  *       type: http
  *       scheme: bearer
  *       bearerFormat: JWT
+ *       description: Business APIs require a completed seller profile (403 ACCOUNT_PROFILE_INCOMPLETE otherwise). Admin access JWTs require the admin_access purpose, waterdrop issuer, waterdrop-admin audience and an active session. Legacy admin tokens require a new login. Password changes invalidate old access/refresh tokens.
  *   schemas:
  *     Account:
  *       type: object
@@ -27,9 +28,11 @@ import { adminValidation } from "../../middleware/admin";
  *           description: The unique identifier for the account.
  *         name:
  *           type: string
+ *           nullable: true
  *           description: The name of the account holder.
  *         realName:
  *           type: string
+ *           nullable: true
  *           description: The real name of the account holder.
  *         email:
  *           type: string
@@ -57,6 +60,18 @@ import { adminValidation } from "../../middleware/admin";
  *           enum: [active, inactive, banned]
  *           description: The status of the account.
  *           default: active
+ *         isProfileComplete:
+ *           type: boolean
+ *           description: False for a seller whose profile completion timestamp is null; true for admin/employee accounts.
+ *         profileCompletedAt:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *         missingProfileFields:
+ *           type: array
+ *           items:
+ *             type: string
+ *             enum: [name, realName, phone]
  *         lastLoginAt:
  *           type: string
  *           format: date-time
@@ -122,7 +137,7 @@ import { adminValidation } from "../../middleware/admin";
  *               $ref: '#/components/schemas/AccountWithParent'
  *             token:
  *               type: string
- *               description: Admin JWT access token. It expires after 1 day in local and 1 hour in every other environment.
+ *               description: Admin JWT access token bound to a server-side session. It expires after 1 day locally or 1 hour elsewhere, capped by the 30-day absolute session lifetime.
  *
  *     ErrorResponse:
  *       type: object
@@ -157,27 +172,140 @@ import { adminValidation } from "../../middleware/admin";
 
 const router = Router();
 
+router.post("/complete-profile", isAccountAuthenticated, validateZod({ body: adminValidation.account.completeProfileBody }), AccountController.completeProfile);
+router.post("/forgot-password", validateZod({ body: adminValidation.account.forgotPasswordBody }), AccountController.forgotPassword);
+router.post("/reset-password", validateZod({ body: adminValidation.account.resetPasswordBody }), AccountController.resetPassword);
+
 /**
  * @swagger
- * /api/admin/account/register:
+ * /api/admin/account/complete-profile:
  *   post:
  *     tags: [Account]
- *     summary: Register a new seller account
- *     description: Public registration always creates a seller. Employee accounts must be created through the protected sub-account endpoint.
+ *     summary: Complete the authenticated seller profile
+ *     description: Active incomplete sellers are allowed. Account ID is derived from authentication. Identical retries preserve completion time; different data after completion returns 409. No second login is needed after completion.
+ *     security: [{ bearerAuth: [] }]
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required: [name, email, password, phone, realName]
+ *             additionalProperties: false
+ *             required: [name, realName, phone]
+ *             properties:
+ *               name: { type: string, minLength: 1 }
+ *               realName: { type: string, description: 'ECPay length 4–10; no emoji.' }
+ *               phone: { type: string, pattern: '^09\d{8}$' }
+ *               address: { type: string }
+ *     responses:
+ *       '200':
+ *         description: Completed seller profile.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data: { $ref: '#/components/schemas/AccountWithParent' }
+ *       '400': { description: Invalid profile or unsupported input fields. }
+ *       '401': { description: Missing, expired or revoked credentials. }
+ *       '403': { description: Account unavailable or caller is not a seller. }
+ *       '409': { description: Already completed with different data; use profile update. }
+ * /api/admin/account/forgot-password:
+ *   post:
+ *     tags: [Account]
+ *     summary: Request a password-reset email
+ *     description: Public. Applies to active non-deleted backend accounts, including incomplete sellers. Uses the stored email identity exactly as login does. callbackUrl must be an approved FE reset page; defaults to server configuration. Email links contain a single-use 30-minute token in the URL fragment. Account lookup and email delivery happen asynchronously; success is not delivery confirmation. Existing, unknown, unavailable and email-throttled accounts receive the same response.
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             additionalProperties: false
+ *             required: [email]
+ *             properties:
+ *               email: { type: string, format: email, maxLength: 320 }
+ *               callbackUrl: { type: string, format: uri, maxLength: 2048, description: 'Exact approved URL; no query, fragment or user-info.' }
+ *     responses:
+ *       '200':
+ *         description: Generic acknowledgement; never returns a token or account ID.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { type: string, example: 'If an eligible account exists, a password reset email will be sent.' }
+ *       '400': { description: Invalid body or unapproved callback URL. }
+ *       '429':
+ *         description: IP request limit exceeded.
+ *         headers:
+ *           Retry-After: { schema: { type: integer }, description: Retry delay in seconds. }
+ *       '503': { description: Recovery URL or signing-secret configuration unavailable. }
+ * /api/admin/account/reset-password:
+ *   post:
+ *     tags: [Account]
+ *     summary: Reset a password using an emailed token
+ *     description: Public; the reset token authorizes only this operation. Success invalidates other reset links and all previous access/refresh tokens, clears the current refresh cookie and requires normal login. It does not change profile completion, role or status. Expired/used/revoked/unknown tokens all return 400 PASSWORD_RESET_TOKEN_INVALID. GET/page loads never consume tokens.
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             additionalProperties: false
+ *             required: [token, newPassword]
+ *             properties:
+ *               token: { type: string, maxLength: 256 }
+ *               newPassword: { type: string, format: password, description: '8+ characters; at most 72 UTF-8 bytes; uppercase, lowercase, number and special character.' }
+ *     responses:
+ *       '200':
+ *         description: Password changed; confirmation email attempted independently.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: { type: string, example: 'Password reset successfully. Please log in.' }
+ *       '400': { description: Invalid input or PASSWORD_RESET_TOKEN_INVALID. }
+ *       '429':
+ *         description: IP request limit exceeded.
+ *         headers:
+ *           Retry-After: { schema: { type: integer }, description: Retry delay in seconds. }
+ */
+
+
+/**
+ * @swagger
+ * /api/admin/account/register:
+ *   post:
+ *     tags: [Account]
+ *     summary: Register a new seller account
+ *     description: Public registration always creates a seller. Email/password alone creates an incomplete profile. For legacy full registration supply name, realName and phone together (address optional); this completes onboarding immediately. Partial profiles return 400. Incomplete sellers may use me, complete-profile and change-password, but business APIs return 403 ACCOUNT_PROFILE_INCOMPLETE.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
  *             properties:
  *               name:
  *                 type: string
  *                 example: "John Doe"
  *               realName:
  *                 type: string
- *                 description: Required ECPay-compatible real name; encoded length 4-10 and no emoji.
+ *                 description: Optional with credentials-only registration; required with the profile group. ECPay-compatible real name; encoded length 4-10 and no emoji.
  *                 example: "王小明"
  *               email:
  *                 type: string
@@ -186,7 +314,7 @@ const router = Router();
  *               password:
  *                 type: string
  *                 format: password
- *                 description: At least 8 characters with uppercase, lowercase, number, and special character.
+ *                 description: At least 8 characters, at most 72 UTF-8 bytes, with uppercase, lowercase, number, and special character.
  *                 example: "Password123!"
  *               phone:
  *                 type: string
@@ -197,7 +325,7 @@ const router = Router();
  *                 example: "123 Main St, Anytown, USA"
  *     responses:
  *       '200':
- *         description: Account created successfully. Returns user info and an access token. A refresh token is set in an HTTP-only cookie.
+ *         description: Account created successfully. Returns user info and an access token. A random opaque refresh token is set in an HTTP-only cookie; every use consumes and replaces it. The session expires 30 days after login.
  *         content:
  *           application/json:
  *             schema:
@@ -245,7 +373,7 @@ router.post(
  *                 example: "password123"
  *     responses:
  *       '200':
- *         description: Login successful. Returns user info and an access token. A refresh token is set in an HTTP-only cookie.
+ *         description: Login successful. Returns user info and an access token. A random opaque refresh token is set in an HTTP-only cookie; every use consumes and replaces it. The session expires 30 days after login.
  *         content:
  *           application/json:
  *             schema:
@@ -275,10 +403,10 @@ router.post(
  *   post:
  *     tags: [Account]
  *     summary: Log out an account
- *     description: Clears the refresh token HTTP-only cookie, effectively logging the user out from the perspective of token refreshing. The access token will remain valid until it expires.
+ *     description: Revokes the session identified by the refresh cookie, falling back to a valid bearer access token if no recognized cookie exists, and clears the cookie on success. Access tokens and admin SSE for that session stop working; other logins remain active. Missing/unknown credentials are an idempotent success. No request body is required.
  *     responses:
  *       '200':
- *         description: Successfully logged out and cleared the refresh token cookie.
+ *         description: Session revoked (if identifiable) and refresh cookie cleared. Returns success true and data OK.
  *         content:
  *           application/json:
  *             schema:
@@ -299,7 +427,7 @@ router.post("/logout", AccountController.logout);
  *   post:
  *     tags: [Account]
  *     summary: Refresh an access token using a refresh token from cookies
- *     description: The refresh token must be sent in an HTTP-only cookie.
+ *     description: Send the current opaque refresh token through the HTTP-only cookie using credentials-enabled requests; no body or bearer token is required. Success atomically consumes it and sets its replacement cookie, keeping the same 30-day absolute session expiry. Reusing a consumed token revokes that login session and returns 403 REFRESH_TOKEN_REUSED. Other invalid/expired/revoked or legacy JWT refresh cookies return 403 REFRESH_TOKEN_INVALID. Missing cookie returns 401 REFRESH_TOKEN_MISSING. All 401/403 responses clear the cookie. Do not automatically retry refresh; concurrent calls or a lost response may require login again. Coordinate one in-flight refresh across tabs. Response is success true with data.token; refresh tokens are never in JSON.
  *     responses:
  *       '200':
  *         description: Access token refreshed successfully.
@@ -318,9 +446,9 @@ router.post("/logout", AccountController.logout);
  *                       type: string
  *                       description: A new admin JWT access token. It expires after 1 day in local and 1 hour in every other environment.
  *       '401':
- *         description: Unauthorized (e.g., no refresh token provided).
+ *         description: REFRESH_TOKEN_MISSING; cookie absent.
  *       '403':
- *         description: Forbidden (e.g., invalid refresh token or account no longer exists).
+ *         description: REFRESH_TOKEN_INVALID or REFRESH_TOKEN_REUSED; clear client authentication and log in again.
  */
 router.post("/refresh-token", AccountController.refreshToken);
 
@@ -348,13 +476,14 @@ router.post("/refresh-token", AccountController.refreshToken);
  *       '401':
  *         description: Unauthorized (e.g., no token provided or token is invalid).
  */
-router.get("/me", isAuth, AccountController.getCurrentUser);
+router.get("/me", isAccountAuthenticated, AccountController.getCurrentUser);
 
 /**
  * @swagger
  * /api/admin/account/update:
  *   put:
  *     tags: [Account]
+ *     description: Requires completed seller onboarding. Only platform admins may change role or status. Required fields of a completed seller cannot be cleared. Email changes invalidate outstanding reset links.
  *     summary: Update the current authenticated user's profile
  *     security:
  *       - bearerAuth: []
@@ -430,6 +559,7 @@ router.put(
  * /api/admin/account/change-password:
  *   put:
  *     tags: [Account]
+ *     description: Available to incomplete sellers with valid authentication and old password. Success invalidates all prior access/refresh tokens and reset links, clears the refresh cookie, and requires login again.
  *     summary: Change the current authenticated user's password
  *     security:
  *       - bearerAuth: []
@@ -472,7 +602,7 @@ router.put(
  */
 router.put(
   "/change-password",
-  isAuth,
+  isAccountAuthenticated,
   validateZod({ body: adminValidation.account.changePasswordBody }),
   AccountController.changeAccountPassword,
 );

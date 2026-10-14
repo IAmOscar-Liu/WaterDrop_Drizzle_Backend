@@ -1,4 +1,6 @@
+import { revokeAccountSessionsWithTx } from "./accountSession";
 import bcrypt from "bcrypt";
+import { profileState, requireValidProfile, requireCompletedSeller, validatePassword } from "../lib/accountProfile";
 import { count, eq, ilike, inArray, isNull, or, SQL, sql, and } from "drizzle-orm";
 import {
   RECIPROCAL_ACCOUNT_GROUP_ASSIGNMENT_ERROR_MESSAGE,
@@ -24,30 +26,40 @@ import { initializeSidebarReadStatesWithTx } from "./sidebarNotification";
  * @returns The newly created account.
  */
 export async function createAccount(accountData: schema.NewAccount) {
-  // In a real app, you would hash the password here.
-  // For example, using bcrypt:
+  if (!validatePassword(accountData.password)) throw new CustomError("Invalid password", 400);
   const hashedPassword = await bcrypt.hash(accountData.password, 10);
-  const dataToInsert = { ...accountData, password: hashedPassword };
+  const hasProfile = [accountData.name, accountData.realName, accountData.phone].some((value) => value != null);
+  if (accountData.role === undefined || accountData.role === "seller") {
+    if (hasProfile) requireValidProfile(accountData);
+  }
+  const dataToInsert = { ...accountData, password: hashedPassword,
+    profileCompletedAt: hasProfile ? new Date() : null, credentialVersion: 0 };
 
-  const newAccount = await db.transaction(async (tx) => {
-    const [createdAccount] = await tx
-      .insert(schema.accountTable)
-      .values(dataToInsert)
-      .returning();
+  let newAccount: schema.Account;
+  try {
+    newAccount = await db.transaction(async (tx) => {
+      const [createdAccount] = await tx
+        .insert(schema.accountTable)
+        .values(dataToInsert)
+        .returning();
 
-    await tx.insert(schema.accountWalletTable).values({
-      accountId: createdAccount.id,
+      await tx.insert(schema.accountWalletTable).values({
+        accountId: createdAccount.id,
+      });
+      await initializeSidebarReadStatesWithTx(
+        tx,
+        createdAccount.id,
+        createdAccount.role === "admin" ? "platform" : createdAccount.id,
+        createdAccount.createdAt,
+      );
+
+      return createdAccount;
     });
-    await initializeSidebarReadStatesWithTx(
-      tx,
-      createdAccount.id,
-      createdAccount.role === "admin" ? "platform" : createdAccount.id,
-      createdAccount.createdAt,
-    );
 
-    return createdAccount;
-  });
-
+  } catch (error: any) {
+    if (error?.code === "23505" || error?.cause?.code === "23505") throw new CustomError("An account with this email already exists", 409);
+    throw error;
+  }
   return await getAccountById(newAccount.id);
 }
 
@@ -80,7 +92,9 @@ export async function getAccountByEmailAndPassword(
     throw new CustomError("Invalid email or password", 404);
   }
 
-  return await getAccountById(account.id);
+  const result = await getAccountById(account.id);
+  if (result.credentialVersion !== account.credentialVersion) throw new CustomError("Credentials changed; please log in again", 401);
+  return result;
 }
 
 export type CreateSubAccountInput = {
@@ -216,6 +230,8 @@ export async function softDeleteSubAccount(
 
 export async function getAccountById(accountId: string): Promise<
   Omit<schema.Account, "password"> & {
+    isProfileComplete: boolean;
+    missingProfileFields: string[];
     parent?: Omit<schema.Account, "password"> | null;
   }
 > {
@@ -239,6 +255,7 @@ export async function getAccountById(accountId: string): Promise<
   const { password: __, ...parentInfo } = account.group?.parent ?? {};
   return {
     ...accountInfo,
+    ...profileState(accountInfo),
     parent:
       Object.keys(parentInfo).length > 0
         ? (parentInfo as Omit<schema.Account, "password">)
@@ -266,42 +283,54 @@ export async function isAccountAdmin(accountId: string): Promise<boolean> {
  */
 export async function updateAccount(
   accountId: string,
-  updates: Partial<
-    Omit<
-      schema.Account,
-      | "id"
-      | "accountGroupId"
-      | "password"
-      | "lastLoginAt"
-      | "createdAt"
-      | "updatedAt"
-    >
-  >
+  updates: Partial<Pick<schema.Account, "name" | "realName" | "phone" | "email" | "address" | "avatar_url" | "role" | "status">>
 ) {
-  const [updatedAccount] = await db
-    .update(schema.accountTable)
-    .set({ ...updates, updatedAt: new Date() })
-    .where(eq(schema.accountTable.id, accountId))
-    .returning();
-
-  if (!updatedAccount) {
-    throw new CustomError("Account not found", 404);
-  }
-  return await getAccountById(accountId);
+  await db.transaction(async (tx) => {
+    const [account] = await tx.select().from(schema.accountTable).where(eq(schema.accountTable.id, accountId)).for("update");
+    if (!account) throw new CustomError("Account not found", 404);
+    const merged = { ...account, ...updates };
+    if (merged.role === "seller" && (account.profileCompletedAt || updates.role === "seller")) requireValidProfile(merged);
+    if (updates.email !== undefined && updates.email !== account.email) {
+      await tx.update(schema.accountPasswordResetTokenTable).set({ revokedAt: new Date() })
+        .where(and(eq(schema.accountPasswordResetTokenTable.accountId, accountId), isNull(schema.accountPasswordResetTokenTable.usedAt), isNull(schema.accountPasswordResetTokenTable.revokedAt)));
+    }
+    await tx.update(schema.accountTable).set({ ...updates, updatedAt: new Date(),
+      ...(updates.role === "seller" && !account.profileCompletedAt ? { profileCompletedAt: new Date() } : {}) })
+      .where(eq(schema.accountTable.id, accountId));
+  });
+  return getAccountById(accountId);
 }
 
-export async function updateAccountLastLogin(accountId: string) {
+export async function completeAccountProfile(accountId: string, profile: { name: string; realName: string; phone: string; address?: string }) {
+  requireValidProfile(profile);
+  await db.transaction(async (tx) => {
+    const [account] = await tx.select().from(schema.accountTable).where(eq(schema.accountTable.id, accountId)).for("update");
+    if (!account || account.status !== "active" || account.deletedAt) throw new CustomError("Account unavailable", 403);
+    if (account.role !== "seller") throw new CustomError("Only sellers use profile completion", 403);
+    if (account.profileCompletedAt) {
+      if (account.name !== profile.name || account.realName !== profile.realName || account.phone !== profile.phone ||
+        (profile.address !== undefined && account.address !== profile.address)) throw new CustomError("Profile already completed; use profile update", 409);
+      return;
+    }
+    await tx.update(schema.accountTable).set({ ...profile, profileCompletedAt: new Date(), updatedAt: new Date() }).where(eq(schema.accountTable.id, accountId));
+  });
+  return getAccountById(accountId);
+}
+
+export async function updateAccountLastLogin(accountId: string, expectedVersion?: number) {
   const [updatedAccount] = await db
     .update(schema.accountTable)
     .set({ lastLoginAt: new Date() })
-    .where(eq(schema.accountTable.id, accountId))
+    .where(and(eq(schema.accountTable.id, accountId), expectedVersion === undefined ? undefined : eq(schema.accountTable.credentialVersion, expectedVersion)))
     .returning();
 
   if (!updatedAccount) {
-    throw new CustomError("Account not found", 404);
+    throw new CustomError("Credentials changed; please log in again", 401);
   }
 
-  return await getAccountById(accountId);
+  const result = await getAccountById(accountId);
+  if (expectedVersion !== undefined && result.credentialVersion !== expectedVersion) throw new CustomError("Credentials changed; please log in again", 401);
+  return result;
 }
 
 export async function assignAccountParent(accountId: string, parentId: string) {
@@ -330,6 +359,7 @@ export async function assignAccountParent(accountId: string, parentId: string) {
     if (!parentAccount) {
       throw new CustomError(`Parent account "${parentId}" not found.`, 404);
     }
+    requireCompletedSeller(parentAccount);
     if (myAccount.role !== "employee") {
       throw new CustomError(
         "Only employees can be assigned to a parent account",
@@ -410,7 +440,7 @@ export async function listAccountEmployees(accountId: string) {
       ),
     );
 
-  return employees.map(({ password, ...accountInfo }) => accountInfo);
+  return employees.map(({ password, ...accountInfo }) => ({ ...accountInfo, ...profileState(accountInfo) }));
 }
 
 /**
@@ -426,33 +456,18 @@ export async function changeAccountPassword(
   oldPassword: string,
   newPassword: string
 ) {
-  const [account] = await db
-    .select()
-    .from(schema.accountTable)
-    .where(eq(schema.accountTable.id, accountId));
-
-  if (!account) {
-    throw new CustomError("Account not found", 404);
-  }
-
-  const isOldPasswordValid = await bcrypt.compare(
-    oldPassword,
-    account.password
-  );
-  if (!isOldPasswordValid) {
-    throw new CustomError("Incorrect old password", 401);
-  }
-
-  const hashedPassword = await bcrypt.hash(newPassword, 10);
-  const [updatedAccount] = await db
-    .update(schema.accountTable)
-    .set({ password: hashedPassword, updatedAt: new Date() })
-    .where(eq(schema.accountTable.id, accountId))
-    .returning();
-
-  if (!updatedAccount) throw new CustomError("Account not found", 404);
-
-  return await getAccountById(accountId);
+  if (!validatePassword(newPassword)) throw new CustomError("Invalid new password", 400);
+  await db.transaction(async (tx) => {
+    const [account] = await tx.select().from(schema.accountTable).where(eq(schema.accountTable.id, accountId)).for("update");
+    if (!account || account.status !== "active" || account.deletedAt) throw new CustomError("Account unavailable", 403);
+    if (!await bcrypt.compare(oldPassword, account.password)) throw new CustomError("Incorrect old password", 401);
+    const password = await bcrypt.hash(newPassword, 10);
+    await revokeAccountSessionsWithTx(tx, accountId, "password_changed");
+    await tx.update(schema.accountTable).set({ password, credentialVersion: account.credentialVersion + 1, updatedAt: new Date() }).where(eq(schema.accountTable.id, accountId));
+    await tx.update(schema.accountPasswordResetTokenTable).set({ revokedAt: new Date() })
+      .where(and(eq(schema.accountPasswordResetTokenTable.accountId, accountId), isNull(schema.accountPasswordResetTokenTable.usedAt), isNull(schema.accountPasswordResetTokenTable.revokedAt)));
+  });
+  return getAccountById(accountId);
 }
 
 export interface ListAccountsParams extends PaginationParams {
@@ -553,6 +568,7 @@ export async function listAccounts({
       const { password: __, ...parentInfo } = group?.parent ?? {};
       return {
         ...accountInfo,
+        ...profileState(accountInfo),
         parent:
           Object.keys(parentInfo).length > 0
             ? (parentInfo as Omit<schema.Account, "password">)

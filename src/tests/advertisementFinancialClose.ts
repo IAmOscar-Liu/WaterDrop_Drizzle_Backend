@@ -15,6 +15,7 @@ export async function verifyAutomaticFinancialClose() {
   assert.equal(process.env.TEST_DATABASE_MANAGED, "true");
   const suffix = randomUUID();
   const [seller] = await db.insert(s.accountTable).values({
+    profileCompletedAt: new Date(),
     email: `close-${suffix}@example.test`, password: "unused", realName: "Close test", phone: "0900000000",
   }).returning();
   async function makeAd() {

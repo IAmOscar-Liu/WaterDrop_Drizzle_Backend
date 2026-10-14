@@ -429,9 +429,11 @@ export const accountTable = pgTable("accounts", {
   email: text("email").notNull().unique(),
   password: text("password").notNull(), // This should store a hashed password
   name: text("name"),
-  realName: text("real_name").notNull(),
+  profileCompletedAt: timestamp("profile_completed_at", { withTimezone: true }),
+  credentialVersion: integer("credential_version").notNull().default(0),
+  realName: text("real_name"),
   role: accountRoleEnum("role").notNull().default("seller"),
-  phone: text("phone").notNull(),
+  phone: text("phone"),
   address: text("address"),
   avatar_url: text("avatar_url"),
   accountGroupId: uuid("account_group_id").references(
@@ -450,7 +452,64 @@ export const accountTable = pgTable("accounts", {
     .defaultNow()
     .$onUpdate(() => new Date())
     .notNull(),
-});
+}, (t) => [check("accounts_credential_version_nonnegative", sql`${t.credentialVersion} >= 0`)]);
+
+export const accountSessionTable = pgTable("account_sessions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  accountId: uuid("account_id").notNull().references(() => accountTable.id, { onDelete: "cascade" }),
+  credentialVersion: integer("credential_version").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  revocationReason: text("revocation_reason"),
+}, (t) => [
+  index("account_sessions_account_idx").on(t.accountId),
+  index("account_sessions_expiry_idx").on(t.expiresAt),
+  check("account_sessions_expiry_check", sql`${t.expiresAt} > ${t.createdAt}`),
+  check("account_sessions_version_check", sql`${t.credentialVersion} >= 0`),
+]);
+
+export const accountRefreshTokenTable = pgTable("account_refresh_tokens", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  sessionId: uuid("session_id").notNull().references(() => accountSessionTable.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull().unique(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  usedAt: timestamp("used_at", { withTimezone: true }),
+}, (t) => [
+  index("account_refresh_tokens_session_idx").on(t.sessionId),
+  uniqueIndex("account_refresh_tokens_one_current_idx").on(t.sessionId).where(sql`${t.usedAt} IS NULL`),
+]);
+
+export type AccountSession = typeof accountSessionTable.$inferSelect;
+export type AccountRefreshToken = typeof accountRefreshTokenTable.$inferSelect;
+
+// Recovery secrets are stored only as SHA-256 hashes.
+export const accountPasswordResetTokenTable = pgTable("account_password_reset_tokens", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  accountId: uuid("account_id").notNull().references(() => accountTable.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull().unique(),
+  credentialVersion: integer("credential_version").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  usedAt: timestamp("used_at", { withTimezone: true }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+}, (t) => [
+  index("account_password_reset_account_idx").on(t.accountId),
+  index("account_password_reset_expiry_idx").on(t.expiresAt),
+  check("account_password_reset_expiry_check", sql`${t.expiresAt} > ${t.createdAt}`),
+  check("account_password_reset_version_check", sql`${t.credentialVersion} >= 0`),
+]);
+
+// Shared across processes; hashed email/IP keys also cover nonexistent accounts.
+export const accountRecoveryRateLimitTable = pgTable("account_recovery_rate_limits", {
+  key: text("key").primaryKey(),
+  windowStartedAt: timestamp("window_started_at", { withTimezone: true }).notNull(),
+  lastAcceptedAt: timestamp("last_accepted_at", { withTimezone: true }).notNull(),
+  attempts: integer("attempts").notNull(),
+}, (t) => [
+  index("account_recovery_rate_window_idx").on(t.windowStartedAt),
+  check("account_recovery_rate_attempts_check", sql`${t.attempts} > 0`),
+]);
 
 export const accountWalletTable = pgTable(
   "account_wallets",

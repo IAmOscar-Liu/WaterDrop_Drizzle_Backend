@@ -37,6 +37,7 @@ async function run() {
   const sellers = await db
     .insert(schema.accountTable)
     .values([0, 1].map((index) => ({
+      profileCompletedAt: new Date(),
       email: `coin-ledger-${suffix}-${index}@example.test`,
       password: "not-used",
       realName: `Ledger Seller ${index}`,

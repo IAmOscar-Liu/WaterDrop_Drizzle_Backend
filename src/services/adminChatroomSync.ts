@@ -1,3 +1,5 @@
+import { assertAccountSession } from "../repository/accountSession";
+import { assertAdminCredentialVersion } from "../repository/adminScope";
 import { Response } from "express";
 import { handleServiceError } from "../lib/error";
 import { sendJsonResponse } from "../lib/general";
@@ -18,8 +20,11 @@ async function respond<T>(operation: () => Promise<T>): Promise<ServiceResponse<
   catch (error) { return handleServiceError(error); }
 }
 export default {
-  async events(res: Response, accountId: string, expiresAt?: number, checkpoint?: string) {
-    try { await stream(res, await adminChatPrincipal(accountId), expiresAt, checkpoint); }
+  async events(res: Response, accountId: string, expiresAt?: number, checkpoint?: string, credentialVersion = 0, sessionId?: string) {
+    try { await stream(res, await adminChatPrincipal(accountId), expiresAt, checkpoint, async () => {
+      await assertAccountSession(accountId, sessionId ?? "00000000-0000-0000-0000-000000000000", credentialVersion);
+      await assertAdminCredentialVersion(accountId, credentialVersion);
+    }); }
     catch (error) { sendJsonResponse(res, handleServiceError(error)); }
   },
   list: (input: Parameters<typeof listAdminSyncChatRooms>[0]) => respond(() => listAdminSyncChatRooms(input)),

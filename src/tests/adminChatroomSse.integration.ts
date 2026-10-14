@@ -9,7 +9,7 @@ import { eq } from "drizzle-orm";
 import app from "../app";
 import db, { client } from "../lib/initDB";
 import * as schema from "../db/schema";
-import { generateToken } from "../lib/token";
+import { fixtureToken } from "./accountSessionFixture";
 import { decodeAdminChatCursor, encodeAdminChatCursor } from "../lib/adminChatCursor";
 import { adminChatPrincipal, openAdminChatFeed, readAdminChatFeed, pruneAdminChatSyncData, canDeliverAdminChatEvent } from "../repository/adminChatroomSync";
 import { findOrCreateChatRoom, sendSyncChatMessage, sendSystemChatMessage } from "../repository/chatroom";
@@ -37,12 +37,12 @@ async function run() {
     child.once("exit", (code) => reject(new Error(`Child exited early: ${code}`)));
   });
   const request = async (path: string, id: string, method = "GET", body?: unknown, host = baseUrl) => {
-    const response = await fetch(`${host}/api${path}`, { method, headers: { Authorization: `Bearer ${generateToken({ id })}`, "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+    const response = await fetch(`${host}/api${path}`, { method, headers: { Authorization: `Bearer ${await fixtureToken({ id })}`, "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
     return { status: response.status, body: await response.json() as any };
   };
   const connect = async (id: string, cursor?: string, token?: string) => {
     const controller = new AbortController(); controllers.push(controller);
-    const response = await fetch(`${baseUrl}/api/admin/chatroom/events`, { signal: controller.signal, headers: { Authorization: `Bearer ${token ?? generateToken({ id })}`, ...(cursor ? { "Last-Event-ID": cursor } : {}) } });
+    const response = await fetch(`${baseUrl}/api/admin/chatroom/events`, { signal: controller.signal, headers: { Authorization: `Bearer ${token ?? await fixtureToken({ id })}`, ...(cursor ? { "Last-Event-ID": cursor } : {}) } });
     if (response.status !== 200) return { status: response.status, error: await response.json() as any, close: () => controller.abort(), next: async (): Promise<any> => { throw new Error("Not a stream"); } };
     assert.equal(response.headers.get("content-type"), "text/event-stream; charset=utf-8");
     const reader = response.body!.getReader();
@@ -71,9 +71,9 @@ async function run() {
   };
   try {
     const [user, other] = await db.insert(schema.userTable).values([1, 2].map(() => ({ email: `${randomUUID()}@example.test`, oauthProvider: "other" as const, oauthId: randomUUID(), referralCode: randomUUID() }))).returning();
-    const [admin, seller, foreignSeller] = await db.insert(schema.accountTable).values((["admin", "seller", "seller"] as const).map((role) => ({ role, email: `${randomUUID()}@example.test`, password: "unused", realName: "Admin SSE fixture", phone: "0900000000" }))).returning();
+    const [admin, seller, foreignSeller] = await db.insert(schema.accountTable).values((["admin", "seller", "seller"] as const).map((role) => ({ profileCompletedAt: new Date(), role, email: `${randomUUID()}@example.test`, password: "unused", realName: "Admin SSE fixture", phone: "0900000000" }))).returning();
     const [group] = await db.insert(schema.accountGroupTable).values({ parentId: seller.id }).returning();
-    const [employee] = await db.insert(schema.accountTable).values({ role: "employee", accountGroupId: group.id, email: `${randomUUID()}@example.test`, password: "unused", realName: "Employee", phone: "0900000000" }).returning();
+    const [employee] = await db.insert(schema.accountTable).values({ profileCompletedAt: new Date(), role: "employee", accountGroupId: group.id, email: `${randomUUID()}@example.test`, password: "unused", realName: "Employee", phone: "0900000000" }).returning();
     const room = await findOrCreateChatRoom({ userId: user.id, accountId: seller.id });
     const otherRoom = await findOrCreateChatRoom({ userId: other.id, accountId: foreignSeller.id });
     const supportRoom = await findOrCreateChatRoom({ userId: user.id });
@@ -187,7 +187,9 @@ async function run() {
     const employeeStream = await connect(employee.id); await employeeStream.next();
     await db.update(schema.accountTable).set({ status: "inactive" }).where(eq(schema.accountTable.id, employee.id));
     assert.equal((await employeeStream.next()).event, "stream.reset"); employeeStream.close();
-    const short = jwt.sign({ data: { id: admin.id } }, process.env.JWT_SECRET!, { expiresIn: 2 });
+    const shortPayload = jwt.decode(await fixtureToken({ id: admin.id })) as jwt.JwtPayload;
+    delete shortPayload.exp; delete shortPayload.iat;
+    const short = jwt.sign(shortPayload, process.env.JWT_SECRET!, { expiresIn: 2 });
     const expiring = await connect(admin.id, undefined, short); await expiring.next();
     assert.equal((await expiring.next()).data.reason, "auth_expired"); expiring.close();
     const tooLarge = await openAdminChatFeed(principal);

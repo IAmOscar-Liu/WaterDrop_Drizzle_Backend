@@ -1,4 +1,5 @@
 import "../lib/env";
+import { fixtureToken } from "./accountSessionFixture";
 
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -206,25 +207,27 @@ async function run() {
     const [seller] = await db
       .insert(schema.accountTable)
       .values({
+        profileCompletedAt: new Date(),
         email: `api-seller-${suffix}@example.test`,
         password: "not-used",
-        realName: "API Test Seller",
+        name: "API Test Seller",
+        realName: "王小明",
         role: "seller",
         phone: "0900000000",
       })
       .returning();
-    const sellerToken = generateToken(seller);
+    const sellerToken = await fixtureToken(seller);
     assert.ok(sellerToken);
     const decodedSellerToken = validateToken(sellerToken);
     assert.ok(decodedSellerToken && typeof decodedSellerToken !== "string");
     assert.ok(decodedSellerToken.iat && decodedSellerToken.exp);
     assert.equal(
       decodedSellerToken.exp - decodedSellerToken.iat,
-      30 * 24 * 60 * 60,
+      60 * 60,
     );
     const originalNodeEnv = process.env.NODE_ENV;
     process.env.NODE_ENV = "local";
-    const localAdminToken = generateAdminAccessToken(seller);
+    const localAdminToken = generateAdminAccessToken(seller, decodedSellerToken.sid, new Date(Date.now() + 30 * 86400_000));
     process.env.NODE_ENV = originalNodeEnv;
     const decodedLocalAdminToken = validateToken(localAdminToken);
     assert.ok(
@@ -240,6 +243,7 @@ async function run() {
       .insert(schema.accountTable)
       .values([
         {
+          profileCompletedAt: new Date(),
           email: `api-admin-${suffix}@example.test`,
           password: "not-used",
           realName: "API Test Admin",
@@ -247,16 +251,18 @@ async function run() {
           phone: "0900000001",
         },
         {
+          profileCompletedAt: new Date(),
           email: `api-other-seller-${suffix}@example.test`,
           password: "not-used",
-          realName: "API Other Seller",
+          name: "API Other Seller",
+          realName: "陳小美",
           role: "seller" as const,
           phone: "0900000002",
         },
       ])
       .returning();
-    const adminToken = generateToken(admin)!;
-    const otherSellerToken = generateToken(otherSeller)!;
+    const adminToken = await fixtureToken(admin);
+    const otherSellerToken = await fixtureToken(otherSeller);
 
     await db.insert(schema.accountWalletTable).values([
       { accountId: seller.id },
@@ -300,14 +306,9 @@ async function run() {
     assert.ok(refreshSetCookie);
     const refreshCookie = refreshSetCookie.split(";")[0];
     const refreshToken = refreshCookie.slice(refreshCookie.indexOf("=") + 1);
-    const decodedRefreshToken = validateToken(refreshToken);
-    assert.ok(decodedRefreshToken && typeof decodedRefreshToken !== "string");
-    assert.ok(decodedRefreshToken.iat && decodedRefreshToken.exp);
-    assert.equal(
-      decodedRefreshToken.exp - decodedRefreshToken.iat,
-      30 * 24 * 60 * 60,
-    );
-    assert.match(refreshSetCookie, /Max-Age=2592000/i);
+    assert.match(refreshToken, /^ar_[A-Za-z0-9_-]{43}$/);
+    const cookieLifetime = Number(refreshSetCookie.match(/Max-Age=(\d+)/i)?.[1]);
+    assert.ok(cookieLifetime <= 2592000 && cookieLifetime >= 2591990);
     const refreshed = await request("/api/admin/account/refresh-token", {
       method: "POST",
       cookie: refreshCookie,
@@ -317,7 +318,7 @@ async function run() {
     assert.ok(refreshedAccessToken && typeof refreshedAccessToken !== "string");
     assert.ok(refreshedAccessToken.iat && refreshedAccessToken.exp);
     assert.equal(refreshedAccessToken.exp - refreshedAccessToken.iat, 60 * 60);
-    assert.match(refreshed.headers.get("set-cookie") ?? "", /Max-Age=2592000/i);
+    assert.notEqual(refreshed.headers.get("set-cookie")?.split(";")[0], refreshCookie);
     assert.equal(registrationData.user.address, null);
 
     expectSuccess(
@@ -356,6 +357,7 @@ async function run() {
     const [employee] = await db
       .insert(schema.accountTable)
       .values({
+        profileCompletedAt: new Date(),
         email: `api-employee-${suffix}@example.test`,
         password: "not-used",
         realName: "API Test Employee",
@@ -367,7 +369,7 @@ async function run() {
     await db
       .insert(schema.accountWalletTable)
       .values({ accountId: employee.id });
-    const employeeToken = generateToken(employee)!;
+    const employeeToken = await fixtureToken(employee);
 
     const createdSubAccount = expectSuccess(
       await request("/api/admin/account/sub-account", {
@@ -430,7 +432,7 @@ async function run() {
       },
     );
     assert.equal(employeeCreatesEmployee.status, 403);
-    const createdSubToken = generateToken(createdSubAccount)!;
+    const createdSubToken = await fixtureToken(createdSubAccount);
     expectSuccess(
       await request(`/api/admin/account/${createdSubAccount.id}`, {
         method: "DELETE",

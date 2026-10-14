@@ -5,7 +5,7 @@ import type { AddressInfo } from "node:net";
 import app from "../app";
 import db, { client } from "../lib/initDB";
 import * as schema from "../db/schema";
-import { generateToken } from "../lib/token";
+import { fixtureToken } from "./accountSessionFixture";
 import { sendChatMessage } from "../repository/chatroom";
 import { openChatFeed, readChatFeed } from "../repository/chatroomSync";
 
@@ -17,7 +17,7 @@ async function run() {
   const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   async function request(path: string, id: string, method = "GET", body?: unknown) {
     const response = await fetch(`${baseUrl}/api${path}`, {
-      method, headers: { Authorization: `Bearer ${generateToken({ id })}`, "Content-Type": "application/json" },
+      method, headers: { Authorization: `Bearer ${await fixtureToken({ id })}`, "Content-Type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     return { status: response.status, body: response.headers.get("content-type")?.includes("json") ? await response.json() as any : undefined };
@@ -28,7 +28,7 @@ async function run() {
   const pageKeys = ["total", "page", "limit", "totalPages"];
   try {
     const [user] = await db.insert(schema.userTable).values({ email: `${randomUUID()}@example.test`, oauthProvider: "other", oauthId: randomUUID(), referralCode: randomUUID() }).returning();
-    const [seller, admin] = await db.insert(schema.accountTable).values((["seller", "admin"] as const).map((role) => ({ role, email: `${randomUUID()}@example.test`, password: "unused", realName: "Legacy compatibility", phone: "0900000000" }))).returning();
+    const [seller, admin] = await db.insert(schema.accountTable).values((["seller", "admin"] as const).map((role) => ({ profileCompletedAt: new Date(), role, email: `${randomUUID()}@example.test`, password: "unused", realName: "Legacy compatibility", phone: "0900000000" }))).returning();
     const created = await request("/chatroom/create", user.id, "POST", { accountId: seller.id });
     assert.equal(created.status, 200); const room = created.body.data; keys(room, [...roomKeys]);
     const detail = await request(`/chatroom/${room.id}`, user.id); keys(detail.body.data, [...roomKeys, "product", "variant"]);

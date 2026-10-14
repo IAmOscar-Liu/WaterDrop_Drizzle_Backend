@@ -24,6 +24,7 @@ async function run() {
     .insert(schema.accountTable)
     .values([
       {
+        profileCompletedAt: new Date(),
         email: `wallet-admin-${suffix}@example.test`,
         password: "not-used",
         realName: "Wallet Test Admin",
@@ -31,6 +32,7 @@ async function run() {
         role: "admin" as const,
       },
       {
+        profileCompletedAt: new Date(),
         email: `wallet-concurrent-${suffix}@example.test`,
         password: "not-used",
         realName: "Concurrent Wallet Seller",

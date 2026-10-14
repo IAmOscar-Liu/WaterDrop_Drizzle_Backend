@@ -5,7 +5,7 @@ import { RequestWithId } from "../type/request";
 
 class AdminChatroomSyncController {
   async events(req: RequestWithId, res: Response) {
-    await adminChatroomSyncService.events(res, req.userId ?? "", req.tokenExpiresAt, req.get("Last-Event-ID"));
+    await adminChatroomSyncService.events(res, req.userId ?? "", req.tokenExpiresAt, req.get("Last-Event-ID"), req.credentialVersion, req.sessionId);
   }
 
   async history(req: RequestWithId, res: Response) {

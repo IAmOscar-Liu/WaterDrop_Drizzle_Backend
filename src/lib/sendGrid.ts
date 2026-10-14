@@ -10,11 +10,13 @@ export async function sendEmail({
   to,
   subject,
   html,
+  disableTracking = false,
 }: {
   from?: string;
   to: string;
   subject: string;
   html: string;
+  disableTracking?: boolean;
 }): Promise<{ success: true } | { success: false; error: any }> {
   if (process.env.NODE_ENV === "test") {
     return { success: true };
@@ -27,6 +29,7 @@ export async function sendEmail({
     },
     subject,
     html: ensurePlatformLogo(html),
+    ...(disableTracking ? { trackingSettings: { clickTracking: { enable: false, enableText: false }, openTracking: { enable: false } } } : {}),
   };
   try {
     // Source assets remain under src for both tsx and compiled dist execution.
