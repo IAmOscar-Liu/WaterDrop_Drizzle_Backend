@@ -2,7 +2,7 @@
 
 Date: 2026-10-14
 
-Status: **implemented on `feat/two_step_registration`; owner-run migration/configuration and rollout pending**. This document preserves the agreed design. See [the implementation handoff](../api/FE-confirmation/SELLER_REGISTRATION_AND_PASSWORD_RECOVERY_API_CHANGES.md) for the exact implemented contracts, local migration/backfill commands, configuration, and testing. No generated migration files or configured databases were changed by implementation.
+Status: **implemented on `feat/two_step_registration`; owner-run migration/configuration and rollout pending**. This document preserves the agreed design. See the [registration/email-verification handoff](../api/FE-confirmation/SELLER_REGISTRATION_AND_EMAIL_VERIFICATION_API_CHANGES.md) and [password recovery/session handoff](../api/FE-confirmation/SELLER_REGISTRATION_AND_PASSWORD_RECOVERY_API_CHANGES.md) for the exact implemented contracts, local migration/backfill commands, configuration, and testing. No generated migration files or configured databases were changed by implementation.
 
 Implementation additions: shared recovery throttling uses an additional `account_recovery_rate_limits` table; daily cleanup runs at 03:37 Asia/Taipei; new passwords have a 72-byte UTF-8 limit for bcrypt. Existing sellers need the explicit audit/backfill before enforcing onboarding in a deployed environment.
 
@@ -10,7 +10,7 @@ Implementation additions: shared recovery throttling uses an additional `account
 
 Allow a new seller to register with email/password, authenticate, and complete the remaining profile fields afterward. Keep `role: "seller"` throughout. Add a separate completion timestamp rather than a new role enum: roles determine permissions, while completion determines whether a seller may access business APIs.
 
-The first release uses today's required profile fields: `name`, `realName`, and `phone`. Keep `address` optional. Retain existing password, name, and phone validation. This is registration/profile onboarding, not two-factor authentication or a new session-expiration policy. Email verification and seller approval are separate features outside this proposal.
+The first release uses today's required profile fields: `name`, `realName`, and `phone`. Keep `address` optional. Retain existing password, name, and phone validation. This is registration/profile onboarding, not two-factor authentication or a new session-expiration policy. Seller email verification is now implemented as the extension below; seller approval remains outside scope.
 
 Incomplete sellers can resume onboarding after logout or token expiry. FE navigation alone must not enforce the restriction; the backend must deny business access until completion.
 
@@ -301,3 +301,19 @@ A session has a **30-day absolute lifetime from login**, rather than extending f
 Strict replay policy: there is no grace window or retry token. Concurrent uses have one winner; the loser revokes the session, so even the winner's response is no longer usable. A lost refresh response can require login again. FE must share one in-flight refresh promise, coordinate across tabs (for example Web Locks with a recheck of shared authentication state), and never automatically retry refresh/logout network requests. Do not broadcast/store refresh tokens; they stay in the HTTP-only cookie. Use credentials-enabled requests, exclude auth endpoints from automatic refresh interception, retry a business request at most once, and clear authentication state on definitive refresh failure. On an uncertain network result, return to login rather than replaying a potentially consumed token.
 
 Deploy all instances together after migration; mixed old/new validators are unsupported. No refresh session backfill is possible or needed. Existing generated migration files are left untouched; generate another migration from the updated schema. See the FE handoff for response/error details, frontend coordination and verification.
+
+
+## Email verification extension — implemented 2026-10-18
+
+The email-verification proposal is implemented; see the [FE handoff](../api/FE-confirmation/SELLER_REGISTRATION_AND_EMAIL_VERIFICATION_API_CHANGES.md#seller-email-verification-and-confirmed-email-changes) for the exact contracts. Earlier onboarding-only access descriptions in this plan are superseded by the requirement for both verified seller email and profile completion.
+
+- New and existing sellers require email verification for business APIs. Keep role/status unchanged; no automatic verification backfill or exemption. Admin/employee own verification is not enforced, but an employee's seller parent must be verified and complete.
+- Add `accounts.emailVerifiedAt` and `account_email_verification_tokens` with current-email snapshot, target email, purpose (`verify`/`change`), unique SHA-256 hash, credential revision and lifecycle timestamps. Schema definitions only; generation/migration remain with the owner.
+- Preserve existing registration bodies and responses; attempt SendGrid delivery after account creation. Failed delivery keeps the account for resend. Invalid URL configuration fails before account creation. Full profile submission no longer alone grants business access.
+- Add authenticated resend/verify and request/confirm-email-change endpoints. Single-use 30-minute tokens require the same account's valid session. Links use `#token=...&purpose=verify` or `purpose=change`; GET cannot confirm. Resends replace links of the same purpose; successful confirmation revokes all outstanding verification/change links.
+- Allow verification, profile completion and email correction during onboarding. Email correction/change requires current password and confirmation at the new address before replacement. Direct email edits, including admin edits, return 409. Confirmed email changes revoke all sessions and recovery links, then require login with the new address. Notify the old address after commit.
+- Extend existing seller eligibility checks used by middleware, business scope helpers and SSE. Return `ACCOUNT_EMAIL_UNVERIFIED` before the profile-incomplete error. Ordinary verification does not rotate sessions or complete profiles; password reset does not verify an address.
+- Use dedicated namespaces in the existing shared throttling table. Extend daily cleanup at 03:37 Asia/Taipei with seven-day post-expiry retention. No email outbox or guaranteed delivery is promised.
+- Add approved verification-page settings to the aligned environment files; public `.env` remains a credential-free template. FE must implement the verification/confirmation page before backend enforcement is deployed.
+
+Run the isolated `test:email-verification` suite plus existing onboarding/session/business and SSE regressions before rollout. No test should send real email or migrate a configured database. Existing-seller enforcement is immediate when the migrated backend is deployed; coordinate FE and backend releases.

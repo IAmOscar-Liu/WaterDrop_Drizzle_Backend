@@ -430,6 +430,7 @@ export const accountTable = pgTable("accounts", {
   password: text("password").notNull(), // This should store a hashed password
   name: text("name"),
   profileCompletedAt: timestamp("profile_completed_at", { withTimezone: true }),
+  emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
   credentialVersion: integer("credential_version").notNull().default(0),
   realName: text("real_name"),
   role: accountRoleEnum("role").notNull().default("seller"),
@@ -499,6 +500,28 @@ export const accountPasswordResetTokenTable = pgTable("account_password_reset_to
   check("account_password_reset_expiry_check", sql`${t.expiresAt} > ${t.createdAt}`),
   check("account_password_reset_version_check", sql`${t.credentialVersion} >= 0`),
 ]);
+
+// Verification and email-change secrets are separate from password-reset tokens.
+export const accountEmailVerificationTokenTable = pgTable("account_email_verification_tokens", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  accountId: uuid("account_id").notNull().references(() => accountTable.id, { onDelete: "cascade" }),
+  emailSnapshot: text("email_snapshot").notNull(),
+  targetEmail: text("target_email").notNull(),
+  purpose: text("purpose").notNull(),
+  tokenHash: text("token_hash").notNull().unique(),
+  credentialVersion: integer("credential_version").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  usedAt: timestamp("used_at", { withTimezone: true }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+}, (t) => [
+  index("account_email_verification_account_idx").on(t.accountId),
+  index("account_email_verification_expiry_idx").on(t.expiresAt),
+  check("account_email_verification_expiry_ck", sql`${t.expiresAt} > ${t.createdAt}`),
+  check("account_email_verification_version_ck", sql`${t.credentialVersion} >= 0`),
+  check("account_email_verification_purpose_ck", sql`${t.purpose} in ('verify', 'change') and (${t.purpose} <> 'verify' or ${t.targetEmail} = ${t.emailSnapshot})`),
+]);
+export type AccountEmailVerificationToken = typeof accountEmailVerificationTokenTable.$inferSelect;
 
 // Shared across processes; hashed email/IP keys also cover nonexistent accounts.
 export const accountRecoveryRateLimitTable = pgTable("account_recovery_rate_limits", {

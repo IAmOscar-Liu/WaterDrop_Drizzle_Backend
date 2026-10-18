@@ -1,3 +1,4 @@
+import { issueEmailVerification, consumeEmailVerification } from "../repository/accountEmailVerification";
 import "../lib/env";
 import assert from "node:assert/strict";
 import { fork } from "node:child_process";
@@ -52,6 +53,8 @@ async function run() {
     const id = first.body.data.user.id;
     const accessA = first.body.data.token;
     const decoded = claims(accessA);
+    const verification = await issueEmailVerification(id);
+    await consumeEmailVerification({ accountId: id, sessionId: decoded.sid, credentialVersion: decoded.data.credentialVersion }, verification!.token, "verify");
     assert.equal(decoded.tokenUse, "admin_access");
     assert.equal(decoded.iss, "waterdrop"); assert.equal(decoded.aud, "waterdrop-admin");
     assert.equal(decoded.data.id, id);

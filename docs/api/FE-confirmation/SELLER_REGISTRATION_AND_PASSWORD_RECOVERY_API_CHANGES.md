@@ -1,64 +1,12 @@
-# Seller registration and password recovery — FE handoff
+# Password recovery and login sessions — FE handoff
 
-Date: 2026-10-14
+Originally published: 2026-10-14. Split into separate handoffs: 2026-10-18 (Asia/Taipei).
 
-Status: implemented in this branch; **owner-run schema migration, legacy seller audit/backfill, environment configuration and deployment are required**. This is the implementation handoff for [the plan](../../plans/SELLER_TWO_STEP_REGISTRATION_PLAN.md). It does not confirm availability on development/staging. Admin Swagger includes the contracts below; app-user registration/password flows are unchanged.
+Status: **implemented; owner-run schema migration/configuration and deployment are required**. This document does not confirm availability on development/staging. Admin Swagger includes the implemented contracts; Flutter app-user registration/password flows are unchanged.
 
-## Two-step registration
+**Two-step seller registration, profile completion, existing-seller onboarding, email verification/resend and confirmed email changes have moved to [Seller registration and email verification — FE handoff](SELLER_REGISTRATION_AND_EMAIL_VERIFICATION_API_CHANGES.md).** Use that document for the complete FE verification flow. This filename is retained so existing recovery/session links continue to work.
 
-Keep using `POST /api/admin/account/register`.
-
-```json
-{"email":"seller@example.com","password":"Valid-password-123!"}
-```
-
-Email/password only creates an active seller with an incomplete profile. The response remains `{success:true,data:{user,token}}` with an HTTP-only refresh cookie. Roles/status/completion fields supplied by the caller cannot grant access.
-
-**Existing full registration remains supported:** send `name`, `realName`, `phone`, and optionally `address` with email/password. A valid full profile completes onboarding immediately. Partial profile groups, or address without the required profile group, return 400. Duplicate email returns 409 and does not overwrite the account. Account/wallet creation is atomic.
-
-Account responses now include:
-
-```json
-{
-  "role": "seller",
-  "name": null,
-  "realName": null,
-  "phone": null,
-  "isProfileComplete": false,
-  "profileCompletedAt": null,
-  "missingProfileFields": ["name", "realName", "phone"]
-}
-```
-
-The additions appear in registration/login `data.user`, `/account/me`, and profile-completion responses. After completion, `isProfileComplete` is true and `missingProfileFields` is empty. Admin/employee accounts are not subject to their own seller-onboarding form; employee business access still requires an eligible parent seller. Do not use role changes to implement onboarding.
-
-Call the new authenticated endpoint:
-
-```http
-POST /api/admin/account/complete-profile
-Authorization: Bearer ACCESS_TOKEN
-Content-Type: application/json
-```
-
-```json
-{"name":"水滴商店","realName":"王小明","phone":"0912345678","address":"台北市"}
-```
-
-`name`, `realName`, `phone` are required; address is optional. The current real-name rule remains ECPay weighted length 4–10 with no emoji; phone is 10 digits beginning with `09`. Account ID comes from authentication. Unknown body fields are rejected. Response: `{success:true,data:<updated account>}`. An identical retry is safe; different profile data after completion returns 409 and must use the existing profile-update endpoint. Existing access tokens work immediately after successful completion; a second login is unnecessary.
-
-## Protected APIs and FE behavior
-
-Incomplete sellers can log in, refresh/logout, fetch their own `/account/me`, complete their profile, and use the signed-in change-password action. Public recovery endpoints are also available. All business APIs retain their existing permissions and now reject incomplete sellers with:
-
-```json
-{"success":false,"statusCode":403,"code":"ACCOUNT_PROFILE_INCOMPLETE","message":"Please complete your seller profile."}
-```
-
-This covers products, ads, wallet, orders, refunds, delivery, chat REST/SSE, dashboard, sidebar notifications, file uploads and employee management. The ordinary profile-update endpoint is not an onboarding exception. Existing `isAuth` checks the current database completion state; it also recognizes account tokens on shared authenticated routes, such as file upload. Invalid/inactive/deleted accounts are still denied on authentication-only exceptions.
-
-After login or `/me`, route incomplete sellers to the profile form. Delay business requests and streams until completion succeeds. An Axios response interceptor should handle `403 ACCOUNT_PROFILE_INCOMPLETE` by opening onboarding, **without retrying token refresh**. Resume normal requests after updating the cached user from completion.
-
-Only platform admins may change role/status through the account-update API. Completed seller profiles cannot have required fields cleared. Account-email changes invalidate pending password-reset links.
+This handoff covers forgot/reset password, signed-in password changes, and access/refresh-token session handling. Both handoffs share the current account authentication system. See the [combined backend plan](../../plans/SELLER_TWO_STEP_REGISTRATION_PLAN.md) for design context.
 
 ## Forgot password
 
@@ -108,7 +56,7 @@ Content-Type: application/json
 
 Password rules: at least eight characters with uppercase, lowercase, digit, and a supported special character (`!@#$%^&*(),.?":{}|<>`). New passwords are limited to **72 UTF-8 bytes**, preventing silent bcrypt truncation. Existing login passwords retain their current verification behavior. The API follows existing trimmed password input behavior; FE should not rely on leading/trailing spaces.
 
-Success: `{success:true,data:{message:"Password reset successfully. Please log in."}}`. FE clears cached login state and returns to normal login; there is no automatic login. Completion, role, status and wallet data do not change. Incomplete sellers still go to onboarding after login.
+Success: `{success:true,data:{message:"Password reset successfully. Please log in."}}`. FE clears cached login state and returns to normal login; there is no automatic login. Completion, role, status and wallet data do not change. After login, sellers still need verified email and profile completion; follow the separate onboarding handoff. Password reset does not grant email verification.
 
 Earlier unexpired links remain usable after requesting another email. Once any link succeeds, all outstanding links for that account are invalidated. Concurrent resets have at most one winner. Invalid password input does not consume a valid token. A lost success response followed by a retry returns an invalid-token error; offer login with the new password or another reset request.
 
@@ -134,7 +82,7 @@ Access lifetimes remain one day locally/one hour elsewhere, capped by session ex
 
 Schema definitions only have been changed; no migration files were generated and no configured database was migrated.
 
-- `accounts`: nullable real name/phone, nullable `profile_completed_at`, and `credential_version` default 0 with a non-negative check.
+- `accounts`: `credential_version` default 0 with a non-negative check; onboarding/verification schema is described in the separate handoff.
 - `account_password_reset_tokens`: account FK, unique token hash, credential revision, creation/expiry/use/revocation timestamps, account/expiry indexes and validity checks. Raw tokens are never stored.
 - `account_sessions` and `account_refresh_tokens`: login sessions, hashed refresh tokens and consumed-token history; one unconsumed token per session, account/expiry/session indexes and expiry/version checks.
 - `account_recovery_rate_limits`: shared hashed email/IP counters across API instances, with an expiry-cleanup index. This additional small table is needed so limits also cover nonexistent emails and survive process changes.
@@ -143,14 +91,11 @@ Schema definitions only have been changed; no migration files were generated and
 npm run db:generate:local
 # Review the generated SQL, including any other pending schema changes.
 npm run db:migrate:local
-npm run account:profile:audit:local
-# Review the report before marking valid existing sellers completed:
-npm run account:profile:backfill:local
 npm run build
 npm run dev
 ```
 
-Audit is read-only; backfill explicitly writes completion timestamps only for valid incomplete seller profiles, using the current time. Both report account IDs and invalid/missing fields. Exit code 2 means some sellers still need remediation/onboarding; do not deploy the gate without reviewing those accounts. Neither script fabricates data or changes passwords/roles/status. No automatic backfill runs at startup. For another environment, explicitly run `NODE_ENV=development npx tsx src/scripts/backfillSellerProfiles.ts` (audit) and add `--apply` only after review and that environment's migration.
+For seller-profile auditing/backfill and email-verification rollout, follow the [registration and verification handoff](SELLER_REGISTRATION_AND_EMAIL_VERIFICATION_API_CHANGES.md#configuration-and-owner-run-migration). Profile backfill never verifies email or creates sessions.
 
 The following defaults are configured in the repository's local environment files. Ensure deployment uses the corresponding value and restart the backend after changing configuration. FE must provide these routes:
 
@@ -172,7 +117,7 @@ ACCOUNT_PASSWORD_RESET_ALLOWED_URLS=http://localhost:5173/reset-password
 
 When FE supplies `callbackUrl`, it takes precedence only when it matches the default URL or an additional allowed URL after URL parsing. Matching includes the full path, not just the origin; an unapproved URL returns 400 and sends no email. Omitting `callbackUrl` uses the default. `ACCOUNT_PASSWORD_RESET_URL` remains required even if the additional allowlist is set; missing/invalid server URL configuration returns 503.
 
-Local/test may use explicitly configured localhost HTTP URLs; deployed environments require HTTPS. A persistent `JWT_SECRET` and the existing SendGrid configuration are required. Only the reset-page setting was added to these environment files; credentials were unchanged. These settings do not automatically add a new FE origin to the application's CORS allowlist; local FE should use its existing development proxy or configure CORS deliberately.
+Local/test may use explicitly configured localhost HTTP URLs; deployed environments require HTTPS. A persistent `JWT_SECRET` and the existing SendGrid configuration are required. Reset-page settings and the email-verification settings described in the separate onboarding handoff are configured in these environment files; credentials were unchanged. These settings do not automatically add a new FE origin to the application's CORS allowlist; local FE should use its existing development proxy or configure CORS deliberately.
 
 Limits: forgot-password 20 requests/hour/IP; one accepted request/minute and five requests/hour per normalized email. Email suppression keeps the generic 200 response. Reset submission allows 60 valid-shaped requests/hour/IP. IP throttling returns 429 with a conservative 3600-second `Retry-After`. Keys are HMAC hashes. Express currently uses its direct peer IP; behind a reverse proxy, configure trusted proxy hops deliberately before rollout so unrelated users do not share the proxy's quota. Do not blindly trust arbitrary forwarded IP headers.
 
@@ -199,7 +144,7 @@ A session has a **30-day absolute lifetime from login**, rather than extending f
 
 Strict replay policy: there is no grace window or retry token. Concurrent uses have one winner; the loser revokes the session, so even the winner's response is no longer usable. A lost refresh response can require login again. FE must share one in-flight refresh promise, coordinate across tabs (for example Web Locks with a recheck of shared authentication state), and never automatically retry refresh/logout network requests. Do not broadcast/store refresh tokens; they stay in the HTTP-only cookie. Use credentials-enabled requests, exclude auth endpoints from automatic refresh interception, retry a business request at most once, and clear authentication state on definitive refresh failure. On an uncertain network result, return to login rather than replaying a potentially consumed token.
 
-Deploy all instances together after migration; mixed old/new validators are unsupported. No refresh session backfill is possible or needed. Existing generated migration files are left untouched; generate another migration from the updated schema. Existing local `0113` migration files are left untouched. Generate and review a subsequent migration for the new session tables; do not deploy the new authentication code before applying it. The profile audit/backfill remains necessary only for onboarding and never creates login sessions.
+Deploy all instances together after migration; mixed old/new validators are unsupported. No refresh session backfill is possible or needed. Existing generated migration files are left untouched; generate another migration from the updated schema. Existing local `0113` migration files are left untouched. Generate and review a subsequent migration for the new session tables; do not deploy the new authentication code before applying it. Profile audit/backfill is covered by the separate onboarding handoff and never creates login sessions.
 
 ### Rotation HTTP contract
 

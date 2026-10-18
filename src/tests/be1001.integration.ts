@@ -17,7 +17,7 @@ async function run() {
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/admin`;
   try {
     const [seller, other, admin, employee] = await db.insert(s.accountTable).values(
-      (["seller", "seller", "admin", "employee"] as const).map((role) => ({ profileCompletedAt: new Date(), role, email: `${randomUUID()}@example.test`, password: "unused", realName: "Withdrawal fixture", phone: "0900000000" })),
+      (["seller", "seller", "admin", "employee"] as const).map((role) => ({ profileCompletedAt: new Date(), emailVerifiedAt: new Date(), role, email: `${randomUUID()}@example.test`, password: "unused", realName: "Withdrawal fixture", phone: "0900000000" })),
     ).returning();
     await db.insert(s.accountWalletTable).values({ accountId: seller.id, walletBalance: "200.00", totalRevenueCash: "123.00" });
     const [product] = await db.insert(s.productTable).values({ sellerId: seller.id, name: "Withdrawal fixture", description: "Test" }).returning();

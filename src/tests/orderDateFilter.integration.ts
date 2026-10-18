@@ -58,7 +58,7 @@ async function run() {
 
     // Multiple child records must not duplicate orders or inflate the total.
     const [seller] = await db.insert(schema.accountTable).values({
-      profileCompletedAt: new Date(),
+      profileCompletedAt: new Date(), emailVerifiedAt: new Date(),
       email: `order-date-seller-${randomUUID()}@example.test`, password: "unused",
       realName: "Order date fixture", phone: "0900000000", role: "seller",
     }).returning();

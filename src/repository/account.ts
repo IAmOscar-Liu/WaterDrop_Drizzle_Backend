@@ -1,3 +1,4 @@
+import { revokeEmailVerificationWithTx } from "./accountEmailVerification";
 import { revokeAccountSessionsWithTx } from "./accountSession";
 import bcrypt from "bcrypt";
 import { profileState, requireValidProfile, requireCompletedSeller, validatePassword } from "../lib/accountProfile";
@@ -33,7 +34,7 @@ export async function createAccount(accountData: schema.NewAccount) {
     if (hasProfile) requireValidProfile(accountData);
   }
   const dataToInsert = { ...accountData, password: hashedPassword,
-    profileCompletedAt: hasProfile ? new Date() : null, credentialVersion: 0 };
+    profileCompletedAt: hasProfile ? new Date() : null, emailVerifiedAt: null, credentialVersion: 0 };
 
   let newAccount: schema.Account;
   try {
@@ -206,6 +207,7 @@ export async function softDeleteSubAccount(
       return result;
     }
 
+    await revokeEmailVerificationWithTx(tx, targetAccountId);
     const [updated] = await tx
       .update(schema.accountTable)
       .set({
@@ -291,8 +293,10 @@ export async function updateAccount(
     const merged = { ...account, ...updates };
     if (merged.role === "seller" && (account.profileCompletedAt || updates.role === "seller")) requireValidProfile(merged);
     if (updates.email !== undefined && updates.email !== account.email) {
-      await tx.update(schema.accountPasswordResetTokenTable).set({ revokedAt: new Date() })
-        .where(and(eq(schema.accountPasswordResetTokenTable.accountId, accountId), isNull(schema.accountPasswordResetTokenTable.usedAt), isNull(schema.accountPasswordResetTokenTable.revokedAt)));
+      throw new CustomError("Use the verified email-change workflow", 409, "ACCOUNT_EMAIL_CHANGE_REQUIRES_VERIFICATION");
+    }
+    if ((updates.status !== undefined && updates.status !== account.status) || (updates.role !== undefined && updates.role !== account.role)) {
+      await revokeEmailVerificationWithTx(tx, accountId);
     }
     await tx.update(schema.accountTable).set({ ...updates, updatedAt: new Date(),
       ...(updates.role === "seller" && !account.profileCompletedAt ? { profileCompletedAt: new Date() } : {}) })
@@ -462,6 +466,7 @@ export async function changeAccountPassword(
     if (!account || account.status !== "active" || account.deletedAt) throw new CustomError("Account unavailable", 403);
     if (!await bcrypt.compare(oldPassword, account.password)) throw new CustomError("Incorrect old password", 401);
     const password = await bcrypt.hash(newPassword, 10);
+    await revokeEmailVerificationWithTx(tx, accountId);
     await revokeAccountSessionsWithTx(tx, accountId, "password_changed");
     await tx.update(schema.accountTable).set({ password, credentialVersion: account.credentialVersion + 1, updatedAt: new Date() }).where(eq(schema.accountTable.id, accountId));
     await tx.update(schema.accountPasswordResetTokenTable).set({ revokedAt: new Date() })

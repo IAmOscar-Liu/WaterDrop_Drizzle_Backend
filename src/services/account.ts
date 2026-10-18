@@ -1,3 +1,4 @@
+import { prepareSellerRegistration, sendRegistrationVerification } from "./accountEmailVerification";
 import * as schema from "../db/schema";
 import { handleServiceError } from "../lib/error";
 import {
@@ -46,10 +47,13 @@ class AdminService {
 
   async createAdminAccount(
     accountData: schema.NewAccount,
+    ip: string = "unknown",
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof createAccount>>>> {
     try {
+      const page = await prepareSellerRegistration(ip);
       let account = await createAccount(accountData); // Replace with real data fetching logic
       account = await updateAccountLastLogin(account.id, account.credentialVersion);
+      await sendRegistrationVerification(account.id, account.credentialVersion, page);
       return { success: true, data: account };
     } catch (error) {
       return handleServiceError(error);

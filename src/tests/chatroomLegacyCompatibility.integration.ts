@@ -28,7 +28,7 @@ async function run() {
   const pageKeys = ["total", "page", "limit", "totalPages"];
   try {
     const [user] = await db.insert(schema.userTable).values({ email: `${randomUUID()}@example.test`, oauthProvider: "other", oauthId: randomUUID(), referralCode: randomUUID() }).returning();
-    const [seller, admin] = await db.insert(schema.accountTable).values((["seller", "admin"] as const).map((role) => ({ profileCompletedAt: new Date(), role, email: `${randomUUID()}@example.test`, password: "unused", realName: "Legacy compatibility", phone: "0900000000" }))).returning();
+    const [seller, admin] = await db.insert(schema.accountTable).values((["seller", "admin"] as const).map((role) => ({ profileCompletedAt: new Date(), emailVerifiedAt: new Date(), role, email: `${randomUUID()}@example.test`, password: "unused", realName: "Legacy compatibility", phone: "0900000000" }))).returning();
     const created = await request("/chatroom/create", user.id, "POST", { accountId: seller.id });
     assert.equal(created.status, 200); const room = created.body.data; keys(room, [...roomKeys]);
     const detail = await request(`/chatroom/${room.id}`, user.id); keys(detail.body.data, [...roomKeys, "product", "variant"]);

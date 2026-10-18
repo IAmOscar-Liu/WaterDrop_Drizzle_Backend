@@ -1,3 +1,5 @@
+import jwt from "jsonwebtoken";
+import { issueEmailVerification, consumeEmailVerification } from "../repository/accountEmailVerification";
 import "../lib/env";
 import { fixtureToken } from "./accountSessionFixture";
 import assert from "node:assert/strict";
@@ -50,6 +52,11 @@ async function run() {
     assert.equal(full.body.data.user.credentialVersion, undefined);
     const fullId = full.body.data.user.id;
     const fullToken = full.body.data.token;
+    const verify = async (id: string, access: string) => {
+      const issued = await issueEmailVerification(id);
+      assert.equal((await request("/api/admin/account/verify-email", "POST", { token: issued!.token }, access)).status, 200);
+    };
+    await verify(fullId, fullToken);
     const input = credentials();
     const partial = await register({ ...input, name: "Only name" });
     assert.equal(partial.status, 400);
@@ -57,6 +64,7 @@ async function run() {
     const fresh = await register({ ...input, role: "admin", profileCompletedAt: new Date(), isProfileComplete: true });
     assert.equal(fresh.status, 200, JSON.stringify(fresh.body));
     const id = fresh.body.data.user.id, token = fresh.body.data.token;
+    await verify(id, token);
     assert.equal(fresh.body.data.user.role, "seller");
     assert.equal(fresh.body.data.user.isProfileComplete, false);
     assert.deepEqual(fresh.body.data.user.missingProfileFields, ["name", "realName", "phone"]);
@@ -147,7 +155,11 @@ async function run() {
     await db.update(schema.accountPasswordResetTokenTable).set({ createdAt: new Date(Date.now() - 3600_000), expiresAt: new Date(Date.now() - 1000) }).where(eq(schema.accountPasswordResetTokenTable.tokenHash, hashResetToken(expired.token)));
     await assert.rejects(() => consumePasswordReset(expired.token, newPassword), /Invalid or expired/);
     const emailChanged = (await issuePasswordReset(old.email))!;
-    assert.equal((await request("/api/admin/account/update", "PUT", { id: fullId, email: credentials().email }, fullToken)).status, 200);
+    assert.equal((await request("/api/admin/account/update", "PUT", { id: fullId, email: credentials().email }, fullToken)).status, 409);
+    const claims = jwt.decode(fullToken) as jwt.JwtPayload;
+    const actor = { accountId: fullId, sessionId: claims.sid, credentialVersion: claims.data.credentialVersion };
+    const changeLink = await issueEmailVerification(fullId, { actor, newEmail: credentials().email, password: old.password });
+    await consumeEmailVerification(actor, changeLink!.token, "change");
     await assert.rejects(() => consumePasswordReset(emailChanged.token, newPassword), /Invalid or expired/);
 
     // Incomplete sellers can change passwords without gaining business access.

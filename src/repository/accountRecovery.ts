@@ -1,3 +1,4 @@
+import { revokeEmailVerificationWithTx } from "./accountEmailVerification";
 import { revokeAccountSessionsWithTx } from "./accountSession";
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import bcrypt from "bcrypt";
@@ -53,6 +54,7 @@ export async function consumePasswordReset(token: string, newPassword: string) {
     const [record] = await tx.select().from(tokens).where(and(eq(tokens.tokenHash, tokenHash), sql`${tokens.expiresAt} > clock_timestamp()`)).for("update");
     if (!account || account.status !== "active" || account.deletedAt || !record || record.usedAt || record.revokedAt || record.credentialVersion !== account.credentialVersion) throw invalidToken();
     const password = await bcrypt.hash(newPassword, 10);
+    await revokeEmailVerificationWithTx(tx, account.id);
     await revokeAccountSessionsWithTx(tx, account.id, "password_reset");
     await tx.update(schema.accountTable).set({ password, credentialVersion: account.credentialVersion + 1, updatedAt: new Date() }).where(eq(schema.accountTable.id, account.id));
     await tx.update(tokens).set({ usedAt: new Date() }).where(eq(tokens.id, record.id));

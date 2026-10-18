@@ -207,7 +207,7 @@ async function run() {
     const [seller] = await db
       .insert(schema.accountTable)
       .values({
-        profileCompletedAt: new Date(),
+        profileCompletedAt: new Date(), emailVerifiedAt: new Date(),
         email: `api-seller-${suffix}@example.test`,
         password: "not-used",
         name: "API Test Seller",
@@ -243,7 +243,7 @@ async function run() {
       .insert(schema.accountTable)
       .values([
         {
-          profileCompletedAt: new Date(),
+          profileCompletedAt: new Date(), emailVerifiedAt: new Date(),
           email: `api-admin-${suffix}@example.test`,
           password: "not-used",
           realName: "API Test Admin",
@@ -251,7 +251,7 @@ async function run() {
           phone: "0900000001",
         },
         {
-          profileCompletedAt: new Date(),
+          profileCompletedAt: new Date(), emailVerifiedAt: new Date(),
           email: `api-other-seller-${suffix}@example.test`,
           password: "not-used",
           name: "API Other Seller",
@@ -357,7 +357,7 @@ async function run() {
     const [employee] = await db
       .insert(schema.accountTable)
       .values({
-        profileCompletedAt: new Date(),
+        profileCompletedAt: new Date(), emailVerifiedAt: new Date(),
         email: `api-employee-${suffix}@example.test`,
         password: "not-used",
         realName: "API Test Employee",

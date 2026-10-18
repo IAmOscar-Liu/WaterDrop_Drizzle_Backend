@@ -17,7 +17,7 @@ import { adminValidation } from "../../middleware/admin";
  *       type: http
  *       scheme: bearer
  *       bearerFormat: JWT
- *       description: Business APIs require a completed seller profile (403 ACCOUNT_PROFILE_INCOMPLETE otherwise). Admin access JWTs require the admin_access purpose, waterdrop issuer, waterdrop-admin audience and an active session. Legacy admin tokens require a new login. Password changes invalidate old access/refresh tokens.
+ *       description: Business APIs require verified seller email (403 ACCOUNT_EMAIL_UNVERIFIED) and then a completed seller profile (403 ACCOUNT_PROFILE_INCOMPLETE). Employee access also requires an eligible parent seller. Admin access JWTs require the admin_access purpose, waterdrop issuer, waterdrop-admin audience and an active session. Legacy admin tokens require a new login. Password changes invalidate old access/refresh tokens.
  *   schemas:
  *     Account:
  *       type: object
@@ -60,6 +60,13 @@ import { adminValidation } from "../../middleware/admin";
  *           enum: [active, inactive, banned]
  *           description: The status of the account.
  *           default: active
+ *         isEmailVerified:
+ *           type: boolean
+ *           description: Whether the current email has been verified; admin/employee own verification is not required for business access.
+ *         emailVerifiedAt:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
  *         isProfileComplete:
  *           type: boolean
  *           description: False for a seller whose profile completion timestamp is null; true for admin/employee accounts.
@@ -171,6 +178,149 @@ import { adminValidation } from "../../middleware/admin";
  */
 
 const router = Router();
+
+/**
+ * @swagger
+ * /api/admin/account/resend-verification-email:
+ *   post:
+ *     tags: [Account]
+ *     summary: Resend verification to the authenticated account's current email
+ *     description: Unverified/incomplete accounts allowed. No recipient or account ID accepted. Optional callbackUrl must exactly match configured approved FE pages; no query/fragment/user-info. A new 30-minute link replaces previous verification links. Sends are limited to 20/hour/IP and 5/hour/account with a 60-second cooldown, including the initial registration email. Already verified accounts receive a successful no-op acknowledgement. Same registered email casing as login is used.
+ *     security: [{bearerAuth: []}]
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             additionalProperties: false
+ *             properties:
+ *               callbackUrl: {type: string, format: uri, maxLength: 2048}
+ *     responses:
+ *       '200':
+ *         description: Email accepted by SendGrid, or already verified; not proof of inbox delivery.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: {type: boolean}
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: {type: string}
+ *       '400': {description: Invalid request or unapproved callback URL.}
+ *       '401': {description: Invalid or expired account session.}
+ *       '403': {description: Inactive or deleted account.}
+ *       '429': {description: EMAIL_VERIFICATION_RATE_LIMIT; Retry-After 3600 seconds.}
+ *       '503': {description: Invalid server URL configuration or EMAIL_VERIFICATION_DELIVERY_FAILED; request a fresh link later.}
+ * /api/admin/account/verify-email:
+ *   post:
+ *     tags: [Account]
+ *     summary: Verify the authenticated account's current email
+ *     description: Explicit POST only; GET/page loads never consume tokens. Requires a session belonging to the token's account, including when opened in another browser. The fragment contains token and purpose=verify. Atomically consumes the single-use token and revokes outstanding verification/change links. Does not complete the profile or create a session. Existing sessions remain valid. Attempts shared with confirm-email-change are limited to 60/hour/IP and 60/hour/account.
+ *     security: [{bearerAuth: []}]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             additionalProperties: false
+ *             required: [token]
+ *             properties:
+ *               token: {type: string, maxLength: 256}
+ *     responses:
+ *       '200':
+ *         description: Email verified; current account including verification and profile state.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: {type: boolean}
+ *                 data: {$ref: '#/components/schemas/AccountWithParent'}
+ *       '400': {description: EMAIL_VERIFICATION_TOKEN_INVALID for invalid/expired/used/revoked/wrong-account/wrong-purpose links.}
+ *       '401': {description: Invalid or expired account session.}
+ *       '403': {description: Account unavailable.}
+ *       '429': {description: EMAIL_VERIFICATION_RATE_LIMIT; Retry-After 3600 seconds.}
+ * /api/admin/account/request-email-change:
+ *   post:
+ *     tags: [Account]
+ *     summary: Verify a new email before replacing the current login address
+ *     description: Own account only; permitted during onboarding to correct a typo, and for admin/employee accounts. Requires current password. Sends a 30-minute single-use link to newEmail with purpose=change. Current email remains the login/recovery address until confirmation. Resending replaces previous change links. Limits are 20/hour/IP, 5/hour/account and 5/hour/destination; account and destination have a 60-second cooldown. No pending-email field is returned. Existing exact-case email identity is preserved; rate limits normalize destination casing only.
+ *     security: [{bearerAuth: []}]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             additionalProperties: false
+ *             required: [newEmail, password]
+ *             properties:
+ *               newEmail: {type: string, format: email, maxLength: 320}
+ *               password: {type: string, minLength: 1, maxLength: 256}
+ *               callbackUrl: {type: string, format: uri, maxLength: 2048}
+ *     responses:
+ *       '200':
+ *         description: Confirmation email accepted by SendGrid; current address unchanged.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: {type: boolean}
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     message: {type: string}
+ *       '400': {description: Invalid input, unchanged address or unapproved callback URL.}
+ *       '401': {description: Invalid or expired account session.}
+ *       '403': {description: EMAIL_CHANGE_PASSWORD_INVALID or account unavailable.}
+ *       '409': {description: ACCOUNT_EMAIL_UNAVAILABLE.}
+ *       '429': {description: EMAIL_VERIFICATION_RATE_LIMIT; Retry-After 3600 seconds.}
+ *       '503': {description: Invalid server configuration or EMAIL_VERIFICATION_DELIVERY_FAILED.}
+ * /api/admin/account/confirm-email-change:
+ *   post:
+ *     tags: [Account]
+ *     summary: Confirm the new email and revoke all login sessions
+ *     description: Requires the requesting account's valid session and a purpose=change token. Until confirmation, log in using the old address. Atomically replaces email, marks it verified, increments credential version, revokes all sessions/reset/verification links and clears refresh cookie. The old address receives a best-effort notification. Password/profile/role remain unchanged. Log in again using the new address. An uncertain response requires normal login/recovery, not automatic retry. Attempts share the verify-email limits.
+ *     security: [{bearerAuth: []}]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             additionalProperties: false
+ *             required: [token]
+ *             properties:
+ *               token: {type: string, maxLength: 256}
+ *     responses:
+ *       '200':
+ *         description: Email changed; all sessions revoked.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: {type: boolean}
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     requiresLogin: {type: boolean, example: true}
+ *                     message: {type: string}
+ *       '400': {description: EMAIL_VERIFICATION_TOKEN_INVALID.}
+ *       '401': {description: Invalid/expired/revoked account session, including retries after a successful change.}
+ *       '403': {description: Account unavailable.}
+ *       '409': {description: ACCOUNT_EMAIL_UNAVAILABLE; transaction rolled back, current address unchanged.}
+ *       '429': {description: EMAIL_VERIFICATION_RATE_LIMIT; Retry-After 3600 seconds.}
+ */
+router.post("/resend-verification-email", isAccountAuthenticated, validateZod({ body: adminValidation.account.resendVerificationBody }), AccountController.resendVerificationEmail);
+router.post("/verify-email", isAccountAuthenticated, validateZod({ body: adminValidation.account.verifyEmailBody }), AccountController.verifyEmail);
+router.post("/request-email-change", isAccountAuthenticated, validateZod({ body: adminValidation.account.requestEmailChangeBody }), AccountController.requestEmailChange);
+router.post("/confirm-email-change", isAccountAuthenticated, validateZod({ body: adminValidation.account.verifyEmailBody }), AccountController.confirmEmailChange);
+
 
 router.post("/complete-profile", isAccountAuthenticated, validateZod({ body: adminValidation.account.completeProfileBody }), AccountController.completeProfile);
 router.post("/forgot-password", validateZod({ body: adminValidation.account.forgotPasswordBody }), AccountController.forgotPassword);
@@ -291,7 +441,7 @@ router.post("/reset-password", validateZod({ body: adminValidation.account.reset
  *   post:
  *     tags: [Account]
  *     summary: Register a new seller account
- *     description: Public registration always creates a seller. Email/password alone creates an incomplete profile. For legacy full registration supply name, realName and phone together (address optional); this completes onboarding immediately. Partial profiles return 400. Incomplete sellers may use me, complete-profile and change-password, but business APIs return 403 ACCOUNT_PROFILE_INCOMPLETE.
+ *     description: Public registration always creates a seller. Email/password alone creates an incomplete profile. For legacy full registration supply name, realName and phone together (address optional); this completes the profile, but email verification is still required for business access. Partial profiles return 400. A 30-minute verification email is attempted after account creation; delivery failure retains the account for resend. Unverified/incomplete sellers can use onboarding, verification and email-change endpoints. Public registration is limited to 20 requests/hour/IP; 429 includes Retry-After. Invalid verification URL configuration returns 503 before account creation.
  *     requestBody:
  *       required: true
  *       content:
@@ -483,7 +633,7 @@ router.get("/me", isAccountAuthenticated, AccountController.getCurrentUser);
  * /api/admin/account/update:
  *   put:
  *     tags: [Account]
- *     description: Requires completed seller onboarding. Only platform admins may change role or status. Required fields of a completed seller cannot be cleared. Email changes invalidate outstanding reset links.
+ *     description: Requires verified seller email and completed seller profile. Only platform admins may change role or status. Required completed profile fields cannot be cleared. Direct email changes return 409 ACCOUNT_EMAIL_CHANGE_REQUIRES_VERIFICATION, including platform-admin edits; use request-email-change and confirm-email-change for the authenticated account. Sending the unchanged email remains allowed.
  *     summary: Update the current authenticated user's profile
  *     security:
  *       - bearerAuth: []
@@ -559,7 +709,7 @@ router.put(
  * /api/admin/account/change-password:
  *   put:
  *     tags: [Account]
- *     description: Available to incomplete sellers with valid authentication and old password. Success invalidates all prior access/refresh tokens and reset links, clears the refresh cookie, and requires login again.
+ *     description: Available to incomplete sellers with valid authentication and old password. Success invalidates all prior access/refresh tokens, reset links and email verification/change links, clears the refresh cookie, and requires login again.
  *     summary: Change the current authenticated user's password
  *     security:
  *       - bearerAuth: []

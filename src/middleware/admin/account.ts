@@ -21,6 +21,9 @@ const profile = z.object({
 });
 
 export const accountValidation = {
+  resendVerificationBody: z.object({ callbackUrl: z.url().max(2048).optional() }).strict().default({}),
+  verifyEmailBody: z.object({ token: z.string().max(256) }).strict(),
+  requestEmailChangeBody: z.object({ newEmail: z.email().max(320), password: z.string().min(1).max(256), callbackUrl: z.url().max(2048).optional() }).strict(),
   registerBody: profile.partial().extend({ email: z.email(), password }).superRefine((value, context) => {
     const supplied = [value.name, value.realName, value.phone].filter((v) => v !== undefined).length;
     if ((supplied > 0 && supplied < 3) || (value.address !== undefined && supplied !== 3)) {

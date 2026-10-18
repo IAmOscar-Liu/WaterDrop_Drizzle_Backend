@@ -71,9 +71,9 @@ async function run() {
   };
   try {
     const [user, other] = await db.insert(schema.userTable).values([1, 2].map(() => ({ email: `${randomUUID()}@example.test`, oauthProvider: "other" as const, oauthId: randomUUID(), referralCode: randomUUID() }))).returning();
-    const [admin, seller, foreignSeller] = await db.insert(schema.accountTable).values((["admin", "seller", "seller"] as const).map((role) => ({ profileCompletedAt: new Date(), role, email: `${randomUUID()}@example.test`, password: "unused", realName: "Admin SSE fixture", phone: "0900000000" }))).returning();
+    const [admin, seller, foreignSeller] = await db.insert(schema.accountTable).values((["admin", "seller", "seller"] as const).map((role) => ({ profileCompletedAt: new Date(), emailVerifiedAt: new Date(), role, email: `${randomUUID()}@example.test`, password: "unused", realName: "Admin SSE fixture", phone: "0900000000" }))).returning();
     const [group] = await db.insert(schema.accountGroupTable).values({ parentId: seller.id }).returning();
-    const [employee] = await db.insert(schema.accountTable).values({ profileCompletedAt: new Date(), role: "employee", accountGroupId: group.id, email: `${randomUUID()}@example.test`, password: "unused", realName: "Employee", phone: "0900000000" }).returning();
+    const [employee] = await db.insert(schema.accountTable).values({ profileCompletedAt: new Date(), emailVerifiedAt: new Date(), role: "employee", accountGroupId: group.id, email: `${randomUUID()}@example.test`, password: "unused", realName: "Employee", phone: "0900000000" }).returning();
     const room = await findOrCreateChatRoom({ userId: user.id, accountId: seller.id });
     const otherRoom = await findOrCreateChatRoom({ userId: other.id, accountId: foreignSeller.id });
     const supportRoom = await findOrCreateChatRoom({ userId: user.id });

@@ -27,7 +27,7 @@ async function run() {
     }))).returning();
     const accounts = await db.insert(schema.accountTable).values(
       (["seller", "seller", "admin", "employee"] as const).map((role) => ({
-        profileCompletedAt: new Date(),
+        profileCompletedAt: new Date(), emailVerifiedAt: new Date(),
         role, email: `${randomUUID()}@example.test`, password: "unused",
         realName: "Chat auth fixture", phone: "0900000000",
       })),

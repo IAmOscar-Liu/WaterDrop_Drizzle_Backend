@@ -80,6 +80,8 @@
     "_test:account-onboarding": "NODE_ENV=test NO_CRON=true tsx src/tests/accountOnboarding.integration.ts",
     "account:profile:audit:local": "NODE_ENV=local tsx src/scripts/backfillSellerProfiles.ts",
     "account:profile:backfill:local": "NODE_ENV=local tsx src/scripts/backfillSellerProfiles.ts --apply",
+    "test:email-verification": "NODE_ENV=test tsx src/tests/runTestSuite.ts email-verification",
+    "_test:email-verification": "NODE_ENV=test NO_CRON=true tsx src/tests/accountEmailVerification.integration.ts",
     "test:account-sessions": "NODE_ENV=test tsx src/tests/runTestSuite.ts account-sessions",
     "_test:account-sessions": "NODE_ENV=test NO_CRON=true tsx src/tests/accountSession.integration.ts"
   },

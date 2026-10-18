@@ -1,3 +1,4 @@
+import accountEmailVerification from "../services/accountEmailVerification";
 import { ServiceResponse } from "../type/general";
 import { Request, Response } from "express";
 import { publicAccount } from "../lib/accountProfile";
@@ -21,6 +22,31 @@ function accountResponse(result: ServiceResponse<any>): ServiceResponse<any> {
 }
 
 class AccountController {
+  async resendVerificationEmail(req: RequestWithId, res: Response) {
+    const result = await accountEmailVerification.resend({ accountId: req.userId!, sessionId: req.sessionId!, credentialVersion: req.credentialVersion! }, req.body ?? {}, req.ip ?? "unknown");
+    if (!result.success && result.statusCode === 429) res.setHeader("Retry-After", "3600");
+    res.setHeader("Cache-Control", "no-store");
+    sendJsonResponse(res, result);
+  }
+  async verifyEmail(req: RequestWithId, res: Response) {
+    const result = await accountEmailVerification.verify({ accountId: req.userId!, sessionId: req.sessionId!, credentialVersion: req.credentialVersion! }, req.body.token, req.ip ?? "unknown");
+    if (!result.success && result.statusCode === 429) res.setHeader("Retry-After", "3600");
+    res.setHeader("Cache-Control", "no-store");
+    sendJsonResponse(res, result);
+  }
+  async requestEmailChange(req: RequestWithId, res: Response) {
+    const result = await accountEmailVerification.requestChange({ accountId: req.userId!, sessionId: req.sessionId!, credentialVersion: req.credentialVersion! }, req.body, req.ip ?? "unknown");
+    if (!result.success && result.statusCode === 429) res.setHeader("Retry-After", "3600");
+    res.setHeader("Cache-Control", "no-store");
+    sendJsonResponse(res, result);
+  }
+  async confirmEmailChange(req: RequestWithId, res: Response) {
+    const result = await accountEmailVerification.confirmChange({ accountId: req.userId!, sessionId: req.sessionId!, credentialVersion: req.credentialVersion! }, req.body.token, req.ip ?? "unknown");
+    if (result.success) clearRefreshToken(res);
+    if (!result.success && result.statusCode === 429) res.setHeader("Retry-After", "3600");
+    res.setHeader("Cache-Control", "no-store");
+    sendJsonResponse(res, result);
+  }
   async completeProfile(req: RequestWithId, res: Response) {
     const result = await accountService.completeProfile(req.userId!, req.body);
     sendJsonResponse(res, result.success ? { ...result, data: publicAccount(result.data) } : result);
@@ -50,7 +76,8 @@ class AccountController {
       realName,
       ...(address !== undefined ? { address: String(address) } : {}),
       role: "seller",
-    });
+    }, req.ip ?? req.socket.remoteAddress ?? "unknown");
+    if (!result.success && result.statusCode === 429) res.setHeader("Retry-After", "3600");
     if (result.success) {
       const session = await accountSessionService.start(result.data.id, result.data.credentialVersion);
       if (!session.success) return sendJsonResponse(res, session);

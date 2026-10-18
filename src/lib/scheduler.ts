@@ -1,3 +1,4 @@
+import { cleanupEmailVerification } from "../repository/accountEmailVerification";
 import { cleanupAccountSessions } from "../repository/accountSession";
 import cron from "node-cron";
 import { cleanupAccountRecovery } from "../repository/accountRecovery";
@@ -462,6 +463,6 @@ export const notificationSyncCleanupTask = cron.schedule("23 * * * *", async () 
 // Recovery token retention is housekeeping; requests check expiry independently.
 export const accountRecoveryCleanupTask = cron.schedule("37 3 * * *", async () => {
   if (process.env.NO_CRON === "true") return;
-  try { await cleanupAccountRecovery(); await cleanupAccountSessions(); }
+  try { await cleanupAccountRecovery(); await cleanupAccountSessions(); await cleanupEmailVerification(); }
   catch { console.error("[account-recovery] Daily cleanup failed."); }
 }, { timezone: "Asia/Taipei" });
