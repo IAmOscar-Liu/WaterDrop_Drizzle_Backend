@@ -31,7 +31,7 @@ export async function deliverPasswordReset(email: string, page: string) {
   const issued = await issuePasswordReset(email);
   if (!issued) return;
   const link = `${page}#token=${issued.token}`;
-  const result = await recoveryMailer.send({ to: issued.email, subject: "水滴｜重設密碼",
+  const result = await recoveryMailer.send({ to: issued.email, fromName: "地平線", subject: "地平線｜重設密碼",
     disableTracking: true,
     html: `<p>請點選下方連結重設密碼，此連結於 30 分鐘後失效，且僅能使用一次。</p><p><a href="${escapeHtml(link)}">重設密碼</a></p><p>如果您未提出此申請，請忽略這封信。您可以重新申請重設連結。</p>` });
   if (!result.success) throw new Error("Reset email delivery failed");
@@ -55,8 +55,8 @@ export default {
     try {
       if (!await acceptRecoveryAttempt("reset-ip", ip, 60)) throw new CustomError("Too many requests", 429);
       const account = await consumePasswordReset(input.token, input.newPassword);
-      void recoveryMailer.send({ to: account.email, subject: "水滴｜密碼已變更", disableTracking: true,
-        html: "<p>您的水滴帳號密碼已變更，請使用新密碼重新登入。如果這不是您的操作，請立即聯絡水滴客服。</p>" })
+      void recoveryMailer.send({ to: account.email, fromName: "地平線", subject: "地平線｜密碼已變更", disableTracking: true,
+        html: "<p>您的地平線帳號密碼已變更，請使用新密碼重新登入。如果這不是您的操作，請立即聯絡地平線客服。</p>" })
         .then((result) => { if (!result.success) console.error("[account-recovery] Password confirmation email failed."); })
         .catch(() => console.error("[account-recovery] Password confirmation email failed."));
       return { success: true as const, data: { message: "Password reset successfully. Please log in." } };

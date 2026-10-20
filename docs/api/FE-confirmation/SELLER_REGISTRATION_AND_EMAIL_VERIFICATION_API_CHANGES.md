@@ -270,16 +270,16 @@ Schema definitions add nullable `accounts.email_verified_at` and `account_email_
 npm run db:generate:local
 # Review generated SQL, including any other pending changes.
 npm run db:migrate:local
-npm run account:profile:audit:local
+NODE_ENV=local npx tsx src/scripts/backfillSellerProfiles.ts
 # Review audit output before backfilling valid legacy profiles:
-npm run account:profile:backfill:local
+NODE_ENV=local npx tsx src/scripts/backfillSellerProfiles.ts --apply
 npm run build
 npm run dev
 ```
 
 Audit is read-only; backfill explicitly writes completion timestamps only for valid incomplete seller profiles, using the current time. Both report account IDs and invalid/missing fields. Exit code 2 means some sellers still need remediation/onboarding; do not deploy the gate without reviewing those accounts. Neither script fabricates data or changes passwords/roles/status. No automatic backfill runs at startup. For another environment, explicitly run `NODE_ENV=development npx tsx src/scripts/backfillSellerProfiles.ts` (audit) and add `--apply` only after review and that environment's migration.
 
-The profile backfill never sets `emailVerifiedAt`; existing sellers must still verify. Original onboarding schema changes made `real_name` and `phone` nullable and added `profile_completed_at`; `name` was already nullable. Review all outstanding schema changes together.
+The profile backfill never sets `emailVerifiedAt`; existing sellers must still verify. Original onboarding schema changes made `real_name` and `phone` nullable and added `profile_completed_at`; `name` was already nullable. Review all outstanding schema changes together. The local-only npm audit/backfill shortcuts were retired after the local/development/staging rollout; the helper remains available through the explicit commands above for future environments.
 
 No migration files were generated or edited and no configured database was migrated by this implementation. Repeat generation/review/migration for each environment yourself. Daily cleanup at **03:37 Asia/Taipei** deletes verification tokens whose expiry is over seven days old; `NO_CRON=true` skips cleanup. Expiry is enforced at consumption regardless of cleanup. Verified account timestamps are not pruned.
 

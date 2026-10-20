@@ -7,12 +7,14 @@ sgMail.setApiKey(process.env.SENDGRID_API_KEY!);
 
 export async function sendEmail({
   from,
+  fromName = "水滴",
   to,
   subject,
   html,
   disableTracking = false,
 }: {
   from?: string;
+  fromName?: string;
   to: string;
   subject: string;
   html: string;
@@ -25,7 +27,7 @@ export async function sendEmail({
     to,
     from: {
       email: from || process.env.SENDGRID_FROM_EMAIL!,
-      name: "水滴",
+      name: fromName,
     },
     subject,
     html: ensurePlatformLogo(html),
