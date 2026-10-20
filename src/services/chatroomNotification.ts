@@ -28,7 +28,7 @@ export async function sendChatMessagePush({ room, senderType, content, attachmen
         tokens: tokens.slice(offset, offset + 500),
         notification: { title, body: `${prefix}: ${body}` },
         data: { command: "chat_message", chatRoomId: room.id },
-      });
+      }, room.userId);
       if (response) {
         console.log(`[chat-push] Room ${room.id}: FCM accepted ${response.successCount}, failed ${response.failureCount}.`);
       } else {

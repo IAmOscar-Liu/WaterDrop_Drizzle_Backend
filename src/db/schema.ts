@@ -686,7 +686,7 @@ export const treasureBoxTable = pgTable("treasure_boxes", {
   settledAt: timestamp("settled_at", { withTimezone: true }),
   rewardRuleVersion: text("reward_rule_version"),
   rewardInputSnapshot: jsonb("reward_input_snapshot"),
-});
+}, (t) => ({ badgeIdx: index("treasure_boxes_badge_user_idx").on(t.userId).where(sql`${t.isActive} = true and ${t.isOpened} = false`) }));
 
 export const categoryTable = pgTable(
   "categories",
@@ -2946,3 +2946,33 @@ export type CoinLedgerBackfillCheckpoint =
   typeof coinLedgerBackfillCheckpointTable.$inferSelect;
 export type NewCoinLedgerBackfillCheckpoint =
   typeof coinLedgerBackfillCheckpointTable.$inferInsert;
+
+// Aggregate revisions are independent from chat/notification feed revisions.
+export const userBadgeStateTable = pgTable("user_badge_states", {
+  userId: uuid("user_id").primaryKey().references(() => userTable.id, { onDelete: "cascade" }),
+  version: bigint("version", { mode: "number" }).notNull().default(0),
+  claimableUnopenedBoxes: integer("claimable_unopened_boxes").notNull().default(0),
+  unreadNotifications: integer("unread_notifications").notNull().default(0),
+  unreadChatMessages: integer("unread_chat_messages").notNull().default(0),
+  nextReconcileAt: timestamp("next_reconcile_at", { withTimezone: true }),
+  lastSentVersion: bigint("last_sent_version", { mode: "number" }).notNull().default(0),
+  retryAt: timestamp("retry_at", { withTimezone: true }),
+  failures: integer("failures").notNull().default(0),
+}, (t) => ({
+  dueIdx: index("user_badge_due_idx").on(t.nextReconcileAt),
+  retryIdx: index("user_badge_retry_idx").on(t.retryAt),
+  countsCheck: check("user_badge_counts_ck", sql`${t.claimableUnopenedBoxes} >= 0 and ${t.unreadNotifications} >= 0 and ${t.unreadChatMessages} >= 0`),
+  versionCheck: check("user_badge_version_ck", sql`${t.version} >= 0 and ${t.version} < 9007199254740991 and ${t.lastSentVersion} >= 0 and ${t.lastSentVersion} <= ${t.version} and ${t.failures} >= 0`),
+}));
+
+// Append-only work avoids introducing a shared row lock into domain transactions.
+// Workers acknowledge only captured IDs, never a pre-commit sequence watermark.
+export const userBadgeWorkTable = pgTable("user_badge_work", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => userTable.id, { onDelete: "cascade" }),
+  forceDelivery: boolean("force_delivery").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({ userIdx: index("user_badge_work_user_idx").on(t.userId, t.createdAt) }));
+
+export type UserBadgeState = typeof userBadgeStateTable.$inferSelect;
+export type UserBadgeWork = typeof userBadgeWorkTable.$inferSelect;

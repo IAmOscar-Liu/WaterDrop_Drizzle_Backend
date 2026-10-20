@@ -1,3 +1,4 @@
+import { invalidateBadge } from "./appBadge";
 import {
   and,
   asc,
@@ -155,26 +156,19 @@ export async function getUserMonthlyCoinStatsInUserIds(
 }
 
 export async function updateUserTimezone(userId: string, timezone: string) {
-  const [updatedUser] = await db
-    .update(schema.userTable)
-    .set({
-      timezone,
-      updatedAt: new Date(), // Explicitly update the timestamp
-    })
-    .where(eq(schema.userTable.id, userId))
-    .returning();
-
-  if (!updatedUser) {
-    throw new CustomError(`User with id "${userId}" not found.`, 404);
-  }
-
-  return updatedUser;
+  return db.transaction(async (tx) => {
+    const [updatedUser] = await tx.update(schema.userTable).set({ timezone, updatedAt: new Date() })
+      .where(eq(schema.userTable.id, userId)).returning();
+    if (!updatedUser) throw new CustomError("User not found", 404);
+    await invalidateBadge(tx, userId);
+    return updatedUser;
+  });
 }
 
 /**
  * Creates or updates a device token record.
- * Follows (userId, deviceId) uniqueness: if a row exists for the pair,
- * updates its fcmToken and lastUsedAt; otherwise inserts a new row.
+ * Replaces the token/device binding transactionally, removing prior ownership
+ * on account switch and forcing an initial badge reconciliation.
  * @param userId The ID of the user.
  * @param fcmToken The FCM device token.
  * @param deviceId Optional device identifier used with userId for upsert.
@@ -188,19 +182,18 @@ export async function upsertDeviceToken({
   fcmToken: string;
   deviceId?: string;
 }) {
-  const [deviceToken] = await db
-    .insert(schema.deviceTokenTable)
-    .values({ userId, fcmToken, deviceId })
-    .onConflictDoUpdate({
-      target: [
-        schema.deviceTokenTable.userId,
-        schema.deviceTokenTable.deviceId,
-      ],
-      set: { fcmToken, lastUsedAt: new Date() },
-    })
-    .returning();
-
-  return deviceToken;
+  return db.transaction(async (tx) => {
+    // Registration is infrequent. One transaction lock serializes transfers and
+    // token refreshes across both unique constraints, including nullable deviceId.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended('waterdrop:device-registration', 0))`);
+    const conflicts = or(eq(schema.deviceTokenTable.fcmToken, fcmToken),
+      deviceId ? eq(schema.deviceTokenTable.deviceId, deviceId) : undefined);
+    await tx.delete(schema.deviceTokenTable).where(conflicts);
+    const [deviceToken] = await tx.insert(schema.deviceTokenTable).values({ userId, fcmToken, deviceId }).returning();
+    // Even a zero/unchanged badge must be delivered to a new device/account binding.
+    await invalidateBadge(tx, userId, true);
+    return deviceToken;
+  });
 }
 
 export async function clearDeviceToken({
@@ -374,6 +367,7 @@ export async function updateUser(
       .where(eq(schema.userTable.id, userId))
       .returning();
 
+    if (updatedUser && updateData.timezone !== undefined) await invalidateBadge(tx, userId);
     return updatedUser;
   });
 

@@ -93,6 +93,18 @@ async function sendRefundCreatedNotifications(
   const productDisplayName = getProductDisplayName(context);
   const body = `您的商品「${productDisplayName}」退貨申請已成功送出。(訂單編號: ${context.merchantTradeNo ?? ""})`;
 
+  const savedNotification = await createNotification({
+    userId: context.userId,
+    type: "order_status",
+    title: "退貨申請通知",
+    body: `${body}\n如有任何問題，請聯繫客服人員。`,
+    orderId: context.orderId,
+    metadata: {
+      clickAction: "view_order_details",
+      refundItemId: context.refundItemId,
+    },
+  });
+
   const tasks: Promise<unknown>[] = [
     sendMulticastPushNotification({
       tokens: fcmTokens,
@@ -101,22 +113,12 @@ async function sendRefundCreatedNotifications(
         body,
       },
       data: {
+        notificationId: savedNotification.id,
         command: "refund_updated",
         orderId: context.orderId,
         refundItemId: context.refundItemId,
       },
-    }),
-    createNotification({
-      userId: context.userId,
-      type: "order_status",
-      title: "退貨申請通知",
-      body: `${body}\n如有任何問題，請聯繫客服人員。`,
-      orderId: context.orderId,
-      metadata: {
-        clickAction: "view_order_details",
-        refundItemId: context.refundItemId,
-      },
-    }),
+    }, context.userId),
   ];
 
   if (user) {
@@ -170,6 +172,18 @@ async function sendRefundStatusChangedNotifications(
   const fcmTokens = await getFcmTokensInUserIds([context.userId]);
   const body = getRefundStatusBody(context);
 
+  const savedNotification = await createNotification({
+    userId: context.userId,
+    type: "order_status",
+    title: "退貨狀態更新通知",
+    body: `${body}\n如有任何問題，請聯繫客服人員。`,
+    orderId: context.orderId,
+    metadata: {
+      clickAction: "view_order_details",
+      refundItemId: context.refundItemId,
+    },
+  });
+
   await Promise.all([
     sendMulticastPushNotification({
       tokens: fcmTokens,
@@ -178,22 +192,12 @@ async function sendRefundStatusChangedNotifications(
         body,
       },
       data: {
+        notificationId: savedNotification.id,
         command: "refund_updated",
         orderId: context.orderId,
         refundItemId: context.refundItemId,
       },
-    }),
-    createNotification({
-      userId: context.userId,
-      type: "order_status",
-      title: "退貨狀態更新通知",
-      body: `${body}\n如有任何問題，請聯繫客服人員。`,
-      orderId: context.orderId,
-      metadata: {
-        clickAction: "view_order_details",
-        refundItemId: context.refundItemId,
-      },
-    }),
+    }, context.userId),
   ]);
 }
 

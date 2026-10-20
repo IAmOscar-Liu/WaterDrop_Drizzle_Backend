@@ -159,6 +159,17 @@ export async function sendDeliveryNotification({
     merchantTradeNo: delivery.order.merchantTradeNo || "",
   });
 
+  const savedNotification = await createNotification({
+    userId,
+    type: "order_status",
+    title: "運單狀態更新通知",
+    body: `${notificationBody}\n如有任何問題，請聯繫客服人員。`,
+    orderId,
+    metadata: {
+      clickAction: "view_order_details",
+    },
+  });
+
   await Promise.all([
     sendMulticastPushNotification({
       tokens: fcmTokens,
@@ -167,20 +178,11 @@ export async function sendDeliveryNotification({
         body: notificationBody,
       },
       data: {
+        notificationId: savedNotification.id,
         command: "delivery_updated",
         orderId,
       },
-    }),
-    createNotification({
-      userId,
-      type: "order_status",
-      title: "運單狀態更新通知",
-      body: `${notificationBody}\n如有任何問題，請聯繫客服人員。`,
-      orderId,
-      metadata: {
-        clickAction: "view_order_details",
-      },
-    }),
+    }, userId),
   ]);
 }
 

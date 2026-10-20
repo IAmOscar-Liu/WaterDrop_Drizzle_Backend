@@ -159,6 +159,17 @@ class OrderService {
         throw new CustomError("Order completion email already sent", 400);
       await updateCompleteEmailSent({ orderId, completeEmailSent: true });
 
+      const notification = await createNotification({
+        userId,
+        type: "order_status",
+        title: "訂單建立通知",
+        body: `您的訂單已成功建立(訂單編號: ${order.merchantTradeNo})，如有任何問題，請聯繫客服人員。`,
+        orderId,
+        metadata: {
+          clickAction: "view_order_details",
+        },
+      });
+
       sendMulticastPushNotification({
         tokens: fcmTokens,
         notification: {
@@ -166,10 +177,11 @@ class OrderService {
           body: `您的訂單已成功建立(訂單編號: ${order.merchantTradeNo})`,
         },
         data: {
+          notificationId: notification.id,
           command: "order_completed",
           orderId,
         },
-      });
+      }, userId);
 
       if (simpleUser) {
         const getAppScheme = () => {
@@ -211,16 +223,6 @@ class OrderService {
         });
       }
 
-      const notification = await createNotification({
-        userId,
-        type: "order_status",
-        title: "訂單建立通知",
-        body: `您的訂單已成功建立(訂單編號: ${order.merchantTradeNo})，如有任何問題，請聯繫客服人員。`,
-        orderId,
-        metadata: {
-          clickAction: "view_order_details",
-        },
-      });
 
       return { success: true, data: notification };
     } catch (error) {

@@ -1,3 +1,4 @@
+import { invalidateBadge } from "./appBadge";
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { and, asc, count, desc, eq, gt, ilike, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
@@ -40,6 +41,7 @@ type Change = { kind: "created" | "updated" | "deleted"; row: schema.UserNotific
 async function publishChanges(tx: Tx, userId: string, changes: Change[]) {
   if (changes.length) await tx.update(schema.notificationFeedTable)
     .set({ version: sql`${schema.notificationFeedTable.version} + 1` }).where(eq(schema.notificationFeedTable.userId, userId));
+  if (changes.length) await invalidateBadge(tx, userId);
   const stats = await statsInTransaction(tx, userId);
   for (const { kind, row } of changes) {
     const payload = { schemaVersion: 1, stats, ...(kind === "deleted"

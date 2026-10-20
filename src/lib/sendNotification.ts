@@ -9,6 +9,11 @@ import { inArray } from "drizzle-orm";
  * @param fcmToken The FCM token of the device.
  */
 export async function sendPushNotification(message: Message) {
+  if ("token" in message) {
+    const { token, ...payload } = message;
+    await sendMulticastPushNotification({ ...payload, tokens: [token] });
+    return;
+  }
   try {
     // const message: Message = {
     //   token: fcmToken,
@@ -32,7 +37,7 @@ export async function sendPushNotification(message: Message) {
  * Sends the same push notification to multiple devices.
  * @param fcmTokens An array of FCM tokens for the target devices.
  */
-export async function sendMulticastPushNotification(message: MulticastMessage): Promise<BatchResponse | void> {
+export async function sendRawMulticastPushNotification(message: MulticastMessage): Promise<BatchResponse | void> {
   if (message.tokens.length === 0) {
     console.log("No FCM tokens provided to sendMulticastPushNotification.");
     return;
@@ -89,4 +94,16 @@ export async function sendMulticastPushNotification(message: MulticastMessage): 
     const code = typeof e === "object" && e !== null && "code" in e ? e.code : "unknown_error";
     console.error("Error sending multicast push notification:", code);
   }
+}
+
+// Late import avoids a transport/orchestration initialization cycle.
+export async function sendMulticastPushNotification(message: MulticastMessage, recipientUserId?: string): Promise<BatchResponse | void> {
+  const { sendBadgeAwareMulticast, sendUserPush } = await import("../services/appBadgePush");
+  if (!recipientUserId) return sendBadgeAwareMulticast(message);
+  try {
+    const { tokens, ...payload } = message;
+    const result = await sendUserPush(recipientUserId, payload, tokens);
+    return { responses: result.responses, successCount: result.responses.filter(r => r.success).length,
+      failureCount: result.responses.filter(r => !r.success).length };
+  } catch { console.error("[badge-push] User push failed; pending badge work remains available."); }
 }

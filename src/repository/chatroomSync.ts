@@ -1,3 +1,4 @@
+import { invalidateBadge } from "./appBadge";
 import { lockAdminChatPublication, appendAdminChatEvent, pruneAdminChatSyncData } from "./adminChatroomSync";
 import { and, asc, count, desc, eq, gt, inArray, lt, lte, sql } from "drizzle-orm";
 import * as schema from "../db/schema";
@@ -241,6 +242,7 @@ export async function publishChatRoom(tx: ChatTx, roomId: string) {
   const [room] = await tx.update(schema.chatRoomTable).set({ version: sql`${schema.chatRoomTable.version} + 1`, updatedAt: sql`${schema.chatRoomTable.updatedAt}` })
     .where(eq(schema.chatRoomTable.id, roomId)).returning();
   await tx.update(schema.chatFeedTable).set({ listVersion: sql`${schema.chatFeedTable.listVersion} + 1` }).where(eq(schema.chatFeedTable.userId, room.userId));
+  await invalidateBadge(tx, room.userId);
   const listState = await chatListState(tx, room.userId);
   if (room.status !== "active") {
     await appendChatEvent(tx, room, "chatroom.removed", { roomVersion: room.version, reason: "access_revoked", listState });

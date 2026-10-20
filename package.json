@@ -39,6 +39,8 @@
     "db:studio:test": "DRIZZLE_ENV=test npx drizzle-kit studio",
     "db:studio:stg": "NODE_TLS_REJECT_UNAUTHORIZED=0 DRIZZLE_ENV=stg npx drizzle-kit studio",
     "db:studio:production": "DRIZZLE_ENV=production npx drizzle-kit studio",
+    "test:app-badge": "NODE_ENV=test tsx src/tests/runTestSuite.ts app-badge",
+    "_test:app-badge": "NODE_ENV=test NO_CRON=true tsx src/tests/appBadge.integration.ts",
     "test": "npm run build && NODE_ENV=test tsx src/tests/runTestSuite.ts all",
     "test:api": "NODE_ENV=test tsx src/tests/runTestSuite.ts api",
     "test:refund-auth": "NODE_ENV=test tsx src/tests/runTestSuite.ts refund-auth",

@@ -4,9 +4,10 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import postgres from "postgres";
 
-type SuiteName = "email-verification" | "account-sessions" | "account-onboarding" | "be1001" | "all" | "api" | "coin-ledger" | "cron" | "order-date-filter" | "chatroom-auth" | "refund-auth" | "account-wallet" | "chatroom-sse" | "notification-sse" | "admin-chatroom-sse";
+type SuiteName = "app-badge" | "email-verification" | "account-sessions" | "account-onboarding" | "be1001" | "all" | "api" | "coin-ledger" | "cron" | "order-date-filter" | "chatroom-auth" | "refund-auth" | "account-wallet" | "chatroom-sse" | "notification-sse" | "admin-chatroom-sse";
 
 const suiteCommands: Record<SuiteName, string[]> = {
+  "app-badge": ["_test:app-badge"],
   "email-verification": ["_test:email-verification"],
   "account-sessions": ["_test:account-sessions"],
   "account-onboarding": ["_test:account-onboarding"],
@@ -15,6 +16,7 @@ const suiteCommands: Record<SuiteName, string[]> = {
   "chatroom-sse": ["_test:chatroom-auth", "_test:chatroom-legacy", "_test:chatroom-sse"],
   be1001: ["_test:be1001"],
   all: [
+    "_test:app-badge",
     "_test:email-verification",
     "_test:account-sessions",
     "_test:account-onboarding",

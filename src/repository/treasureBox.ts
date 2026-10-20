@@ -1,3 +1,4 @@
+import { invalidateBadge } from "./appBadge";
 import { randomUUID } from "crypto";
 import { and, asc, eq, gt, inArray, not, sql } from "drizzle-orm";
 import * as schema from "../db/schema";
@@ -132,6 +133,7 @@ export async function processVideoCompletion(
         .where(eq(schema.userDailyStatTable.userId, userId))
         .returning();
     }
+    if (isAwarded) await invalidateBadge(tx, userId);
     return updatedStat ? { ...updatedStat, isAwarded } : undefined;
   });
 }
@@ -507,6 +509,7 @@ async function processVideoCompletionWithLedger(
         completionIdempotencyKey,
       })
       .where(eq(schema.advertisementAssignmentTable.id, assignment.id));
+    if (isAwarded) await invalidateBadge(tx, userId);
     return { ...updatedStat, isAwarded };
   });
 }
@@ -599,6 +602,7 @@ export async function openTreasureBox(userId: string, treasureBoxId: string) {
         },
       });
 
+    await invalidateBadge(tx, userId);
     return treasureBox;
   });
 }
@@ -896,6 +900,7 @@ async function openTreasureBoxWithLedger(userId: string, treasureBoxId: string) 
       })
       .where(eq(schema.treasureBoxTable.id, box.id))
       .returning();
+    await invalidateBadge(tx, userId);
     return box;
   });
 }
@@ -966,6 +971,7 @@ export async function resetDailyStats(userId: string) {
       );
     }
 
+    await invalidateBadge(tx, userId);
     return updatedStat;
   });
 }

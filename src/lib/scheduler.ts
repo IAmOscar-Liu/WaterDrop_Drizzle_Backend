@@ -1,3 +1,4 @@
+import { runBadgeWorker } from "../services/appBadge";
 import { cleanupEmailVerification } from "../repository/accountEmailVerification";
 import { cleanupAccountSessions } from "../repository/accountSession";
 import cron from "node-cron";
@@ -466,3 +467,9 @@ export const accountRecoveryCleanupTask = cron.schedule("37 3 * * *", async () =
   try { await cleanupAccountRecovery(); await cleanupAccountSessions(); await cleanupEmailVerification(); }
   catch { console.error("[account-recovery] Daily cleanup failed."); }
 }, { timezone: "Asia/Taipei" });
+
+export const appBadgeTask = cron.schedule("* * * * *", async () => {
+  if (process.env.NO_CRON === "true") return;
+  try { await runBadgeWorker(); }
+  catch { console.error("[badge-worker] Reconciliation failed; pending work will retry."); }
+}, { noOverlap: true, timezone: "Asia/Taipei" });

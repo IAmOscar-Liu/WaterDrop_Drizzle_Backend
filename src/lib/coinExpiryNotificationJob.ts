@@ -34,7 +34,7 @@ export async function runCoinExpiryNotificationJob(
           tokens: tokens.slice(offset, offset + 100),
           notification: { title, body },
           data: { command: "message" },
-        });
+        }, summary.userId);
       }
     }));
     for (const result of results) {
