@@ -159,7 +159,7 @@ async function run() {
     try { for (;;) { const chunk = await reader.read(); if(chunk.done) break; frames += new TextDecoder().decode(chunk.value); } }
     finally { clearTimeout(timer); abort.abort(); }
     assert.match(frames, /auth_expired/);
-    assert.ok(mails.some(m => m.to === input.email && m.subject === "水滴｜電子郵件已變更"));
+    assert.ok(mails.some(m => m.to === input.email && m.subject === "地平線｜電子郵件已變更"));
 
     // A target email claimed between request and confirmation must roll back all revocations.
     const contender = await call("/register", credentials()), targetEmail = credentials().email;

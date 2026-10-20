@@ -44,9 +44,9 @@ export async function prepareSellerRegistration(ip: string) {
 async function deliver(issued: NonNullable<Awaited<ReturnType<typeof issueEmailVerification>>>, page: string) {
   const change = issued.purpose === "change";
   const link = `${page}#token=${issued.token}&purpose=${issued.purpose}`;
-  const result = await verificationMailer.send({ to: issued.email, subject: change ? "水滴｜確認變更電子郵件" : "水滴｜驗證電子郵件",
+  const result = await verificationMailer.send({ to: issued.email, fromName: "地平線", subject: change ? "地平線｜確認變更電子郵件" : "地平線｜驗證電子郵件",
     disableTracking: true,
-    html: `<p>${change ? "請確認您要將水滴帳號的電子郵件變更為此地址。確認前，原地址仍可用於登入及密碼復原。" : "歡迎加入水滴！請驗證您的電子郵件，以繼續完成賣家註冊。"}</p><p>此連結於 30 分鐘後失效，且僅能使用一次。請登入提出申請的帳號，再按確認。</p><p><a href="${escapeHtml(link)}">${change ? "確認變更電子郵件" : "驗證電子郵件"}</a></p><p>如果您未提出此申請，請忽略這封信。連結失效時，請回到水滴重新申請。</p>` });
+    html: `<p>${change ? "請確認您要將地平線帳號的電子郵件變更為此地址。確認前，原地址仍可用於登入及密碼復原。" : "歡迎加入地平線！請驗證您的電子郵件，以繼續完成賣家註冊。"}</p><p>此連結於 30 分鐘後失效，且僅能使用一次。請登入提出申請的帳號，再按確認。</p><p><a href="${escapeHtml(link)}">${change ? "確認變更電子郵件" : "驗證電子郵件"}</a></p><p>如果您未提出此申請，請忽略這封信。連結失效時，請回到地平線重新申請。</p>` });
   if (!result.success) throw new CustomError("Verification email could not be sent; please request another link", 503, "EMAIL_VERIFICATION_DELIVERY_FAILED");
 }
 
@@ -94,8 +94,8 @@ export default {
       await rate("verification-consume-ip", ip, 60);
       await rate("verification-consume-account", actor.accountId, 60);
       const result = await consumeEmailVerification(actor, token, "change");
-      void verificationMailer.send({ to: result.oldEmail, subject: "水滴｜電子郵件已變更", disableTracking: true,
-        html: "<p>您的水滴帳號電子郵件已變更，原地址已無法用於登入或密碼復原。如果這不是您的操作，請立即聯絡水滴客服。</p>" })
+      void verificationMailer.send({ to: result.oldEmail, fromName: "地平線", subject: "地平線｜電子郵件已變更", disableTracking: true,
+        html: "<p>您的地平線帳號電子郵件已變更，原地址已無法用於登入或密碼復原。如果這不是您的操作，請立即聯絡地平線客服。</p>" })
         .then(r => { if (!r.success) console.error("[email-verification] Old-address notification failed."); })
         .catch(() => console.error("[email-verification] Old-address notification failed."));
       return { success: true as const, data: { requiresLogin: true, message: "Email changed. Please log in with your new email address." } };
