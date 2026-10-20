@@ -17,7 +17,7 @@ export function createUserEventStream<E extends DurableEvent>(options: {
   let totalConnections = 0;
   const MAX_BUFFER_BYTES = 1024 * 1024;
 
-  return async function startUserEventStream(res: Response, userId: string, tokenExpiresAt?: number, checkpoint?: string) {
+  return async function startUserEventStream(res: Response, userId: string, tokenExpiresAt?: number, checkpoint?: string, authorize?: () => Promise<void>) {
     let registered = false;
     let closed = false;
     let pollTimer: NodeJS.Timeout | undefined;
@@ -78,6 +78,7 @@ export function createUserEventStream<E extends DurableEvent>(options: {
       registered = true;
       totalConnections++;
       connections.set(userId, (connections.get(userId) ?? 0) + 1);
+      await authorize?.();
       const boundary = await options.openFeed(userId, checkpoint);
       if (closed) return;
       if (tokenExpiresAt * 1000 <= Date.now()) throw new CustomError("Access token expired", 401);
@@ -100,9 +101,11 @@ export function createUserEventStream<E extends DurableEvent>(options: {
       const poll = async () => {
         if (closed) return;
         try {
+          await authorize?.();
           const events = await options.readFeed(userId, sequence);
           if (closed) return;
           for (const event of events) {
+            await authorize?.();
             if (event.eventType === "stream.reset") { reset("resync_required"); return; }
             if (event.sequence !== sequence + 1) { reset("resync_required"); return; }
             if (!await options.canDeliver(event)) { reset("resync_required"); return; }
@@ -111,8 +114,8 @@ export function createUserEventStream<E extends DurableEvent>(options: {
             sequence = event.sequence;
           }
           pollTimer = setTimeout(poll, events.length === 20 ? 0 : 1000);
-        } catch {
-          reset("resync_required");
+        } catch (error) {
+          reset(error instanceof CustomError && error.statusCode === 401 ? "auth_expired" : "resync_required");
         }
       };
       void poll();

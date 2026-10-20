@@ -8,7 +8,7 @@ import { and, eq, sql } from "drizzle-orm";
 import app from "../app";
 import db, { client } from "../lib/initDB";
 import * as schema from "../db/schema";
-import { generateToken } from "../lib/token";
+import { fixtureToken } from "./accountSessionFixture";
 import { encodeChatCursor } from "../lib/chatCursor";
 import { decodeNotificationCursor, encodeNotificationCursor } from "../lib/notificationCursor";
 import { createNotification } from "../repository/notification";
@@ -34,12 +34,12 @@ async function run() {
     child.once("exit", (code) => reject(new Error(`Child exited early: ${code}`)));
   });
   const request = async (path: string, id: string, method = "GET", body?: unknown, host = baseUrl) => {
-    const response = await fetch(`${host}/api${path}`, { method, headers: { Authorization: `Bearer ${generateToken({ id })}`, "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+    const response = await fetch(`${host}/api${path}`, { method, headers: { Authorization: `Bearer ${await fixtureToken({ id })}`, "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
     return { status: response.status, body: await response.json() as any };
   };
   const connect = async (id: string, cursor?: string, token?: string) => {
     const controller = new AbortController(); controllers.push(controller);
-    const response = await fetch(`${baseUrl}/api/notification/events`, { signal: controller.signal, headers: { Authorization: `Bearer ${token ?? generateToken({ id })}`, ...(cursor ? { "Last-Event-ID": cursor } : {}) } });
+    const response = await fetch(`${baseUrl}/api/notification/events`, { signal: controller.signal, headers: { Authorization: `Bearer ${token ?? await fixtureToken({ id })}`, ...(cursor ? { "Last-Event-ID": cursor } : {}) } });
     if (response.status !== 200) return { status: response.status, error: await response.json() as any, close: () => controller.abort(), next: async (): Promise<any> => { throw new Error("Not a stream"); } };
     assert.equal(response.headers.get("content-type"), "text/event-stream; charset=utf-8");
     const reader = response.body!.getReader();
@@ -233,7 +233,7 @@ async function run() {
     assert.equal((await connect(quotaUser.id)).status, 429);
     // Chat has a separate quota and cursor domain.
     const chatAbort = new AbortController(); controllers.push(chatAbort);
-    const chatStream = await fetch(`${baseUrl}/api/chatroom/events`, { signal: chatAbort.signal, headers: { Authorization: `Bearer ${generateToken({ id: quotaUser.id })}` } });
+    const chatStream = await fetch(`${baseUrl}/api/chatroom/events`, { signal: chatAbort.signal, headers: { Authorization: `Bearer ${await fixtureToken({ id: quotaUser.id })}` } });
     assert.equal(chatStream.status, 200); chatAbort.abort(); streams.forEach((s) => s.close());
     console.log("Notification SSE integration passed: user auth, two processes, legacy compatibility, transactional read/delete, concurrent retries, tombstones, filters, snapshots, replay/live, retention, rollback, payload limits, expiry and independent chat quota.");
   } finally {

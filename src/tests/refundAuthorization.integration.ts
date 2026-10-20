@@ -7,7 +7,7 @@ import { eq } from "drizzle-orm";
 import app from "../app";
 import * as schema from "../db/schema";
 import db, { client } from "../lib/initDB";
-import { generateToken } from "../lib/token";
+import { fixtureToken } from "./accountSessionFixture";
 import { createRefundWithChatContext, updateRefundItemStatus } from "../repository/refund";
 
 async function run() {
@@ -27,6 +27,7 @@ async function run() {
     }))).returning();
     const [seller, otherSeller, admin, employee] = await db.insert(schema.accountTable).values(
       (["seller", "seller", "admin", "employee"] as const).map((role) => ({
+        profileCompletedAt: new Date(), emailVerifiedAt: new Date(),
         role, email: `${randomUUID()}@example.test`, password: "unused",
         realName: "Refund authorization fixture", phone: "0900000000",
       })),
@@ -60,7 +61,7 @@ async function run() {
       const response = await fetch(`${baseUrl}${path}`, {
         method,
         headers: {
-          ...(id ? { authorization: `Bearer ${generateToken({ id })}` } : {}),
+          ...(id ? { authorization: `Bearer ${await fixtureToken({ id })}` } : {}),
           ...(body === undefined ? {} : { "content-type": "application/json" }),
         },
         body: body === undefined ? undefined : JSON.stringify(body),

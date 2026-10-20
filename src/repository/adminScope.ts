@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
 import db from "../lib/initDB";
+import { requireCompletedSeller } from "../lib/accountProfile";
 
 export type AdminSellerScope = {
   accountId: string;
@@ -19,6 +20,8 @@ export async function getActiveAdminAccount(accountId: string) {
   if (!account || account.status !== "active" || account.deletedAt) {
     throw new CustomError("Account is inactive or no longer available", 403);
   }
+  requireCompletedSeller(account);
+  if (account.group?.parent) requireCompletedSeller(account.group.parent);
   return account;
 }
 
@@ -85,3 +88,8 @@ export async function requireNonEmployee(accountId: string) {
   return account;
 }
 
+
+export async function assertAdminCredentialVersion(accountId: string, expectedVersion: number) {
+  const account = await getActiveAdminAccount(accountId);
+  if (account.credentialVersion !== expectedVersion) throw new CustomError("Credentials changed; please log in again", 401, "ACCOUNT_CREDENTIALS_CHANGED");
+}

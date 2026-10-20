@@ -9,7 +9,7 @@ import { and, eq, sql } from "drizzle-orm";
 import app from "../app";
 import db, { client } from "../lib/initDB";
 import * as schema from "../db/schema";
-import { generateToken } from "../lib/token";
+import { fixtureToken } from "./accountSessionFixture";
 import { decodeChatCursor, encodeChatCursor } from "../lib/chatCursor";
 import { findOrCreateChatRoom, getSyncChatHistory as getChatHistory, listSyncChatRooms as listChatRooms, markMessagesAsRead, markSyncMessagesAsRead, sendChatMessage as sendLegacyChatMessage, sendSyncChatMessage, sendSystemChatMessage } from "../repository/chatroom";
 import { appendChatEvent, lockChatFeed, openChatFeed, pruneChatSyncData, readChatFeed, setChatRoomStatus } from "../repository/chatroomSync";
@@ -36,12 +36,12 @@ async function run() {
     child.once("exit", (code) => reject(new Error(`Child exited early: ${code}`)));
   });
   const request = async (path: string, id: string, method = "GET", body?: unknown, host = baseUrl) => {
-    const response = await fetch(`${host}/api${path}`, { method, headers: { Authorization: `Bearer ${generateToken({ id })}`, "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+    const response = await fetch(`${host}/api${path}`, { method, headers: { Authorization: `Bearer ${await fixtureToken({ id })}`, "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
     return { status: response.status, body: await response.json() as any };
   };
   const connect = async (id: string, cursor?: string, token?: string) => {
     const controller = new AbortController(); controllers.push(controller);
-    const response = await fetch(`${baseUrl}/api/chatroom/events`, { signal: controller.signal, headers: { Authorization: `Bearer ${token ?? generateToken({ id })}`, ...(cursor ? { "Last-Event-ID": cursor } : {}) } });
+    const response = await fetch(`${baseUrl}/api/chatroom/events`, { signal: controller.signal, headers: { Authorization: `Bearer ${token ?? await fixtureToken({ id })}`, ...(cursor ? { "Last-Event-ID": cursor } : {}) } });
     if (response.status !== 200) return { status: response.status, error: await response.json() as any, close: () => controller.abort(), next: async (): Promise<any> => { throw new Error("Not a stream"); } };
     assert.equal(response.headers.get("content-type"), "text/event-stream; charset=utf-8");
     const reader = response.body!.getReader();
@@ -71,7 +71,7 @@ async function run() {
   try {
     const users = await db.insert(schema.userTable).values([1, 2, 3].map(() => ({ email: `${randomUUID()}@example.test`, oauthProvider: "other" as const, oauthId: randomUUID(), referralCode: randomUUID() }))).returning();
     const [user, other, historyUser] = users;
-    const [seller, admin] = await db.insert(schema.accountTable).values((["seller", "admin"] as const).map((role) => ({ role, email: `${randomUUID()}@example.test`, password: "unused", realName: "SSE fixture", phone: "0900000000" }))).returning();
+    const [seller, admin] = await db.insert(schema.accountTable).values((["seller", "admin"] as const).map((role) => ({ profileCompletedAt: new Date(), emailVerifiedAt: new Date(), role, email: `${randomUUID()}@example.test`, password: "unused", realName: "SSE fixture", phone: "0900000000" }))).returning();
     const actor = { kind: "user" as const, id: user.id };
     const room = await findOrCreateChatRoom({ userId: user.id, accountId: seller.id });
     const empty = await findOrCreateChatRoom({ userId: user.id });

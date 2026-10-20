@@ -32,6 +32,7 @@ async function run() {
     const [seller] = await db
       .insert(schema.accountTable)
       .values({
+        profileCompletedAt: new Date(), emailVerifiedAt: new Date(),
         email: `cron-seller-${suffix}@example.test`,
         password: "not-used",
         realName: "Cron Test Seller",

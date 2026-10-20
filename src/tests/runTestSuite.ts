@@ -4,14 +4,20 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import postgres from "postgres";
 
-type SuiteName = "be1001" | "all" | "api" | "coin-ledger" | "cron" | "order-date-filter" | "chatroom-auth" | "refund-auth" | "account-wallet" | "chatroom-sse" | "notification-sse" | "admin-chatroom-sse";
+type SuiteName = "email-verification" | "account-sessions" | "account-onboarding" | "be1001" | "all" | "api" | "coin-ledger" | "cron" | "order-date-filter" | "chatroom-auth" | "refund-auth" | "account-wallet" | "chatroom-sse" | "notification-sse" | "admin-chatroom-sse";
 
 const suiteCommands: Record<SuiteName, string[]> = {
+  "email-verification": ["_test:email-verification"],
+  "account-sessions": ["_test:account-sessions"],
+  "account-onboarding": ["_test:account-onboarding"],
   "admin-chatroom-sse": ["_test:admin-chatroom-sse", "_test:chatroom-auth", "_test:chatroom-legacy", "_test:chatroom-sse"],
   "notification-sse": ["_test:notification-sse", "_test:chatroom-legacy", "_test:chatroom-sse"],
   "chatroom-sse": ["_test:chatroom-auth", "_test:chatroom-legacy", "_test:chatroom-sse"],
   be1001: ["_test:be1001"],
   all: [
+    "_test:email-verification",
+    "_test:account-sessions",
+    "_test:account-onboarding",
     "_test:be1001",
     "_test:coin-accounting",
     "_test:api",
@@ -60,6 +66,7 @@ function runNpmScript(script: string, databaseUrl: string) {
         ...process.env,
         NODE_ENV: "test",
         NO_CRON: "true",
+        ACCOUNT_EMAIL_VERIFICATION_URL: "https://seller.example.test/verify-email",
         COIN_LEDGER_ENABLED: "true",
         ACCOUNT_WALLET_AD_FUNDING_ENABLED: "true",
         COIN_LEDGER_MAINTENANCE_CONCURRENCY: "2",

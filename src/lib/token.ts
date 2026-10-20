@@ -1,5 +1,6 @@
 import jwt, { type SignOptions } from "jsonwebtoken";
 import { CookieOptions, Response } from "express";
+import { CustomError } from "./error";
 
 // --- Configuration ---
 // In a real application, store this securely (e.g., in .env files, not in code)
@@ -7,8 +8,8 @@ const JWT_SECRET =
   process.env.JWT_SECRET ??
   "your-super-secret-and-long-string-that-is-hard-to-guess";
 const DEFAULT_EXPIRATION: SignOptions["expiresIn"] = "30d";
-const REFRESH_TOKEN_EXPIRATION: SignOptions["expiresIn"] = "30d";
-const REFRESH_TOKEN_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 30;
+export const ADMIN_TOKEN_ISSUER = "waterdrop";
+export const ADMIN_TOKEN_AUDIENCE = "waterdrop-admin";
 
 /**
  * Generates a JSON Web Token (JWT).
@@ -49,10 +50,35 @@ export function generateToken(
   }
 }
 
-export function generateAdminAccessToken(payload: any) {
-  const expiresIn: SignOptions["expiresIn"] =
-    process.env.NODE_ENV === "local" ? "1d" : "1h";
-  return generateToken(payload, expiresIn);
+export function generateAdminAccessToken(
+  account: { id: string; credentialVersion: number },
+  sessionId: string,
+  sessionExpiresAt: Date,
+) {
+  if (!process.env.JWT_SECRET) throw new CustomError("Admin token signing is not configured", 503);
+  const lifetime = process.env.NODE_ENV === "local" ? 86400 : 3600;
+  const exp = Math.min(Math.floor(Date.now() / 1000) + lifetime, Math.floor(sessionExpiresAt.getTime() / 1000));
+  return jwt.sign({ data: { id: account.id, credentialVersion: account.credentialVersion },
+    tokenUse: "admin_access", sid: sessionId, exp }, process.env.JWT_SECRET,
+    { algorithm: "HS256", issuer: ADMIN_TOKEN_ISSUER, audience: ADMIN_TOKEN_AUDIENCE });
+}
+
+export function isAdminAccessPayload(payload: jwt.JwtPayload) {
+  return payload.tokenUse === "admin_access" && payload.iss === ADMIN_TOKEN_ISSUER &&
+    payload.aud === ADMIN_TOKEN_AUDIENCE && typeof payload.sid === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(payload.sid) &&
+    typeof payload.data?.id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(payload.data.id) &&
+    Number.isInteger(payload.data?.credentialVersion) && payload.data.credentialVersion >= 0 && typeof payload.exp === "number";
+}
+
+export function validateAdminAccessToken(token?: string) {
+  if (!token || !process.env.JWT_SECRET) return null;
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET, {
+      algorithms: ["HS256"], issuer: ADMIN_TOKEN_ISSUER, audience: ADMIN_TOKEN_AUDIENCE,
+    });
+    return typeof payload !== "string" && isAdminAccessPayload(payload) ? payload : null;
+  } catch { return null; }
 }
 
 /**
@@ -78,12 +104,10 @@ export function validateToken(token?: string) {
   }
 }
 
-export function sendRefreshToken(res: Response, payload: any) {
-  const refreshToken = generateToken(payload, REFRESH_TOKEN_EXPIRATION);
-
+export function sendRefreshToken(res: Response, refreshToken: string, expiresAt: Date) {
   res.cookie(process.env.REFRESH_TOKEN_NAME!, refreshToken, {
     ...getRefreshTokenCookieOptions(),
-    maxAge: REFRESH_TOKEN_MAX_AGE_MS,
+    maxAge: Math.max(0, expiresAt.getTime() - Date.now()),
   });
 }
 

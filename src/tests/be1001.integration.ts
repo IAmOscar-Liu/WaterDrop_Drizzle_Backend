@@ -6,7 +6,7 @@ import { eq, sql } from "drizzle-orm";
 import app from "../app";
 import * as s from "../db/schema";
 import db, { client } from "../lib/initDB";
-import { generateToken } from "../lib/token";
+import { fixtureToken } from "./accountSessionFixture";
 import { spendAdBalanceWithTx, transferArchivedAdvertisementBalance } from "../repository/advertisement";
 
 async function run() {
@@ -17,7 +17,7 @@ async function run() {
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/admin`;
   try {
     const [seller, other, admin, employee] = await db.insert(s.accountTable).values(
-      (["seller", "seller", "admin", "employee"] as const).map((role) => ({ role, email: `${randomUUID()}@example.test`, password: "unused", realName: "Withdrawal fixture", phone: "0900000000" })),
+      (["seller", "seller", "admin", "employee"] as const).map((role) => ({ profileCompletedAt: new Date(), emailVerifiedAt: new Date(), role, email: `${randomUUID()}@example.test`, password: "unused", realName: "Withdrawal fixture", phone: "0900000000" })),
     ).returning();
     await db.insert(s.accountWalletTable).values({ accountId: seller.id, walletBalance: "200.00", totalRevenueCash: "123.00" });
     const [product] = await db.insert(s.productTable).values({ sellerId: seller.id, name: "Withdrawal fixture", description: "Test" }).returning();
@@ -26,7 +26,7 @@ async function run() {
     await db.insert(s.advertisementCoinFundingAccountTable).values({ advertisementId: ad.id, sourceSellerId: seller.id, status: "closed" });
     const path = `/advertisement/${ad.id}/budget-withdrawal`;
     async function request(route: string, actor = seller.id, method = "GET", body?: unknown) {
-      const r = await fetch(base + route, { method, headers: { authorization: `Bearer ${generateToken({ id: actor })}`, "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+      const r = await fetch(base + route, { method, headers: { authorization: `Bearer ${await fixtureToken({ id: actor })}`, "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
       return { status: r.status, body: await r.json() as any };
     }
     function expect(r: Awaited<ReturnType<typeof request>>, status = 200, code?: string) {
