@@ -2,7 +2,7 @@
 
 Date: 2026-10-23
 
-Status: **Implemented; local migration applied. Development/staging migration and deployment are still required.** App endpoints remain outside admin Swagger.
+Status: **Implemented; local and development migrations applied. Development deployment and staging migration/deployment remain required.** App endpoints remain outside admin Swagger.
 
 ## Allowed operations
 
@@ -154,8 +154,10 @@ Business errors retain the JSON error envelope and add `code` for the listed 409
 
 ## Deployment and receipt limits
 
-Local migration `0117_watery_oracle` is applied; development/staging are not migrated by this change. Flutter must deploy the stricter body and new status handling with the backend rollout. The local/development testing exception above is enabled by `NODE_ENV`; the paid-order requirement remains enforced.
+Local migration `0117_watery_oracle` and development migration `0068_bitter_mandarin` are applied and verified. Staging is not migrated by this change. Flutter must deploy the stricter body and new status handling with the backend rollout. The local/development testing exception above is enabled by `NODE_ENV`; the paid-order requirement remains enforced.
 
 Receipt time is the first trusted backend observation from a logistics callback/poll, marked as estimated rather than the carrier's exact event time. Repeated/out-of-order updates never reset it. Known CVS pickup codes are supported. Seller-edited delivery status alone, virtual items and unsupported/manual receipt flows do not establish a window. Historical timestamps are not fabricated from deployment time; outside the local/development exception, unknown cases require backend reconciliation. Automatic logistics polling remains disabled locally/in development, as before.
 
 Coin restoration, original coin expiration and cash-remainder calculations remain unchanged. The refund deadline extension does not extend coin validity or add a new automatic cash payout API. See the [admin handoff](FE-confirmation/ADMIN_REFUND_STRATEGY_API_CHANGES.md) for review actions and operations.
+
+Development verification on 2026-10-23 found 64 legacy paid orders without a payment-confirmation timestamp and no recorded pickup windows. Their items need verified historical evidence before new requests can use the local/development fallback; they may return `PAYMENT_TIME_UNKNOWN`. Use a newly paid order for testing. No historical timestamps or original request snapshots were fabricated. See the [admin verification notes](FE-confirmation/ADMIN_REFUND_STRATEGY_API_CHANGES.md#development-migration-verification--2026-10-23) for schema/data checks. The development server still needs deployment/restart with this code.

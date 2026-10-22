@@ -2,7 +2,7 @@
 
 Date: 2026-10-23
 
-Status: **Implemented; local migration applied. Development/staging migration and deployment are still required.**
+Status: **Implemented; local and development migrations applied. Development deployment and staging migration/deployment remain required.**
 
 This supersedes the creation, editable-fields and terminal-state sections of [ADMIN_REFUND_API.md](ADMIN_REFUND_API.md). Swagger at `/api-docs` documents the updated admin contract. Flutter has a [separate handoff](../FLUTTER_REFUND_STRATEGY_API_CHANGES.md).
 
@@ -156,8 +156,20 @@ The timestamp is the first backend observation, marked `receiptEvidence.estimate
 
 Unknown historical receipt times are **not** filled with deployment time or mutable `updatedAt`. Prior delivered logs do not have enough provenance for automatic backfill. Existing requests remain reviewable/completable/cancellable. Outside the local/development exception, new requests and deadline-extending rejections require a known window; unknown cases need separately verified receipt reconciliation by backend operations. Do not relabel a rejection as cancellation to bypass this requirement.
 
-Local migration `drizzle_local/0117_watery_oracle.sql` was generated, reviewed and applied. It adds the `rejected` enum value, receipt/window/decision/audit columns, a timestamp-consistency check and the optional retry-key unique index. Local verification found one historical delivered item without a window and 12 pending/processing historical requests without a window; no receipt dates or old decisions were fabricated. No development/staging database was migrated. Generate/review/migrate those environments before deploying these readers and writers together; coordinate Flutter's strict input change and retirement of the admin create UI.
+Local migration `drizzle_local/0117_watery_oracle.sql` was generated, reviewed and applied. It adds the `rejected` enum value, receipt/window/decision/audit columns, a timestamp-consistency check and the optional retry-key unique index. Local verification found one historical delivered item without a window and 12 pending/processing historical requests without a window; no receipt dates or old decisions were fabricated. Development migration `drizzle_dev/0068_bitter_mandarin.sql` was subsequently generated, reviewed and applied on 2026-10-23; its SQL matches the local migration exactly. Staging remains unmigrated. Deploy these readers and writers together; coordinate Flutter's strict input change and retirement of the admin create UI.
 
 This change preserves existing coin restoration/expiry, cash-remainder rounding and stock restoration. `completed` still records the platform's completion effects; it does **not** call a new card/bank payout API. Perform the existing cash payout procedure before recording completion. No expiry cron or appeal endpoint is required.
 
 Validation: TypeScript build; isolated refund strategy, refund authorization, API end-to-end and coin-ledger integration suites. These tests use disposable databases and do not send real refunds or device pushes.
+
+## Development migration verification — 2026-10-23
+
+The feature was committed as `8bfdc83` and fast-forward merged into `development`. Development migration `0068_bitter_mandarin` is applied; all 69 development migration files match their database journal hash/timestamp records. The server was not deployed/restarted by this operation.
+
+Live PostgreSQL catalog comparison found matching application definitions for 65 tables, 677 columns (types/defaults/nullability), 243 constraints, 166 indexes, 31 enums and one sequence. Neither database has public views, custom functions, user triggers or row policies. Local runs PostgreSQL 17.6 and development 18.6; PostgreSQL 18's separate NOT NULL constraint records are compared through column nullability. Owners, grants, server settings and business row contents are not asserted identical.
+
+Development data checks evaluated all 112 foreign keys and 55 CHECK constraints with zero violations. The refund audit found 22 existing requests across 125 order-item rows, no over-claimed quantities, no invalid refund quantities, and no incomplete rejection decisions or retry keys.
+
+**Legacy data:** 64 paid development orders lack `completedAt`, and no receipt windows are recorded yet. New requests for items without either timestamp will return `PAYMENT_TIME_UNKNOWN` in development. Use newly paid orders for testing or reconcile historical payment/receipt evidence separately. The 22 historical refund rows retain null `originalRequest`; initial request snapshots and receipt times were not fabricated. Environment-specific users/orders/refunds were not copied between databases.
+
+Local's initial `0000_magenta_king_cobra` file has a pre-existing hash mismatch against its journal row. The latest local refund migration hash/timestamp matches, and live schema parity was verified independently. Historical local migration records were left unchanged.

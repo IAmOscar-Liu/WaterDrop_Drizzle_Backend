@@ -4,7 +4,7 @@ Date: 2026-10-22
 
 Branch: `feat/refund-strategy`
 
-Status: **Implemented and tested; additive migration applied locally only.** Development/staging rollout remains pending.
+Status: **Implemented and tested; additive migrations applied to local and development.** Development deployment and staging migration/deployment remain pending.
 
 Handoffs: [Flutter buyer flow](../api/FLUTTER_REFUND_STRATEGY_API_CHANGES.md) and [地平線 review flow](../api/FE-confirmation/ADMIN_REFUND_STRATEGY_API_CHANGES.md). These describe the shipped request/response contract and replace the draft choices below with the decisions recorded here.
 
@@ -82,7 +82,7 @@ Home-delivery receipt capture is supported for a trusted integration reporting d
 
 Historical logs lack sufficient provenance for automatic receipt backfill. A previously confirmed-delivered log prevents a repeated poll from inventing a fresh pickup time. Historical unknown windows remain null rather than using mutable `updatedAt`, order creation, or deployment time. Existing requests can still be reviewed/completed/cancelled; outside the local/development testing exception, new requests and deadline-extending rejection require verified receipt reconciliation. No general-purpose manual timestamp correction API ships in this change.
 
-## Additive database changes and local rollout
+## Additive database changes and rollout
 
 | Table | Addition |
 | --- | --- |
@@ -94,7 +94,7 @@ Historical logs lack sufficient provenance for automatic receipt backfill. A pre
 
 `drizzle_local/0117_watery_oracle.sql` was generated/reviewed/applied. The applied migration hash/journal timestamp, enum, columns, FKs, check and unique index were verified against local PostgreSQL. Existing local data includes one delivered item without a known window and 12 pending/processing historical requests without a window. They were not assigned invented timestamps. Historical `cancelled` records were not reinterpreted as rejections.
 
-No configured development/staging/test database was migrated. Before deployment, generate/review/migrate the intended environment and deploy receipt writers, refund writers and eligibility readers together. Coordinate the Flutter request-body restriction and removal of the admin creation UI. No expiry cron or one-off deadline reset script is needed.
+Development migration `0068_bitter_mandarin` was generated and applied on 2026-10-23 after merging the feature; its SQL matches local `0117_watery_oracle`. Live application schemas match, with PostgreSQL-version-specific NOT NULL catalog differences normalized. Staging/test databases were not migrated. Deploy receipt writers, refund writers and eligibility readers together. The [admin handoff](../api/FE-confirmation/ADMIN_REFUND_STRATEGY_API_CHANGES.md#development-migration-verification--2026-10-23) records verification and legacy payment-timestamp limitations. Coordinate the Flutter request-body restriction and removal of the admin creation UI. No expiry cron or one-off deadline reset script is needed.
 
 ## Verification
 
