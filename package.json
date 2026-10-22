@@ -83,7 +83,9 @@
     "test:email-verification": "NODE_ENV=test tsx src/tests/runTestSuite.ts email-verification",
     "_test:email-verification": "NODE_ENV=test NO_CRON=true tsx src/tests/accountEmailVerification.integration.ts",
     "test:account-sessions": "NODE_ENV=test tsx src/tests/runTestSuite.ts account-sessions",
-    "_test:account-sessions": "NODE_ENV=test NO_CRON=true tsx src/tests/accountSession.integration.ts"
+    "_test:account-sessions": "NODE_ENV=test NO_CRON=true tsx src/tests/accountSession.integration.ts",
+    "test:refund-strategy": "NODE_ENV=test tsx src/tests/runTestSuite.ts refund-strategy",
+    "_test:refund-strategy": "NODE_ENV=test NO_CRON=true tsx src/tests/refundStrategy.integration.ts"
   },
   "keywords": [],
   "author": "",

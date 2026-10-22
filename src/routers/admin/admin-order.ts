@@ -61,6 +61,21 @@ const router = Router();
  *         lineTotal:
  *           type: number
  *           format: double
+ *         refundWindowStartsAt:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *           description: Stored receipt observation; computed order/delivery detail may use payment confirmation in local/development when receipt is unknown (see refundWindowSource). Never seller-supplied.
+ *         originalRefundDeadlineAt:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *           description: Window start plus 240 hours normally, or 24 hours for new local/development windows. Stored historical deadlines are preserved; computed details may use the payment fallback.
+ *         refundDeadlineAt:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *           description: Effective deadline for new requests; explicit rejection may extend it. A timely existing request stays reviewable after this time.
  *         createdAt:
  *           type: string
  *           format: date-time
@@ -79,6 +94,32 @@ const router = Router();
  *         status:
  *           type: string
  *           enum: [pending, shipped, ready_for_pickup, delivered, returned, cancelled, exception, unknown]
+ *         receivedAt:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *           description: Trusted first receipt observation. Historical/unsupported receipt sources remain null.
+ *         receiptEvidence:
+ *           type: object
+ *           nullable: true
+ *           properties:
+ *             source:
+ *               type: string
+ *               enum: [provider_callback, provider_poll]
+ *             observedAt:
+ *               type: string
+ *               format: date-time
+ *             estimated:
+ *               type: boolean
+ *               description: True for backend observation time rather than carrier event time.
+ *             logisticsType:
+ *               type: string
+ *             logisticsSubType:
+ *               type: string
+ *               nullable: true
+ *             code:
+ *               type: string
+ *               nullable: true
  *         AllPayLogisticsID:
  *           type: string
  *           nullable: true
@@ -231,6 +272,7 @@ const router = Router();
  *           type: string
  *           format: date-time
  *           nullable: true
+ *           description: First recorded payment confirmation; later status updates and payment retries preserve it. Local/development use it for refund deadlines when no receipt window exists.
  *         shippingInfo:
  *           type: object
  *           nullable: true
@@ -345,9 +387,30 @@ const router = Router();
  *                                   description: Reverse-chronological refund status and message logs. Existing refunds may have an empty array.
  *                                   items:
  *                                     $ref: '#/components/schemas/RefundLog'
+ *                       refundReceiptChecksBypassed:
+ *                         type: boolean
+ *                         description: True only in local/development; delivery/pickup checks are relaxed, but deadline, payment and quantity checks remain. New local/development windows last 24 hours with 12-hour rejection extensions. Without a receipt window, start at payment confirmation. Previously stored deadlines/extensions are preserved.
+ *                       refundWindowSource:
+ *                         type: string
+ *                         nullable: true
+ *                         enum: [receipt, payment_for_testing]
+ *                         description: Source of the effective window. Payment fallback is local/development only; absent payment time returns PAYMENT_TIME_UNKNOWN. Stored receipt evidence is unchanged.
+ *                       refundWindowStatus:
+ *                         type: string
+ *                         enum: [not_started, open, expired, unknown]
+ *                       refundBlockReason:
+ *                         type: string
+ *                         nullable: true
+ *                         enum: [ORDER_NOT_PAID, NOT_RECEIVED, RECEIPT_TIME_UNKNOWN, PAYMENT_TIME_UNKNOWN, REFUND_WINDOW_EXPIRED, NO_REFUNDABLE_QUANTITY]
+ *                       unreservedRefundQuantity:
+ *                         type: integer
+ *                         description: Purchased minus pending, processing and completed quantities, independent of deadline.
+ *                       refundServerTime:
+ *                         type: string
+ *                         format: date-time
  *                       canRefund:
  *                         type: boolean
- *                         description: Whether this order item still has refundable quantity for the current order and delivery status.
+ *                         description: Whether a new buyer request is eligible. Every environment requires payment, available quantity and an open effective window. Review existing requests independently of this flag.
  *                       remainingRefundQuantity:
  *                         type: integer
  *                         description: Remaining refundable quantity for this order item. Returns 0 when the item is not currently refundable.

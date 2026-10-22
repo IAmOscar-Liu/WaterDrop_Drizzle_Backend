@@ -71,9 +71,30 @@ const router = Router();
  *                         type: array
  *                         items:
  *                           $ref: '#/components/schemas/RefundItem'
+ *                       refundReceiptChecksBypassed:
+ *                         type: boolean
+ *                         description: True only in local/development; delivery/pickup checks are relaxed, but deadline, payment and quantity checks remain. New local/development windows last 24 hours with 12-hour rejection extensions. Without a receipt window, start at payment confirmation. Previously stored deadlines/extensions are preserved.
+ *                       refundWindowSource:
+ *                         type: string
+ *                         nullable: true
+ *                         enum: [receipt, payment_for_testing]
+ *                         description: Source of the effective window. Payment fallback is local/development only; absent payment time returns PAYMENT_TIME_UNKNOWN. Stored receipt evidence is unchanged.
+ *                       refundWindowStatus:
+ *                         type: string
+ *                         enum: [not_started, open, expired, unknown]
+ *                       refundBlockReason:
+ *                         type: string
+ *                         nullable: true
+ *                         enum: [ORDER_NOT_PAID, NOT_RECEIVED, RECEIPT_TIME_UNKNOWN, PAYMENT_TIME_UNKNOWN, REFUND_WINDOW_EXPIRED, NO_REFUNDABLE_QUANTITY]
+ *                       unreservedRefundQuantity:
+ *                         type: integer
+ *                         description: Purchased minus pending, processing and completed quantities, independent of deadline.
+ *                       refundServerTime:
+ *                         type: string
+ *                         format: date-time
  *                       canRefund:
  *                         type: boolean
- *                         description: Whether this order item still has refundable quantity for the current delivery/order status.
+ *                         description: Whether a new buyer request is eligible. Every environment requires payment, available quantity and an open effective window. Review existing requests independently of this flag.
  *                       remainingRefundQuantity:
  *                         type: integer
  *                         description: Remaining refundable quantity for this order item. Returns 0 when the item is not currently refundable.
@@ -81,36 +102,6 @@ const router = Router();
  *               type: array
  *               items:
  *                 $ref: '#/components/schemas/DeliveryLog'
- *
- *     RefundItem:
- *       type: object
- *       properties:
- *         id:
- *           type: string
- *           format: uuid
- *         orderItemId:
- *           type: string
- *           format: uuid
- *         quantity:
- *           type: integer
- *         status:
- *           type: string
- *           enum: [pending, processing, completed, cancelled]
- *         reason:
- *           type: string
- *         note:
- *           type: string
- *           nullable: true
- *         refundAmount:
- *           type: number
- *           nullable: true
- *         metadata:
- *           type: object
- *           nullable: true
- *         summary:
- *           type: object
- *           nullable: true
- *           example: {}
  *
  *     DeliveryLog:
  *       type: object

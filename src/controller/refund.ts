@@ -41,55 +41,17 @@ class RefundController {
     sendJsonResponse(res, result);
   }
 
-  async createRefund(req: RequestWithId, res: Response): Promise<any> {
-    const {
-      orderItemId,
-      quantity,
-      reason,
-      note,
-      refundAmount,
-      extraRefundAmount,
-      metadata,
-    } = req.body;
-
-    const result = await refundService.createRefund({
-      orderItemId,
-      quantity,
-      reason: reason ?? "",
-      note,
-      refundAmount,
-      extraRefundAmount,
-      metadata,
-      actor: { kind: "account", id: req.userId ?? "" },
-    });
-
-    sendJsonResponse(res, result);
-  }
-
   async createUserRefund(req: RequestWithId, res: Response): Promise<any> {
-    const {
-      orderItemId,
-      quantity,
-      accountId,
-      reason,
-      note,
-      refundAmount,
-      extraRefundAmount,
-      metadata,
-    } = req.body;
-
+    const { orderItemId, quantity, accountId, reason, note, clientRequestId } = req.body;
     const result = await refundService.createUserRefund({
       orderItemId,
       quantity,
+      accountId,
       reason: reason ?? "",
       note,
-      refundAmount,
-      extraRefundAmount,
-      metadata,
-      accountId,
+      clientRequestId,
       actor: { kind: "user", id: req.userId ?? "" },
     });
-
     sendJsonResponse(res, result);
   }
 
@@ -108,6 +70,8 @@ class RefundController {
     const result = await refundService.updateRefundItemStatus(
       refundItemId,
       {
+        ...(req.body.rejectionReason !== undefined ? { rejectionReason: req.body.rejectionReason } : {}),
+        ...(req.body.agreement !== undefined ? { agreement: req.body.agreement } : {}),
         ...(status ? { status: status as schema.RefundItem["status"] } : {}),
         ...(quantity !== undefined ? { quantity } : {}),
         ...(refundAmount !== undefined ? { refundAmount } : {}),

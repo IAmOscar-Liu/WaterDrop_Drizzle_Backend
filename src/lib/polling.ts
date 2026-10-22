@@ -9,6 +9,7 @@ import { createNotification } from "../repository/notification";
 import { getFcmTokensInUserIds } from "../repository/user";
 import ecpayService from "../services/ecpay";
 import db from "./initDB";
+import { isAwaitingPickup, isConfirmedReceipt } from "./refundEligibility";
 import { sendMulticastPushNotification } from "./sendNotification";
 
 export function isCVSReadyForPickup(
@@ -16,25 +17,7 @@ export function isCVSReadyForPickup(
   logisticsSubType?: string | null,
   rtnCode?: string | null,
 ) {
-  if (logisticsType !== "CVS") return false;
-  if (
-    logisticsSubType !== "UNIMARTC2C" &&
-    logisticsSubType !== "FAMIC2C" &&
-    logisticsSubType !== "HILIFEC2C" &&
-    logisticsSubType !== "OKMARTC2C"
-  )
-    return false;
-
-  if (logisticsSubType === "UNIMARTC2C" && rtnCode === "2073") return true;
-  if (logisticsSubType === "FAMIC2C" && rtnCode === "3029") return true;
-  if (
-    logisticsSubType === "HILIFEC2C" &&
-    (rtnCode === "2063" || rtnCode === "2073" || rtnCode === "3018")
-  )
-    return true;
-  if (logisticsSubType === "OKMARTC2C" && rtnCode === "2073") return true;
-
-  return false;
+  return isAwaitingPickup({ LogisticsType: logisticsType, LogisticsSubType: logisticsSubType ?? null, RtnCode: rtnCode ?? null });
 }
 
 function hasCVSPickedUp(
@@ -42,25 +25,7 @@ function hasCVSPickedUp(
   logisticsSubType?: string | null,
   rtnCode?: string | null,
 ) {
-  if (logisticsType !== "CVS") return false;
-  if (
-    logisticsSubType !== "UNIMARTC2C" &&
-    logisticsSubType !== "FAMIC2C" &&
-    logisticsSubType !== "HILIFEC2C" &&
-    logisticsSubType !== "OKMARTC2C"
-  )
-    return false;
-
-  if (logisticsSubType === "UNIMARTC2C" && rtnCode === "2067") return true;
-  if (logisticsSubType === "FAMIC2C" && rtnCode === "3022") return true;
-  if (
-    logisticsSubType === "HILIFEC2C" &&
-    (rtnCode === "2067" || rtnCode === "3022")
-  )
-    return true;
-  if (logisticsSubType === "OKMARTC2C" && rtnCode === "3022") return true;
-
-  return false;
+  return logisticsType === "CVS" && isConfirmedReceipt({ status: "delivered", LogisticsType: logisticsType, LogisticsSubType: logisticsSubType ?? null, RtnCode: rtnCode ?? null });
 }
 
 function generateNotificationBody({
@@ -216,7 +181,7 @@ export async function pollEcPayLogisticsTradeInfo() {
         RtnCode: String(logisticsTradeInfo.LogisticsStatus),
         RtnMsg: String(logisticsTradeInfo.LogisticsStatusText),
         lastPolledAt: new Date(),
-      });
+      }, undefined, "provider_poll");
 
       if (result?.delivery && result.notificationContext) {
         await sendDeliveryNotification({
@@ -251,11 +216,12 @@ export async function pollEcPayLogisticsTradeInfo() {
           ),
         ),
         and(
-          inArray(schema.deliveryTable.status, [
-            "pending",
-            "shipped",
-            "ready_for_pickup",
-          ]),
+          or(
+            inArray(schema.deliveryTable.status, ["pending", "shipped", "ready_for_pickup"]),
+            // Older callbacks stored store arrival as delivered. Continue polling these until pickup.
+            and(eq(schema.deliveryTable.status, "delivered"),
+              inArray(schema.deliveryTable.RtnCode, ["2073", "3029", "2063", "3018"])),
+          ),
           or(
             isNull(schema.deliveryTable.lastPolledAt),
             lt(schema.deliveryTable.lastPolledAt, thirtyMinutesAgo),

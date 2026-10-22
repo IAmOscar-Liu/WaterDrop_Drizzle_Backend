@@ -49,7 +49,7 @@ async function run() {
     // Both sellers are in the same order; authorization must use each product.
     const items = await db.insert(schema.orderItemTable).values(products.map((product, index) => ({
       orderId: order.id, productId: product.id, productVariantId: variants[index].id,
-      deliveryId: delivery.id, quantity: 10, unitPriceAtSale: 10, lineTotal: 100,
+      deliveryId: delivery.id, refundWindowStartsAt: new Date(), originalRefundDeadlineAt: new Date(Date.now()+864000000), refundDeadlineAt: new Date(Date.now()+864000000), quantity: 10, unitPriceAtSale: 10, lineTotal: 100,
       productNameAtSale: product.name,
     }))).returning();
     const refunds = await db.insert(schema.refundItemTable).values(items.map((item) => ({
@@ -66,7 +66,7 @@ async function run() {
         },
         body: body === undefined ? undefined : JSON.stringify(body),
       });
-      return { status: response.status, body: await response.json() as any };
+      return { status: response.status, body: await response.text().then(text => { try { return JSON.parse(text); } catch { return { success: false }; } }) as any };
     }
     function expect(result: Awaited<ReturnType<typeof request>>, status = 200) {
       assert.equal(result.status, status, JSON.stringify(result.body));
@@ -89,7 +89,7 @@ async function run() {
     for (const [id, status] of [[otherSeller.id, 404], [employee.id, 403]] as const) {
       expect(await request("/api/admin/refund", id, "POST", {
         ...createBody, accountId: admin.id, userId: user.id, actor: { kind: "account", id: admin.id },
-      }), status);
+      }), 404);
       for (const patch of [
         { status: "pending" }, // No-op must still authorize.
         { status: "processing" },
@@ -99,21 +99,21 @@ async function run() {
         { note: "Unauthorized", message: "Unauthorized log", metadata: { unauthorized: true } },
       ]) {
         expect(await request(`/api/admin/refund/${refund.id}/status`, id, "PATCH", {
-          ...patch, actorAccountId: admin.id,
+          ...patch,
         }), status);
       }
     }
     expect(await request(`/api/admin/refund/${refund.id}`, otherSeller.id), 404);
-    expect(await request("/api/admin/refund", user.id, "POST", createBody), 403);
+    expect(await request("/api/admin/refund", user.id, "POST", createBody), 404);
     expect(await request(`/api/admin/refund/${refund.id}/status`, user.id, "PATCH", { status: "completed" }), 403);
-    expect(await request("/api/admin/refund", undefined, "POST", createBody), 401);
-    expect(await request("/api/refund", otherUser.id, "POST", { ...createBody, accountId: seller.id }), 400);
+    expect(await request("/api/admin/refund", undefined, "POST", createBody), 404);
+    expect(await request("/api/refund", otherUser.id, "POST", { ...createBody, accountId: seller.id }), 404);
     expect(await request("/api/refund", user.id, "POST", { ...createBody, accountId: otherSeller.id }), 400);
     // Check the repository boundary as well as HTTP middleware.
     await assert.rejects(updateRefundItemStatus(refund.id, { status: "pending" }, ""), /Unauthorized/);
     await assert.rejects(createRefundWithChatContext({
       ...createBody, actor: { kind: "account", id: employee.id },
-    }), /Only admins and sellers/);
+    }), /Only app users/);
     assert.deepEqual(await state(), before, "Denied writes must leave refund, log, stock, coin and chat state unchanged");
 
     // Readers keep their existing seller scope; employees have no write access.
@@ -138,13 +138,12 @@ async function run() {
     assert.equal((await db.query.productVariantTable.findFirst({ where: eq(schema.productVariantTable.id, variants[0].id) }))?.stock, 11);
     expect(await request(`/api/admin/refund/${refunds[1].id}/status`, admin.id, "PATCH", { status: "completed" }));
 
-    const createdSeller = expect(await request("/api/admin/refund", seller.id, "POST", { ...createBody, reason: "seller-created" }));
-    const createdAdmin = expect(await request("/api/admin/refund", admin.id, "POST", { ...createBody, reason: "admin-created" }));
+    expect(await request("/api/admin/refund", seller.id, "POST", createBody), 404);
+    expect(await request("/api/admin/refund", admin.id, "POST", createBody), 404);
+    expect(await request("/api/refund", user.id, "POST", { ...createBody, status: "completed" }), 400);
     const createdUser = expect(await request("/api/refund", user.id, "POST", {
-      ...createBody, accountId: seller.id, reason: "user-requested", status: "completed",
+      ...createBody, accountId: seller.id, reason: "user-requested",
     }));
-    assert.equal(createdSeller.status, "pending");
-    assert.equal(createdAdmin.status, "pending");
     assert.equal(createdUser.status, "pending");
     // These follow-up writes are asynchronous. Verify actual messages, not just successful POSTs.
     let chatMessages: schema.ChatMessage[] = [];
@@ -156,17 +155,17 @@ async function run() {
         assert.equal(room.accountId, seller.id);
         assert.equal(room.userId, user.id);
         chatMessages = room.messages;
-        if (["seller-created", "admin-created", "user-requested"].every((reason) => chatMessages.some((message) => message.content?.includes(reason)))) break;
+        if (["user-requested"].every((reason) => chatMessages.some((message) => message.content?.includes(reason)))) break;
       }
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
-    for (const [reason, role] of [["seller-created", "seller"], ["admin-created", "admin"], ["user-requested", "user"]]) {
+    for (const [reason, role] of [["user-requested", "user"]]) {
       assert.ok(chatMessages.some((message) => message.content?.includes(reason) && message.senderType === role), `Missing ${reason} chat message`);
     }
     for (const change of [{ status: "inactive" as const }, { status: "active" as const, deletedAt: new Date() }]) {
       await db.update(schema.accountTable).set(change).where(eq(schema.accountTable.id, seller.id));
-      expect(await request("/api/admin/refund", seller.id, "POST", createBody), 403);
-      expect(await request(`/api/admin/refund/${createdSeller.id}/status`, seller.id, "PATCH", { status: "completed" }), 403);
+      expect(await request("/api/admin/refund", seller.id, "POST", createBody), 404);
+      expect(await request(`/api/admin/refund/${createdUser.id}/status`, seller.id, "PATCH", { status: "completed" }), 403);
     }
     console.log("Refund authorization integration tests passed");
   } finally {

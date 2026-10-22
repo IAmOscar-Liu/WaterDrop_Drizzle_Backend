@@ -73,6 +73,7 @@ export const orderStatusEnum = pgEnum("order_status", [
 ]);
 
 export const refundStatusEnum = pgEnum("refund_status", [
+  "rejected",
   "pending",
   "processing",
   "completed",
@@ -1186,6 +1187,9 @@ export const orderItemTable = pgTable(
 
     quantity: integer("quantity").notNull(),
     pendingQuantity: integer("pending_quantity").notNull().default(0),
+    refundWindowStartsAt: timestamp("refund_window_starts_at", { withTimezone: true }),
+    originalRefundDeadlineAt: timestamp("original_refund_deadline_at", { withTimezone: true }),
+    refundDeadlineAt: timestamp("refund_deadline_at", { withTimezone: true }),
 
     // --- The key fields to handle price change ---
     // 1. Store the price at the time of sale:
@@ -1209,6 +1213,12 @@ export const orderItemTable = pgTable(
       .notNull(),
   },
   (t) => ({
+    refundWindowCheck: check("order_items_refund_window_ck", sql`(
+      ${t.refundWindowStartsAt} is null and ${t.originalRefundDeadlineAt} is null and ${t.refundDeadlineAt} is null
+    ) or (
+      ${t.refundWindowStartsAt} is not null and ${t.originalRefundDeadlineAt} is not null and ${t.refundDeadlineAt} is not null
+      and ${t.originalRefundDeadlineAt} > ${t.refundWindowStartsAt} and ${t.refundDeadlineAt} >= ${t.originalRefundDeadlineAt}
+    )`),
     orderItemUnique: uniqueIndex("order_items_order_variant_uk").on(
       t.orderId,
       t.productVariantId,
@@ -1228,6 +1238,14 @@ export const refundItemTable = pgTable(
       .references(() => orderItemTable.id, { onDelete: "cascade" }),
     quantity: integer("quantity").notNull(),
     status: refundStatusEnum("status").default("pending").notNull(),
+    originalRequest: jsonb("original_request").$type<{ quantity: number; refundAmount: number; paidRefundAmount: number; coins: number; reason: string; note: string | null }>(),
+    clientRequestId: uuid("client_request_id"),
+    requestFingerprint: text("request_fingerprint"),
+    rejectedAt: timestamp("rejected_at", { withTimezone: true }),
+    rejectedBy: uuid("rejected_by").references(() => accountTable.id),
+    rejectionReason: text("rejection_reason"),
+    rejectionDeadlineBefore: timestamp("rejection_deadline_before", { withTimezone: true }),
+    rejectionDeadlineAfter: timestamp("rejection_deadline_after", { withTimezone: true }),
     reason: text("reason").notNull(),
     note: text("note"),
     refundAmount: doublePrecision("refund_amount"),
@@ -1252,6 +1270,7 @@ export const refundItemTable = pgTable(
       .notNull(),
   },
   (t) => ({
+    requestKey: uniqueIndex("refund_items_item_client_request_uk").on(t.orderItemId, t.clientRequestId),
     orderItemIdIdx: index("refund_items_order_item_id_idx").on(t.orderItemId),
   }),
 );
@@ -1263,6 +1282,8 @@ export const refundLogTable = pgTable(
     refundItemId: uuid("refund_item_id")
       .notNull()
       .references(() => refundItemTable.id, { onDelete: "cascade" }),
+    actorAccountId: uuid("actor_account_id").references(() => accountTable.id),
+    audit: jsonb("audit"),
     status: refundStatusEnum("status").default("pending").notNull(),
     message: text("message"),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -1277,6 +1298,8 @@ export const refundLogTable = pgTable(
 );
 
 export const deliveryTable = pgTable("deliveries", {
+  receivedAt: timestamp("received_at", { withTimezone: true }),
+  receiptEvidence: jsonb("receipt_evidence"),
   id: uuid("id").defaultRandom().primaryKey(),
   orderId: uuid("order_id")
     .notNull()

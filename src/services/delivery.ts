@@ -1,3 +1,4 @@
+import type { ReceiptSource } from "../repository/refundWindow";
 import {
   HOME_DELIVERY_FEE,
   HOME_DELIVERY_REFRIG_FEE,
@@ -66,12 +67,14 @@ class DeliveryService {
     deliveryId: string,
     updates: Parameters<typeof updateDelivery>[1],
     actorAccountId?: string,
+    receiptSource?: ReceiptSource,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof updateDelivery>>>> {
     try {
       const result = await updateDeliveryWithNotificationContext(
         deliveryId,
         updates,
         actorAccountId,
+        receiptSource,
       );
       const delivery = result?.delivery ?? null;
       if (delivery) {

@@ -2053,18 +2053,24 @@ async function run() {
     ) as schema.User;
     assert.equal(paidUser.coins, 0);
 
-    const [virtualDelivery] = await db
+    const [refundDelivery] = await db
       .insert(schema.deliveryTable)
       .values({
         orderId: order.id,
         status: "delivered",
-        LogisticsType: "virtual",
+        LogisticsType: "home_delivery",
+        receivedAt: new Date(),
         GoodsAmount: 100,
       })
       .returning();
     await db
       .update(schema.orderItemTable)
-      .set({ deliveryId: virtualDelivery.id })
+      .set({
+        deliveryId: refundDelivery.id,
+        refundWindowStartsAt: new Date(),
+        originalRefundDeadlineAt: new Date(Date.now() + 240 * 60 * 60 * 1000),
+        refundDeadlineAt: new Date(Date.now() + 240 * 60 * 60 * 1000),
+      })
       .where(eq(schema.orderItemTable.id, order.items[0].id));
 
     const refund = expectSuccess(
@@ -2075,15 +2081,13 @@ async function run() {
           orderItemId: order.items[0].id,
           accountId: seller.id,
           quantity: 1,
-          refundAmount: 99.5,
-          extraRefundAmount: 0.72,
           reason: "API refund coin restoration test",
         },
       }),
     );
-    assert.equal(refund.paidRefundAmount, 94.53);
+    assert.equal(refund.paidRefundAmount, 95);
     assert.equal(refund.cashRefundAmount, 95);
-    assert.equal(refund.cashRemainderCoins, 2.5);
+    assert.equal(refund.cashRemainderCoins, 0);
     await waitFor(async () => {
       const chatRoom = await db.query.chatRoomTable.findFirst({
         where: eq(schema.chatRoomTable.orderId, order.id),
@@ -2099,7 +2103,7 @@ async function run() {
     const refundChatContent =
       refundMessages[refundMessages.length - 1]?.content ?? "";
     assert.match(refundChatContent, /退款金額：NT\$ 95/);
-    assert.match(refundChatContent, /退還金幣：52\.25/);
+    assert.match(refundChatContent, /退還金幣：50/);
     assert.match(
       refundChatContent,
       /退款金額的小數部分將依 NT\$1 = 10 金幣轉換/,
@@ -2112,6 +2116,9 @@ async function run() {
         body: {
           status: "completed",
           message: "API test refund completed",
+          refundAmount: 99.5,
+          extraRefundAmount: 0.72,
+          agreement: { confirmed: true, note: "Buyer agreed to the adjusted amount in chat" },
         },
       }),
     );
@@ -2139,7 +2146,7 @@ async function run() {
         body: { extraRefundAmount: 1 },
       },
     );
-    assert.equal(terminalExtraUpdate.status, 400);
+    assert.equal(terminalExtraUpdate.status, 409);
     const [conversionLot] = await db
       .select()
       .from(schema.userCoinLotTable)

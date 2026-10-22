@@ -22,3 +22,8 @@ if (env === "test") {
     );
   }
 }
+
+// Explicit environments only: missing/unknown NODE_ENV must not enable test exceptions.
+export function isLocalOrDevelopment() {
+  return process.env.NODE_ENV === "local" || process.env.NODE_ENV === "development";
+}

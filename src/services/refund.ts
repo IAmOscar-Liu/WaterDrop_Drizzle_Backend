@@ -157,6 +157,7 @@ function getRefundStatusBody(
 ) {
   const productDisplayName = getProductDisplayName(context);
   const statusText = {
+    rejected: "已拒絕",
     pending: "等待處理",
     processing: "處理中",
     completed: "已完成",
@@ -242,26 +243,13 @@ class RefundService {
     }
   }
 
-  async createRefund(
-    item: Parameters<typeof createRefund>[0],
-  ): Promise<ServiceResponse<Awaited<ReturnType<typeof createRefund>>>> {
-    try {
-      const result = await createRefundWithChatContext(item);
-      sendRefundCreatedChatMessageAsync(result.chatMessageInput);
-      sendRefundCreatedNotificationsAsync(result.notificationContext);
-      return { success: true, data: result.refundItem };
-    } catch (error) {
-      return handleServiceError(error);
-    }
-  }
-
   async createUserRefund(
     item: Parameters<typeof createRefund>[0],
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof createRefund>>>> {
     try {
       const result = await createRefundWithChatContext(item);
-      sendRefundCreatedChatMessageAsync(result.chatMessageInput);
-      sendRefundCreatedNotificationsAsync(result.notificationContext);
+      if (result.chatMessageInput) sendRefundCreatedChatMessageAsync(result.chatMessageInput);
+      if (result.notificationContext) sendRefundCreatedNotificationsAsync(result.notificationContext);
       return { success: true, data: result.refundItem };
     } catch (error) {
       return handleServiceError(error);

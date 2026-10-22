@@ -1,3 +1,4 @@
+import { refundEligibility } from "../lib/refundEligibility";
 import {
   and,
   asc,
@@ -660,7 +661,8 @@ export async function updateOrderStatus({
       .set({
         orderStatus: status,
         updatedAt: new Date(),
-        completedAt: status === "paid" ? new Date() : null,
+        // Preserve first payment confirmation; callback retries must not restart refund windows.
+        completedAt: order.completedAt ?? (status === "paid" ? new Date() : null),
         ...(paymentInfo ? { paymentInfo } : {}),
         ...(Object.keys(coinInfo).length > 0 ? { coinInfo } : {}),
         ...(metadata
@@ -1029,60 +1031,6 @@ export async function getOrderStatusById(orderId: string) {
   return order?.orderStatus;
 }
 
-type RefundableOrder = Pick<schema.Order, "orderStatus">;
-
-type RefundableOrderDelivery = Pick<schema.Delivery, "id" | "status">;
-
-type RefundableOrderItem = Pick<schema.OrderItem, "deliveryId" | "quantity"> & {
-  refundItems: Pick<schema.RefundItem, "quantity" | "status">[];
-};
-
-function getRefundedQuantity(item: RefundableOrderItem) {
-  return item.refundItems.reduce(
-    (total, refundItem) =>
-      refundItem.status === "cancelled" ? total : total + refundItem.quantity,
-    0,
-  );
-}
-
-function isRefundableOrderDelivery(
-  order: RefundableOrder,
-  delivery?: RefundableOrderDelivery,
-) {
-  if (order.orderStatus !== "paid" || !delivery) {
-    return false;
-  }
-
-  if (
-    (process.env.NODE_ENV === "stg" || process.env.NODE_ENV === "production") &&
-    delivery.status !== "delivered"
-  ) {
-    return false;
-  }
-
-  return true;
-}
-
-function getRemainingRefundQuantity(
-  order: RefundableOrder,
-  delivery: RefundableOrderDelivery | undefined,
-  item: RefundableOrderItem,
-) {
-  if (!item.deliveryId || !isRefundableOrderDelivery(order, delivery)) {
-    return 0;
-  }
-
-  return Math.max(item.quantity - getRefundedQuantity(item), 0);
-}
-
-function canRefundOrderItem(
-  order: RefundableOrder,
-  delivery: RefundableOrderDelivery | undefined,
-  item: RefundableOrderItem,
-) {
-  return getRemainingRefundQuantity(order, delivery, item) > 0;
-}
-
 export async function getOrderById(
   orderId: string,
   options?: { userId?: string; includeUser?: boolean },
@@ -1179,12 +1127,7 @@ export async function getOrderById(
 
       return {
         ...itemWithVariantAtSale,
-        canRefund: canRefundOrderItem(order, delivery, item),
-        remainingRefundQuantity: getRemainingRefundQuantity(
-          order,
-          delivery,
-          item,
-        ),
+        ...refundEligibility(order.orderStatus, item, item.refundItems, new Date(), delivery?.status, order.completedAt),
       };
     }),
     deliveries: order.deliveries.map((delivery) => ({
