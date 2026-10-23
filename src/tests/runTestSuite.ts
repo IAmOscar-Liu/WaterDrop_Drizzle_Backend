@@ -4,9 +4,10 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import postgres from "postgres";
 
-type SuiteName = "refund-strategy" | "app-badge" | "email-verification" | "account-sessions" | "account-onboarding" | "be1001" | "all" | "api" | "coin-ledger" | "cron" | "order-date-filter" | "chatroom-auth" | "refund-auth" | "account-wallet" | "chatroom-sse" | "notification-sse" | "admin-chatroom-sse";
+type SuiteName = "checkout-validation" | "refund-strategy" | "app-badge" | "email-verification" | "account-sessions" | "account-onboarding" | "be1001" | "all" | "api" | "coin-ledger" | "cron" | "order-date-filter" | "chatroom-auth" | "refund-auth" | "account-wallet" | "chatroom-sse" | "notification-sse" | "admin-chatroom-sse";
 
 const suiteCommands: Record<SuiteName, string[]> = {
+  "checkout-validation": ["_test:checkout-validation"],
   "refund-strategy": ["_test:refund-strategy"],
   "app-badge": ["_test:app-badge"],
   "email-verification": ["_test:email-verification"],
@@ -17,6 +18,7 @@ const suiteCommands: Record<SuiteName, string[]> = {
   "chatroom-sse": ["_test:chatroom-auth", "_test:chatroom-legacy", "_test:chatroom-sse"],
   be1001: ["_test:be1001"],
   all: [
+    "_test:checkout-validation",
     "_test:refund-strategy",
     "_test:app-badge",
     "_test:email-verification",

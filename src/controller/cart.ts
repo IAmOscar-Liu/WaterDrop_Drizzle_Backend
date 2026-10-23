@@ -4,6 +4,14 @@ import cartServices from "../services/cart";
 import { RequestWithId } from "../type/request";
 
 class CartController {
+  async validateCheckout(req: RequestWithId, res: Response): Promise<any> {
+    if (req.sessionId) {
+      return res.status(403).json({ success: false, message: "App user required" });
+    }
+    const result = await cartServices.validateCheckout(req.userId ?? "", req.body.items);
+    sendJsonResponse(res, result);
+  }
+
   async addToCart(req: RequestWithId, res: Response): Promise<any> {
     const { productId, productVariantId, quantity } = req.body;
     const userId = req.userId ?? "";
