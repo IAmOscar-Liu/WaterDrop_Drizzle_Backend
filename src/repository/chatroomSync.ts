@@ -1,4 +1,5 @@
 import { invalidateBadge } from "./appBadge";
+import { visibleChatOrder } from "../lib/chatOrder";
 import { lockAdminChatPublication, appendAdminChatEvent, pruneAdminChatSyncData } from "./adminChatroomSync";
 import { and, asc, count, desc, eq, gt, inArray, lt, lte, sql } from "drizzle-orm";
 import * as schema from "../db/schema";
@@ -130,13 +131,14 @@ export async function readChatSummaries(tx: ChatTx, userId: string | undefined, 
       unreadCount,
       activityTimestamp,
       lastMessageId,
-      order,
+      order: storedOrder,
       product: roomProduct,
       variant,
       user,
       ...rest
     } = room;
 
+    const order = visibleChatOrder(storedOrder);
     let delivery = null;
     if (order && room.productId && room.productVariantId) {
       const item = order.items.find(
@@ -162,6 +164,7 @@ export async function readChatSummaries(tx: ChatTx, userId: string | undefined, 
 
     return {
       ...rest,
+      orderId: order?.id ?? null,
       ...(adminScope ? { user } : {}),
       product,
       totalUnread: Number(unreadCount),

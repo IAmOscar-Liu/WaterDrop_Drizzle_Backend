@@ -179,7 +179,7 @@ class EcPayController {
           const nonCvsPickupGroup = (result?.shippingInfo as any)
             ?.nonCvsPickupGroup;
 
-          if (Array.isArray(cvsPickupGroup)) {
+          if (status === "paid" && Array.isArray(cvsPickupGroup)) {
             Promise.allSettled(
               cvsPickupGroup.map((info: any) =>
                 ecpayService.createExpressServerReturn({
@@ -190,7 +190,7 @@ class EcPayController {
             );
           }
 
-          if (Array.isArray(nonCvsPickupGroup)) {
+          if (status === "paid" && Array.isArray(nonCvsPickupGroup)) {
             Promise.allSettled(
               nonCvsPickupGroup.map((info: any) => {
                 const { merchantTradeNo, products, ...rest } = info;

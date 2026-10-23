@@ -33,6 +33,7 @@ import {
 } from "./utils/query";
 import { recordAdminActivityWithTx } from "./adminActivity";
 import { resolveAdminSellerScope } from "./adminScope";
+import { linkOrderChatrooms, publishOrderChatrooms } from "./orderChatroom";
 
 type OrderItemWithProductVariant = {
   product?: schema.Product | null;
@@ -269,6 +270,12 @@ export async function createOrder({
         },
       }),
     ]);
+
+    await linkOrderChatrooms(tx, newOrder, items.map((item) => ({
+      productId: item.productId,
+      productVariantId: item.productVariantId!,
+      sellerId: productMap.get(item.productId)!.sellerId,
+    })));
 
     return tx.query.orderTable.findFirst({
       where: eq(schema.orderTable.id, newOrder.id),
@@ -673,6 +680,10 @@ export async function updateOrderStatus({
           : {}),
       })
       .where(eq(schema.orderTable.id, orderId));
+
+    if (order.orderStatus !== status && (status === "failed" || order.orderStatus === "failed")) {
+      await publishOrderChatrooms(tx, order);
+    }
 
     if (order.orderStatus !== status) {
       const sellerIds = [
