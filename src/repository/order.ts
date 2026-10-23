@@ -681,7 +681,8 @@ export async function updateOrderStatus({
       })
       .where(eq(schema.orderTable.id, orderId));
 
-    if (order.orderStatus !== status && (status === "failed" || order.orderStatus === "failed")) {
+    const nextMerchantTradeNo = metadata ? (metadata as any).MerchantTradeNo ?? null : order.merchantTradeNo;
+    if (order.orderStatus !== status || order.merchantTradeNo !== nextMerchantTradeNo) {
       await publishOrderChatrooms(tx, order);
     }
 

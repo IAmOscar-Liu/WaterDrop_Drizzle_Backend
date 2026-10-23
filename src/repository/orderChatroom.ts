@@ -28,16 +28,38 @@ export async function findReusableProductChatroom(tx: ChatTx, input: {
   return room;
 }
 
-// Retain the internal order FK for audit/history: another unlinked room can
-// already exist, so clearing it would violate the room uniqueness constraint.
-// Serializers hide failed orders; the revision tells connected clients to clear them.
-export async function publishOrderChatrooms(tx: ChatTx, order: Pick<schema.Order, "id" | "userId">) {
-  const condition = and(eq(schema.chatRoomTable.userId, order.userId), eq(schema.chatRoomTable.orderId, order.id));
+// Publish under the same feed lock as message/association writes. A delivery
+// change affects only rooms whose exact order item references that delivery.
+export async function publishOrderChatrooms(
+  tx: ChatTx,
+  order: Pick<schema.Order, "id" | "userId">,
+  deliveryId?: string,
+) {
+  const condition = and(
+    eq(schema.chatRoomTable.userId, order.userId),
+    eq(schema.chatRoomTable.orderId, order.id),
+    deliveryId ? sql`exists (
+      select 1 from ${schema.orderItemTable}
+      where ${schema.orderItemTable.orderId} = ${schema.chatRoomTable.orderId}
+        and ${schema.orderItemTable.productId} = ${schema.chatRoomTable.productId}
+        and ${schema.orderItemTable.productVariantId} = ${schema.chatRoomTable.productVariantId}
+        and ${schema.orderItemTable.deliveryId} = ${deliveryId}
+    )` : undefined,
+  );
   if (!(await tx.select({ id: schema.chatRoomTable.id }).from(schema.chatRoomTable).where(condition).limit(1)).length) return;
   await lockChatFeed(tx, order.userId);
   const rooms = await tx.select({ id: schema.chatRoomTable.id }).from(schema.chatRoomTable)
     .where(condition).orderBy(schema.chatRoomTable.id).for("update");
   for (const room of rooms) await publishChatRoom(tx, room.id);
+}
+
+export async function publishDeliveryChatrooms(tx: ChatTx, delivery: Pick<schema.Delivery, "id" | "orderId">) {
+  const order = await tx.query.orderTable.findFirst({
+    columns: { id: true, userId: true, orderStatus: true },
+    where: eq(schema.orderTable.id, delivery.orderId),
+  });
+  // Failed orders have no visible order/delivery summary.
+  if (order && order.orderStatus !== "failed") await publishOrderChatrooms(tx, order, delivery.id);
 }
 
 /** Attach an order to existing pre-sale/failed-checkout conversations. */

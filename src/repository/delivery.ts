@@ -31,6 +31,7 @@ import {
 import { minimumVariantPrice } from "./utils/product";
 import { recordAdminActivityWithTx } from "./adminActivity";
 import { resolveAdminSellerScope } from "./adminScope";
+import { publishDeliveryChatrooms } from "./orderChatroom";
 
 type DeliveryItemWithProductVariant = schema.OrderItem & {
   product?: schema.Product | null;
@@ -126,6 +127,9 @@ export async function createDelivery(
       });
     }
 
+    // Publish after item association and receipt/log writes so the event carries
+    // the final delivery summary, in the same transaction as the delivery.
+    await publishDeliveryChatrooms(tx, newDelivery);
     return newDelivery;
   });
 }
@@ -222,6 +226,11 @@ export async function updateDeliveryWithNotificationContext(
           }),
         ),
       );
+    }
+
+    const chatFields = ["merchantTradeNo", "LogisticsType", "LogisticsSubType", "status", "RtnCode", "RtnMsg"] as const;
+    if (chatFields.some((field) => existingDelivery[field] !== updatedDelivery[field])) {
+      await publishDeliveryChatrooms(tx, updatedDelivery);
     }
 
     return { updatedDelivery, latestLog, shouldLog };
