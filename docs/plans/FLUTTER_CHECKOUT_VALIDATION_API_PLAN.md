@@ -1,8 +1,8 @@
 # 結帳批次驗證與綠界測試物流回呼計畫
 
 日期：2026-10-23  
-狀態：**A 已實作；B 延後至另一項工作。** A 的正式合約請見 [Flutter 批次結帳驗證交接文件](../api/FLUTTER_CHECKOUT_VALIDATION_API_CHANGES.md)，部署後才能切換 App。本文保留原提案與 B 的待辦設計。  
-檢查基準：目前 Flutter 工作目錄，以及 `waterdrop-server` 的 `development` 分支。A 不需 DB migration；本次未修改 Flutter 程式或 B 的物流回呼。
+狀態：**A、B 後端均已實作，待部署與 Flutter 串接驗證。** 正式合約請見 [A 批次結帳驗證](../api/FLUTTER_CHECKOUT_VALIDATION_API_CHANGES.md) 及 [B 同步物流驗證](../api/FLUTTER_LOGISTICS_VERIFICATION_API_CHANGES.md)。B 已改為後端直接向綠界請求，不採下方原始回呼／工作表提案。
+檢查基準：目前 Flutter 工作目錄，以及 `waterdrop-server` 的 `development`（A）與 `feat/checkout-logistics-verification`（B）分支。A、B 均不需 DB migration；本次未修改 Flutter 程式，B 新增同步端點並保留舊物流回呼相容性。
 
 A 採 1–4 筆明細、唯讀 `REPEATABLE READ` 快照、與原購物車相同的完整清單格式，並新增 `PRICE_UNAVAILABLE` 以明確阻擋無效價格。最終訂單的伺服器計價強化另列後續工作：目前 `POST /api/order` 仍接受客戶端價格／總額，不能將 A 的預檢視為已修正該問題。
 
@@ -143,6 +143,10 @@ Content-Type: application/json
 7. `POST /api/order` 保留原有資料庫交易、鎖定、最新庫存檢查及庫存保留，不信任先前的 `canCheckout`。庫存仍可能在結帳設定期間被其他買家購買。
 
 ## B. 綠界測試物流回呼
+
+### 已採用的替代方案（2026-10-23）
+
+新增帶 App Bearer token 的 `POST /api/ecpay/express/test/validate`，由後端直接呼叫綠界測試環境，略去 `ClientReplyURL`，驗證同步回應並回傳 JSON。Flutter 應以此取代 `ValidationWebview`，保留門市地圖 WebView。逾時、未知或無法驗證的回應一律不得繼續。無 DB migration、工作表、輪詢 API 或持久化冪等保證；手動重試會建立新的測試物流單。舊測試 WebView 路由暫時保留相容性。下方內容保留作為原始提案背景，實作以 B 交接文件為準。
 
 ### 已確認的現況
 

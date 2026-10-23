@@ -2,7 +2,7 @@
 
 Date: 2026-10-23
 
-Status: **Part A implemented; deployment required before Flutter switches to this endpoint.** No schema change or migration is required. Part B (ECPay test logistics callbacks) is deferred and unchanged. This app-only endpoint is excluded from admin Swagger. Flutter code was not changed in this delivery.
+Status: **Part A implemented; deployment required before Flutter switches to this endpoint.** No schema change or migration is required. Part B now has a separate [synchronous logistics verification handoff](FLUTTER_LOGISTICS_VERIFICATION_API_CHANGES.md). This app-only endpoint is excluded from admin Swagger. Flutter code was not changed in this delivery.
 
 ## Request
 
@@ -101,7 +101,7 @@ User lookup, complete cart data and validation run in a read-only PostgreSQL `RE
 
 Stock, prices and selection can change after the transaction finishes. Existing order-creation locking and stock checks remain in place; a passing precheck can still be followed by an order rejection.
 
-**Separate follow-up:** this A-only delivery does not change `POST /api/order`. Its existing client-supplied unit-price/total handling still needs server-side pricing hardening. The new precheck is not a trusted order quote and does not fix direct order-price tampering. Part B's callback verification is also still pending. Neither is claimed as implemented by this handoff.
+**Separate follow-up:** this A-only delivery does not change `POST /api/order`. Its existing client-supplied unit-price/total handling still needs server-side pricing hardening. The new precheck is not a trusted order quote and does not fix direct order-price tampering. Part B is delivered separately as a synchronous request; see its handoff above, which supersedes the proposed callback/job design.
 
 ## Validation
 
