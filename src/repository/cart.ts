@@ -1,8 +1,11 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import * as schema from "../db/schema";
 import db from "../lib/initDB";
 import { CustomError } from "../lib/error";
 import { withProductVariantAggregates } from "./utils/product";
+import { CheckoutItem, evaluateCheckout } from "../lib/checkoutValidation";
+
+type CartReader = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /**
  * Adds or updates an item in the user's cart.
@@ -248,8 +251,8 @@ export async function updateCartItemVariant({
  * @param userId The ID of the user.
  * @returns A promise that resolves to an array of cart items with their associated products.
  */
-export async function listCartItems(userId: string) {
-  const cartItems = await db.query.cartItemTable.findMany({
+export async function listCartItems(userId: string, reader: CartReader = db) {
+  const cartItems = await reader.query.cartItemTable.findMany({
     where: eq(schema.cartItemTable.userId, userId),
     with: {
       product: {
@@ -292,4 +295,20 @@ export async function listCartItems(userId: string) {
         }
       : item.variant,
   }));
+}
+
+export async function validateCheckout(userId: string, requested: CheckoutItem[]) {
+  return db.transaction(async (tx) => {
+    const [user] = await tx.select({
+      id: schema.userTable.id,
+      checkedAt: sql<string>`transaction_timestamp()`,
+    }).from(schema.userTable).where(eq(schema.userTable.id, userId));
+    if (!user) throw new CustomError("App user required", 401);
+    const cartItems = await listCartItems(userId, tx);
+    return {
+      ...evaluateCheckout(requested, cartItems),
+      checkedAt: new Date(user.checkedAt).toISOString(),
+      cartItems,
+    };
+  }, { isolationLevel: "repeatable read", accessMode: "read only" });
 }

@@ -1,22 +1,12 @@
 import { z } from "zod";
-import {
-  jsonObject,
-  nonEmptyString,
-  nonNegativeNumber,
-  positiveInt,
-  positiveNumber,
-  uuid,
-} from "./admin/common";
-
+import { nonEmptyString, positiveInt, uuid } from "./admin/common";
 export const refundValidation = {
   createBody: z.object({
     orderItemId: uuid,
-    accountId: uuid,
+    accountId: uuid.optional(), // Legacy seller-recipient hint, checked against the product.
+    clientRequestId: uuid.optional(),
     quantity: positiveInt,
-    reason: nonEmptyString.optional(),
-    note: z.string().optional().nullable(),
-    refundAmount: positiveNumber.optional(),
-    extraRefundAmount: nonNegativeNumber.optional(),
-    metadata: jsonObject.optional().nullable(),
-  }),
+    reason: nonEmptyString.max(2000).optional(),
+    note: z.string().max(5000).nullable().optional(),
+  }).strict(),
 };

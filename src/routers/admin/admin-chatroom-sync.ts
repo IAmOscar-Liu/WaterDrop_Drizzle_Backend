@@ -263,7 +263,11 @@ export default router;
  *       Empty/inactive rooms are hidden. listState counts all active accessible rooms and unread user messages,
  *       independent of filters. Snapshots freeze membership/order for 15m, max 10000 rooms and 5/account. New snapshot
  *       starts on page 1. Repeat identical filters/limit with token. Revoked entries leave holes; use frozen totalPages.
- *       Current metadata loads via REST; later catalog/logistics changes do not emit chat events.
+ *       Order status/trade-number changes and displayed delivery changes publish chatroom.updated transactionally.
+ *       Delivery events target rooms for matching order items. Unchanged polls do not bump revisions.
+ *       Catalog metadata still refreshes via REST.
+ *       Failed checkouts return orderId and order as null, including historical failed orders with delivery data.
+ *       A payment failure publishes chatroom.updated to clear previously displayed order/delivery status.
  *     parameters:
  *       - name: page
  *         in: query

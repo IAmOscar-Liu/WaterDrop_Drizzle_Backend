@@ -1,7 +1,15 @@
 import { Router } from "express";
 import EcPayController from "../controller/ecpay";
+import isAuth from "../middleware/isAuth";
+import validateZod from "../middleware/validateZod";
+import { logisticsVerificationBody, logisticsVerificationQuery } from "../middleware/logisticsVerification";
+import { acknowledgeTestValidation, validateTestLogistics } from "../controller/logisticsVerification";
 
 const router = Router();
+
+router.post("/express/test/validate", isAuth,
+  validateZod({ body: logisticsVerificationBody, query: logisticsVerificationQuery }), validateTestLogistics);
+router.post("/express/test/validation/server-reply", acknowledgeTestValidation);
 
 router.get("/test", EcPayController.createTestPayment);
 router.get("/new", EcPayController.createPayment);

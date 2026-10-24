@@ -4,10 +4,20 @@ import {
   upsertCartItem,
   toggleCartItem,
   updateCartItemVariant,
+  validateCheckout,
 } from "../repository/cart";
+import { CheckoutItem } from "../lib/checkoutValidation";
 import { ServiceResponse } from "../type/general";
 
 class CartServices {
+  async validateCheckout(userId: string, items: CheckoutItem[]) {
+    try {
+      return { success: true as const, data: await validateCheckout(userId, items) };
+    } catch (error) {
+      return handleServiceError(error);
+    }
+  }
+
   async listCartItems(
     userId: string,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof listCartItems>>>> {

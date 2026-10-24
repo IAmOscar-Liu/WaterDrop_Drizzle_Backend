@@ -44,7 +44,7 @@ async function main() {
               await sendMulticastPushNotification({
                 tokens: tokens.slice(i, i + 500), notification: { title, body },
                 data: { command: "message", notificationId: notification.id },
-              });
+              }, userId);
             }
           } catch { console.error("[notification-test] Push unavailable; saved notification and SSE are unaffected."); }
         }

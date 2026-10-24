@@ -130,6 +130,7 @@ router.use(adminChatroomSyncRouter);
  *           type: string
  *           format: uuid
  *           nullable: true
+ *           description: Null in chat read responses when no order is associated or the checkout failed. Internal audit references may be retained.
  *         userId:
  *           type: string
  *           format: uuid
@@ -192,12 +193,14 @@ router.use(adminChatroomSyncRouter);
  *               $ref: '#/components/schemas/ChatMessage'
  *             order:
  *               type: object
+ *               nullable: true
+ *               description: Failed checkouts return null, even when historical delivery data exists. Pending/processing and paid orders retain their normal summaries.
  *               properties:
  *                 id:
  *                   type: string
  *                 orderStatus:
  *                   type: string
- *                   enum: [pending, paid, failed, expired, canceled]
+ *                   enum: [pending, payment-processing, paid, expired, canceled]
  *                 merchantTradeNo:
  *                   type: string
  *                 totalAmount:

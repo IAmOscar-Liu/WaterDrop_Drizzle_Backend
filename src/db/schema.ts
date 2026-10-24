@@ -73,6 +73,7 @@ export const orderStatusEnum = pgEnum("order_status", [
 ]);
 
 export const refundStatusEnum = pgEnum("refund_status", [
+  "rejected",
   "pending",
   "processing",
   "completed",
@@ -686,7 +687,7 @@ export const treasureBoxTable = pgTable("treasure_boxes", {
   settledAt: timestamp("settled_at", { withTimezone: true }),
   rewardRuleVersion: text("reward_rule_version"),
   rewardInputSnapshot: jsonb("reward_input_snapshot"),
-});
+}, (t) => ({ badgeIdx: index("treasure_boxes_badge_user_idx").on(t.userId).where(sql`${t.isActive} = true and ${t.isOpened} = false`) }));
 
 export const categoryTable = pgTable(
   "categories",
@@ -1186,6 +1187,9 @@ export const orderItemTable = pgTable(
 
     quantity: integer("quantity").notNull(),
     pendingQuantity: integer("pending_quantity").notNull().default(0),
+    refundWindowStartsAt: timestamp("refund_window_starts_at", { withTimezone: true }),
+    originalRefundDeadlineAt: timestamp("original_refund_deadline_at", { withTimezone: true }),
+    refundDeadlineAt: timestamp("refund_deadline_at", { withTimezone: true }),
 
     // --- The key fields to handle price change ---
     // 1. Store the price at the time of sale:
@@ -1209,6 +1213,12 @@ export const orderItemTable = pgTable(
       .notNull(),
   },
   (t) => ({
+    refundWindowCheck: check("order_items_refund_window_ck", sql`(
+      ${t.refundWindowStartsAt} is null and ${t.originalRefundDeadlineAt} is null and ${t.refundDeadlineAt} is null
+    ) or (
+      ${t.refundWindowStartsAt} is not null and ${t.originalRefundDeadlineAt} is not null and ${t.refundDeadlineAt} is not null
+      and ${t.originalRefundDeadlineAt} > ${t.refundWindowStartsAt} and ${t.refundDeadlineAt} >= ${t.originalRefundDeadlineAt}
+    )`),
     orderItemUnique: uniqueIndex("order_items_order_variant_uk").on(
       t.orderId,
       t.productVariantId,
@@ -1228,6 +1238,14 @@ export const refundItemTable = pgTable(
       .references(() => orderItemTable.id, { onDelete: "cascade" }),
     quantity: integer("quantity").notNull(),
     status: refundStatusEnum("status").default("pending").notNull(),
+    originalRequest: jsonb("original_request").$type<{ quantity: number; refundAmount: number; paidRefundAmount: number; coins: number; reason: string; note: string | null }>(),
+    clientRequestId: uuid("client_request_id"),
+    requestFingerprint: text("request_fingerprint"),
+    rejectedAt: timestamp("rejected_at", { withTimezone: true }),
+    rejectedBy: uuid("rejected_by").references(() => accountTable.id),
+    rejectionReason: text("rejection_reason"),
+    rejectionDeadlineBefore: timestamp("rejection_deadline_before", { withTimezone: true }),
+    rejectionDeadlineAfter: timestamp("rejection_deadline_after", { withTimezone: true }),
     reason: text("reason").notNull(),
     note: text("note"),
     refundAmount: doublePrecision("refund_amount"),
@@ -1252,6 +1270,7 @@ export const refundItemTable = pgTable(
       .notNull(),
   },
   (t) => ({
+    requestKey: uniqueIndex("refund_items_item_client_request_uk").on(t.orderItemId, t.clientRequestId),
     orderItemIdIdx: index("refund_items_order_item_id_idx").on(t.orderItemId),
   }),
 );
@@ -1263,6 +1282,8 @@ export const refundLogTable = pgTable(
     refundItemId: uuid("refund_item_id")
       .notNull()
       .references(() => refundItemTable.id, { onDelete: "cascade" }),
+    actorAccountId: uuid("actor_account_id").references(() => accountTable.id),
+    audit: jsonb("audit"),
     status: refundStatusEnum("status").default("pending").notNull(),
     message: text("message"),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -1277,6 +1298,8 @@ export const refundLogTable = pgTable(
 );
 
 export const deliveryTable = pgTable("deliveries", {
+  receivedAt: timestamp("received_at", { withTimezone: true }),
+  receiptEvidence: jsonb("receipt_evidence"),
   id: uuid("id").defaultRandom().primaryKey(),
   orderId: uuid("order_id")
     .notNull()
@@ -2946,3 +2969,33 @@ export type CoinLedgerBackfillCheckpoint =
   typeof coinLedgerBackfillCheckpointTable.$inferSelect;
 export type NewCoinLedgerBackfillCheckpoint =
   typeof coinLedgerBackfillCheckpointTable.$inferInsert;
+
+// Aggregate revisions are independent from chat/notification feed revisions.
+export const userBadgeStateTable = pgTable("user_badge_states", {
+  userId: uuid("user_id").primaryKey().references(() => userTable.id, { onDelete: "cascade" }),
+  version: bigint("version", { mode: "number" }).notNull().default(0),
+  claimableUnopenedBoxes: integer("claimable_unopened_boxes").notNull().default(0),
+  unreadNotifications: integer("unread_notifications").notNull().default(0),
+  unreadChatMessages: integer("unread_chat_messages").notNull().default(0),
+  nextReconcileAt: timestamp("next_reconcile_at", { withTimezone: true }),
+  lastSentVersion: bigint("last_sent_version", { mode: "number" }).notNull().default(0),
+  retryAt: timestamp("retry_at", { withTimezone: true }),
+  failures: integer("failures").notNull().default(0),
+}, (t) => ({
+  dueIdx: index("user_badge_due_idx").on(t.nextReconcileAt),
+  retryIdx: index("user_badge_retry_idx").on(t.retryAt),
+  countsCheck: check("user_badge_counts_ck", sql`${t.claimableUnopenedBoxes} >= 0 and ${t.unreadNotifications} >= 0 and ${t.unreadChatMessages} >= 0`),
+  versionCheck: check("user_badge_version_ck", sql`${t.version} >= 0 and ${t.version} < 9007199254740991 and ${t.lastSentVersion} >= 0 and ${t.lastSentVersion} <= ${t.version} and ${t.failures} >= 0`),
+}));
+
+// Append-only work avoids introducing a shared row lock into domain transactions.
+// Workers acknowledge only captured IDs, never a pre-commit sequence watermark.
+export const userBadgeWorkTable = pgTable("user_badge_work", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => userTable.id, { onDelete: "cascade" }),
+  forceDelivery: boolean("force_delivery").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({ userIdx: index("user_badge_work_user_idx").on(t.userId, t.createdAt) }));
+
+export type UserBadgeState = typeof userBadgeStateTable.$inferSelect;
+export type UserBadgeWork = typeof userBadgeWorkTable.$inferSelect;

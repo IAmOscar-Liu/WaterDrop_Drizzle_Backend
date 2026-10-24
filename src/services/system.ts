@@ -1,5 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
+import { getUserContentAssetPath } from "../lib/userContentAssets";
 import { BANK_ACCOUNT_UPDATE_REMINDER } from "../constants/user";
 import { handleServiceError } from "../lib/error";
 import { ServiceResponse } from "../type/general";
@@ -86,10 +87,7 @@ class SystemService {
 
   async getCustomerSupportContent(): Promise<ServiceResponse<any>> {
     try {
-      const filePath = path.resolve(
-        process.cwd(),
-        "src/assets/json/customer-support-content.json",
-      );
+      const filePath = getUserContentAssetPath("support");
       const content = await fs.readFile(filePath, "utf-8");
 
       return { success: true, data: JSON.parse(content) };

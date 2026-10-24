@@ -1,3 +1,8 @@
+import { isLocalOrDevelopment } from "../lib/env";
+import { isDeepStrictEqual } from "node:util";
+import { createHash } from "node:crypto";
+import { consumingRefundStatuses, refundEligibility, resolveRefundWindow, getRefundExtensionMs } from "../lib/refundEligibility";
+import { lockRefundOrder, refundClock } from "./refundWindow";
 import {
   and,
   count,
@@ -504,14 +509,26 @@ export async function getRefundById(refundItemId: string, accountId: string) {
   return { ...formatRefundRow(row), logs };
 }
 
-export async function createRefundWithChatContext(
-  item: schema.NewRefundItem & {
-    accountId?: string;
-    actor: RefundActor;
-  },
-) {
+export type CreateRefundInput = {
+  orderItemId: string;
+  quantity: number;
+  reason: string;
+  note?: string | null;
+  accountId?: string;
+  clientRequestId?: string;
+  actor: RefundActor;
+};
+export async function createRefundWithChatContext(item: CreateRefundInput) {
+  if (item.actor.kind !== "user") throw new CustomError("Only app users can create refund requests", 403);
+  const allowed = new Set(["orderItemId", "quantity", "reason", "note", "accountId", "clientRequestId", "actor"]);
+  if (Object.keys(item).some(key => !allowed.has(key))) throw new CustomError("Unsupported refund creation field", 400);
   const result = await db.transaction(async (tx) => {
     const scope = await getRefundWriteScope(tx, item.actor);
+    const accountPrincipal = await tx.query.accountTable.findFirst({ columns: { id: true }, where: eq(schema.accountTable.id, item.actor.id) });
+    if (accountPrincipal) throw new CustomError("App user required", 403);
+    const reference = await tx.query.orderItemTable.findFirst({ columns: { orderId: true }, where: eq(schema.orderItemTable.id, item.orderItemId) });
+    if (!reference) throw new CustomError("Order item not found", 404);
+    await lockRefundOrder(tx, reference.orderId);
     // 1. Lock the order item so concurrent refunds cannot over-refund it.
     const [orderItem] = await tx
       .select()
@@ -580,38 +597,24 @@ export async function createRefundWithChatContext(
       });
     }
 
-    // 3. Check that the delivery is delivered before allowing a refund.
-    if (!orderItem.deliveryId) {
-      errors.push({
-        orderItemId: item.orderItemId,
-        reason: "Order item delivery not found",
-      });
-    } else {
-      const [delivery] = await tx
-        .select()
-        .from(schema.deliveryTable)
-        .where(eq(schema.deliveryTable.id, orderItem.deliveryId))
-        .for("update");
-
-      if (!delivery) {
-        errors.push({
-          orderItemId: item.orderItemId,
-          reason: "Delivery not found",
-        });
-      } else if (
-        (process.env.NODE_ENV === "stg" ||
-          process.env.NODE_ENV === "production") &&
-        delivery.status !== "delivered"
-      ) {
-        errors.push({
-          orderItemId: item.orderItemId,
-          reason: "Delivery is not delivered",
-          deliveryStatus: delivery.status,
-        });
+    if (!order || order.userId !== scope.userId) throw new CustomError("Order item not found", 404);
+    const fingerprint = createHash("sha256").update(JSON.stringify({ quantity: item.quantity, reason: item.reason, note: item.note ?? null })).digest("hex");
+    if (item.clientRequestId) {
+      const existing = await tx.query.refundItemTable.findFirst({ where: and(eq(schema.refundItemTable.orderItemId, item.orderItemId), eq(schema.refundItemTable.clientRequestId, item.clientRequestId)) });
+      if (existing) {
+        if (existing.requestFingerprint !== fingerprint) throw new CustomError("Refund request key payload differs", 409, "REFUND_REQUEST_CONFLICT");
+        return { refundItem: existing, notificationContext: undefined, chatMessageInput: undefined };
       }
     }
+    const delivery = orderItem.deliveryId ? await tx.query.deliveryTable.findFirst({ where: eq(schema.deliveryTable.id, orderItem.deliveryId) }) : undefined;
+    const acceptedAt = await refundClock(tx);
+    const rejectedRequests = await tx.query.refundItemTable.findMany({
+      where: and(eq(schema.refundItemTable.orderItemId, orderItem.id), eq(schema.refundItemTable.status, "rejected")),
+    });
+    const eligibility = refundEligibility(order.orderStatus, orderItem, rejectedRequests, acceptedAt, delivery?.status, order.completedAt);
+    if (!eligibility.canRefund) throw new CustomError(eligibility.refundBlockReason!, 409, eligibility.refundBlockReason!);
 
-    // 4. Count existing non-cancelled refunds against this order item.
+    // 4. Count pending, processing, and completed refunds against this order item.
     const [refundedRow] = await tx
       .select({
         quantity: sql<number>`coalesce(sum(${schema.refundItemTable.quantity}), 0)`,
@@ -620,13 +623,13 @@ export async function createRefundWithChatContext(
       .where(
         and(
           eq(schema.refundItemTable.orderItemId, item.orderItemId),
-          ne(schema.refundItemTable.status, "cancelled"),
+          inArray(schema.refundItemTable.status, consumingRefundStatuses),
         ),
       );
 
     const refundedQuantity = Number(refundedRow.quantity);
     const refundAmount = roundToTwoDecimals(
-      item.refundAmount ?? orderItem.unitPriceAtSale,
+      orderItem.unitPriceAtSale,
     );
 
     // 5. Validate the single requested refund item before inserting anything.
@@ -654,7 +657,7 @@ export async function createRefundWithChatContext(
       item.quantity,
       refundAmount,
     );
-    const extraRefundAmount = roundToTwoDecimals(item.extraRefundAmount ?? 0);
+    const extraRefundAmount = 0;
     const cashBreakdown = calculateCashRefundBreakdown(
       refundFinancials.paidRefundAmount,
       extraRefundAmount,
@@ -671,7 +674,11 @@ export async function createRefundWithChatContext(
       cashRefundAmount: cashBreakdown.cashRefundAmount,
       cashRemainderCoins: cashBreakdown.cashRemainderCoins,
       coins: refundFinancials.coins,
-      metadata: item.metadata,
+      originalRequest: { quantity: item.quantity, refundAmount, paidRefundAmount: refundFinancials.paidRefundAmount,
+        coins: refundFinancials.coins, reason: item.reason, note: item.note ?? null },
+      clientRequestId: item.clientRequestId ?? null,
+      requestFingerprint: item.clientRequestId ? fingerprint : null,
+      createdAt: acceptedAt,
     };
 
     // 8. Insert the refund item atomically after validation passes.
@@ -736,65 +743,15 @@ export async function createRefund(
 }
 
 export async function canRefund(orderItemId: string): Promise<boolean> {
-  return db.transaction(async (tx) => {
-    const [orderItem] = await tx
-      .select()
-      .from(schema.orderItemTable)
-      .where(eq(schema.orderItemTable.id, orderItemId))
-      .for("update");
-
-    if (!orderItem) {
-      return false;
-    }
-
-    const [order] = await tx
-      .select()
-      .from(schema.orderTable)
-      .where(eq(schema.orderTable.id, orderItem.orderId))
-      .for("update");
-
-    if (!order || order.orderStatus !== "paid") {
-      return false;
-    }
-
-    if (!orderItem.deliveryId) {
-      return false;
-    }
-
-    const [delivery] = await tx
-      .select()
-      .from(schema.deliveryTable)
-      .where(eq(schema.deliveryTable.id, orderItem.deliveryId))
-      .for("update");
-
-    if (
-      !delivery ||
-      ((process.env.NODE_ENV === "stg" ||
-        process.env.NODE_ENV === "production") &&
-        delivery.status !== "delivered")
-    ) {
-      return false;
-    }
-
-    const [refundedRow] = await tx
-      .select({
-        quantity: sql<number>`coalesce(sum(${schema.refundItemTable.quantity}), 0)`,
-      })
-      .from(schema.refundItemTable)
-      .where(
-        and(
-          eq(schema.refundItemTable.orderItemId, orderItemId),
-          ne(schema.refundItemTable.status, "cancelled"),
-        ),
-      );
-
-    return Number(refundedRow.quantity) < orderItem.quantity;
-  });
+  const item = await db.query.orderItemTable.findFirst({ where: eq(schema.orderItemTable.id, orderItemId), with: { order: true, delivery: true, refundItems: true } });
+  return !!item && refundEligibility(item.order.orderStatus, item, item.refundItems, new Date(), item.delivery?.status, item.order.completedAt).canRefund;
 }
 
 export async function updateRefundItemStatus(
   refundItemId: string,
   updates: {
+    rejectionReason?: string;
+    agreement?: { confirmed: true; note: string };
     status?: schema.RefundItem["status"];
     quantity?: number;
     refundAmount?: number;
@@ -808,6 +765,11 @@ export async function updateRefundItemStatus(
 ) {
   return db.transaction(async (tx) => {
     const scope = await getRefundWriteScope(tx, { kind: "account", id: actorAccountId });
+    const reference = await tx.select({ orderId: schema.orderItemTable.orderId }).from(schema.refundItemTable)
+      .innerJoin(schema.orderItemTable, eq(schema.orderItemTable.id, schema.refundItemTable.orderItemId))
+      .where(eq(schema.refundItemTable.id, refundItemId));
+    if (!reference[0]) throw new CustomError("Refund item not found", 404);
+    await lockRefundOrder(tx, reference[0].orderId);
     // 1. Lock the refund item so completion side effects can only run once.
     const [refundItem] = await tx
       .select()
@@ -829,6 +791,26 @@ export async function updateRefundItemStatus(
       throw new CustomError("Refund item not found", 404);
     }
 
+    if (["completed", "cancelled", "rejected"].includes(refundItem.status)) {
+      const same = Object.entries(updates).every(([key, value]) => value === undefined ||
+        (key === "agreement" ? false : key === "message" ? false : isDeepStrictEqual((refundItem as any)[key], value)));
+      // Replaying a decision may include its original log message/agreement; compare against the latest audit below.
+      const last = await tx.query.refundLogTable.findFirst({ where: eq(schema.refundLogTable.refundItemId, refundItemId), orderBy: (l, { desc }) => [desc(l.createdAt), desc(l.id)] });
+      const replay = Object.entries(updates).every(([key, value]) => value === undefined ||
+        (key === "message" ? value === last?.message : key === "agreement" ? isDeepStrictEqual(value, (last?.audit as any)?.agreement) : isDeepStrictEqual((refundItem as any)[key], value)));
+      if (!same && !replay) throw new CustomError("Terminal refunds cannot be changed", 409, "REFUND_TERMINAL");
+      return { refundItem, notificationContext: undefined };
+    }
+    if (updates.rejectionReason !== undefined && updates.status !== "rejected") throw new CustomError("rejectionReason requires rejected status", 400);
+    if (updates.status === "rejected" && !updates.rejectionReason?.trim()) throw new CustomError("Rejection reason required", 400);
+    if (updates.status === "rejected" && (updates.quantity !== undefined || updates.refundAmount !== undefined || updates.extraRefundAmount !== undefined || updates.agreement !== undefined)) {
+      throw new CustomError("Reject without changing financial fields", 400);
+    }
+    const quantityChanged = updates.quantity !== undefined && updates.quantity !== refundItem.quantity;
+    const baseAmountChanged = updates.refundAmount !== undefined && updates.refundAmount !== refundItem.refundAmount;
+    if ((quantityChanged || baseAmountChanged) && (!updates.agreement?.confirmed || !updates.agreement.note.trim())) {
+      throw new CustomError("Record the buyer agreement before changing quantity or base refund amount", 409, "REFUND_AGREEMENT_REQUIRED");
+    }
     const statusChanged =
       updates.status !== undefined && refundItem.status !== updates.status;
     const financialChanged =
@@ -851,29 +833,7 @@ export async function updateRefundItemStatus(
       updates.note !== undefined ||
       updates.extraRefundAmount !== undefined ||
       updates.metadata !== undefined;
-    const shouldLog = statusChanged || messageChanged;
-
-    // 2. Completed and cancelled refund items are terminal.
-    if (
-      (refundItem.status === "completed" ||
-        refundItem.status === "cancelled") &&
-      statusChanged
-    ) {
-      throw new CustomError(
-        `Cannot change status once refund is ${refundItem.status}`,
-        400,
-      );
-    }
-
-    if (
-      cashBreakdownChanged &&
-      (refundItem.status === "completed" || refundItem.status === "cancelled")
-    ) {
-      throw new CustomError(
-        "Cannot change quantity, refund amount, or extra refund amount once refund is completed or cancelled",
-        400,
-      );
-    }
+    const shouldLog = statusChanged || messageChanged || refundItemChanged;
 
     // 3. If nothing changes, return the current refund item.
     if (!refundItemChanged && !shouldLog) {
@@ -914,6 +874,45 @@ export async function updateRefundItemStatus(
       return { orderItem, order };
     }
 
+    async function getEffectiveWindow() {
+      const context = await getLockedOrderContext();
+      const rejectedRequests = await tx.query.refundItemTable.findMany({
+        where: and(eq(schema.refundItemTable.orderItemId, context.orderItem.id), eq(schema.refundItemTable.status, "rejected")),
+      });
+      return resolveRefundWindow(context.orderItem, rejectedRequests, context.order.completedAt);
+    }
+
+    let rejectionUpdates: Partial<schema.NewRefundItem> = {};
+    if (statusChanged && updates.status === "rejected") {
+      const context = await getLockedOrderContext();
+      const window = await getEffectiveWindow();
+      const previousDeadline = window.refundDeadlineAt;
+      if (!previousDeadline) {
+        throw new CustomError("A known refund window is required before rejection can extend it", 409,
+          isLocalOrDevelopment() ? "PAYMENT_TIME_UNKNOWN" : "RECEIPT_TIME_UNKNOWN");
+      }
+      const rejectedAt = await refundClock(tx);
+      const deadline = new Date(Math.max(previousDeadline.getTime(), rejectedAt.getTime() + getRefundExtensionMs()));
+      if (window.refundWindowSource === "receipt") {
+        await tx.update(schema.orderItemTable).set({ refundDeadlineAt: deadline })
+          .where(eq(schema.orderItemTable.id, context.orderItem.id));
+      }
+      rejectionUpdates = {
+        rejectedAt,
+        rejectedBy: actorAccountId,
+        rejectionReason: updates.rejectionReason!.trim(),
+        rejectionDeadlineBefore: previousDeadline,
+        rejectionDeadlineAfter: deadline,
+      };
+    }
+    if (updates.quantity !== undefined && updates.quantity > refundItem.quantity) {
+      const window = await getEffectiveWindow();
+      const now = await refundClock(tx);
+      if (!window.refundWindowStartsAt || !window.refundDeadlineAt || now < window.refundWindowStartsAt || now >= window.refundDeadlineAt) {
+        throw new CustomError("Cannot increase quantity outside the request window", 409, "REFUND_WINDOW_EXPIRED");
+      }
+    }
+
     let financialUpdates:
       | {
           quantity: number;
@@ -944,7 +943,7 @@ export async function updateRefundItemStatus(
             and(
               eq(schema.refundItemTable.orderItemId, refundItem.orderItemId),
               ne(schema.refundItemTable.id, refundItem.id),
-              ne(schema.refundItemTable.status, "cancelled"),
+              inArray(schema.refundItemTable.status, consumingRefundStatuses),
             ),
           );
 
@@ -1268,6 +1267,7 @@ export async function updateRefundItemStatus(
       [updatedRefundItem] = await tx
         .update(schema.refundItemTable)
         .set({
+          ...rejectionUpdates,
           ...(updates.status !== undefined ? { status: updates.status } : {}),
           ...(financialUpdates
             ? {
@@ -1313,7 +1313,11 @@ export async function updateRefundItemStatus(
       await tx.insert(schema.refundLogTable).values({
         refundItemId,
         status: updatedRefundItem.status,
-        message: updates.message ?? null,
+        message: updates.message ?? (updates.status === "rejected" ? updates.rejectionReason : null),
+        actorAccountId,
+        audit: { before: { quantity: refundItem.quantity, refundAmount: refundItem.refundAmount, extraRefundAmount: refundItem.extraRefundAmount, status: refundItem.status, reason: refundItem.reason, note: refundItem.note, metadata: refundItem.metadata },
+          after: { quantity: updatedRefundItem.quantity, refundAmount: updatedRefundItem.refundAmount, extraRefundAmount: updatedRefundItem.extraRefundAmount, status: updatedRefundItem.status, reason: updatedRefundItem.reason, note: updatedRefundItem.note, metadata: updatedRefundItem.metadata },
+          agreement: updates.agreement ?? null, ...rejectionUpdates },
       });
     }
 

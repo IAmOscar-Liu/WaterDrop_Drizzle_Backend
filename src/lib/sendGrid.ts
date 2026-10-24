@@ -1,7 +1,7 @@
 import sgMail from "@sendgrid/mail";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { ensurePlatformLogo, PLATFORM_LOGO_CONTENT_ID } from "./mailTemplate";
+import { ensurePlatformLogo, HORIZON_LOGO_CONTENT_ID, PLATFORM_LOGO_CONTENT_ID } from "./mailTemplate";
 
 sgMail.setApiKey(process.env.SENDGRID_API_KEY!);
 
@@ -23,6 +23,8 @@ export async function sendEmail({
   if (process.env.NODE_ENV === "test") {
     return { success: true };
   }
+  const isHorizon = fromName === "地平線";
+  const logoFilename = isHorizon ? "horizon_logo.jpg" : "appstore.png";
   const msg = {
     to,
     from: {
@@ -30,18 +32,18 @@ export async function sendEmail({
       name: fromName,
     },
     subject,
-    html: ensurePlatformLogo(html),
+    html: ensurePlatformLogo(html, isHorizon ? "地平線" : "水滴"),
     ...(disableTracking ? { trackingSettings: { clickTracking: { enable: false, enableText: false }, openTracking: { enable: false } } } : {}),
   };
   try {
     // Source assets remain under src for both tsx and compiled dist execution.
     const attachments = [{
-      content: (await readFile(resolve(__dirname, "../../src/assets/images/appstore.png"))).toString("base64"),
-      filename: "appstore.png",
-      type: "image/png",
+      content: (await readFile(resolve(__dirname, "../../src/assets/images", logoFilename))).toString("base64"),
+      filename: logoFilename,
+      type: isHorizon ? "image/jpeg" : "image/png",
       disposition: "inline",
       // SendGrid passes plain attachment objects through without renaming keys.
-      content_id: PLATFORM_LOGO_CONTENT_ID,
+      content_id: isHorizon ? HORIZON_LOGO_CONTENT_ID : PLATFORM_LOGO_CONTENT_ID,
     }];
     await sgMail.send({ ...msg, attachments });
     return { success: true };

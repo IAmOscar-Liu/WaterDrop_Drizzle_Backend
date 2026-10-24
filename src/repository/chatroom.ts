@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { visibleChatOrder } from "../lib/chatOrder";
+import { findReusableProductChatroom } from "./orderChatroom";
 import { decodeChatCursor, encodeChatCursor } from "../lib/chatCursor";
 import { appendChatEvent, canonicalChatMessage, chatListState, lockChatFeed, lockRoomFeed, publishChatRead, publishChatRoom, readChatSummaries, listChatSnapshot, visibleChatRoomCondition } from "./chatroomSync";
 import {
@@ -253,6 +255,21 @@ export async function findOrCreateChatRoom({
     let [existingRoom] = await tx.select().from(schema.chatRoomTable)
       .where(getChatRoomLookupCondition(lookup)).for("update");
 
+    if ((!lookup.orderId || !existingRoom) && lookup.accountId && lookup.productId && lookup.productVariantId) {
+      const reusable = await findReusableProductChatroom(tx, {
+        userId, accountId: lookup.accountId, productId: lookup.productId,
+        productVariantId: lookup.productVariantId,
+      });
+      if (reusable) {
+        existingRoom = reusable;
+        if (lookup.orderId && reusable.orderId !== lookup.orderId) {
+          [existingRoom] = await tx.update(schema.chatRoomTable).set({ orderId: lookup.orderId })
+            .where(eq(schema.chatRoomTable.id, reusable.id)).returning();
+          roomChanged = true;
+        }
+      }
+    }
+
     if (!existingRoom && lookup.orderId) {
       [existingRoom] = await tx.select().from(schema.chatRoomTable)
         .where(getChatRoomLookupCondition({ ...lookup, orderId: null })).for("update");
@@ -272,7 +289,12 @@ export async function findOrCreateChatRoom({
     if (existingRoom) {
       const room = await activateChatRoom(existingRoom);
       if (roomChanged) await publishChatRoom(tx, room.id);
-      return legacyChatRoom((await tx.query.chatRoomTable.findFirst({ where: eq(schema.chatRoomTable.id, room.id) }))!);
+      const fresh = (await tx.query.chatRoomTable.findFirst({
+        where: eq(schema.chatRoomTable.id, room.id),
+        with: { order: { columns: { orderStatus: true } } },
+      }))!;
+      const { order: associatedOrder, ...details } = fresh;
+      return legacyChatRoom({ ...details, orderId: visibleChatOrder(associatedOrder) ? fresh.orderId : null });
     }
 
     const [newRoom] = await tx
@@ -299,10 +321,13 @@ export async function getChatRoomById(chatRoomId: string, actor: ChatroomActor) 
         }),
       },
       variant: true,
+      order: { columns: { orderStatus: true } },
     },
     where: accessibleRoomCondition(chatRoomId, access),
   });
-  return room ? legacyChatRoom(room) : room;
+  if (!room) return room;
+  const { order, ...details } = room;
+  return legacyChatRoom({ ...details, orderId: visibleChatOrder(order) ? room.orderId : null });
 }
 
 /**
@@ -682,12 +707,13 @@ export async function listChatRooms({
     const {
       unreadCount,
       lastMessageId,
-      order,
+      order: storedOrder,
       product: roomProduct,
       variant,
       ...rest
     } = room;
 
+    const order = visibleChatOrder(storedOrder);
     let delivery = null;
     if (order && room.productId && room.productVariantId) {
       const item = order.items.find(
@@ -713,6 +739,7 @@ export async function listChatRooms({
 
     return {
       ...legacyChatRoom(rest),
+      orderId: order?.id ?? null,
       product,
       totalUnread: Number(unreadCount),
       lastMessage: lastMessage ? legacyChatMessage(lastMessage) : null,
@@ -882,12 +909,13 @@ export async function listAdminChatRooms({
     const {
       unreadCount,
       lastMessageId,
-      order,
+      order: storedOrder,
       product: roomProduct,
       variant,
       ...rest
     } = room;
 
+    const order = visibleChatOrder(storedOrder);
     let delivery = null;
     if (order && room.productId && room.productVariantId) {
       const item = order.items.find(
@@ -913,6 +941,7 @@ export async function listAdminChatRooms({
 
     return {
       ...legacyChatRoom(rest),
+      orderId: order?.id ?? null,
       product,
       totalUnread: Number(unreadCount),
       lastMessage: lastMessage ? legacyChatMessage(lastMessage) : null,

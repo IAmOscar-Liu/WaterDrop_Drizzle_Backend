@@ -1,13 +1,16 @@
 import type { Order, OrderItem } from "../db/schema";
 
 export const PLATFORM_LOGO_CONTENT_ID = "waterdrop-platform-logo";
+export const HORIZON_LOGO_CONTENT_ID = "horizon-platform-logo";
 const platformLogoHtml = `<img src="cid:${PLATFORM_LOGO_CONTENT_ID}" alt="水滴 Logo" width="80" height="80" style="display:block;width:80px;height:80px;margin-bottom:16px;border:0;border-radius:16px;background-color:#ffffff;" />`;
+const horizonLogoHtml = `<img src="cid:${HORIZON_LOGO_CONTENT_ID}" alt="地平線 Logo" width="80" height="80" style="display:block;width:80px;height:80px;margin-bottom:16px;border:0;border-radius:16px;background-color:#ffffff;" />`;
 
 // Templates can position the logo in their header. Other emails get a default header.
-export function ensurePlatformLogo(html: string): string {
-  if (html.includes(`cid:${PLATFORM_LOGO_CONTENT_ID}`)) return html;
+export function ensurePlatformLogo(html: string, brand: "水滴" | "地平線" = "水滴"): string {
+  const contentId = brand === "地平線" ? HORIZON_LOGO_CONTENT_ID : PLATFORM_LOGO_CONTENT_ID;
+  if (html.includes(`cid:${contentId}`)) return html;
 
-  const header = `<div style="padding:24px;background-color:#f4f7fb;">${platformLogoHtml}</div>`;
+  const header = `<div style="padding:24px;background-color:#f4f7fb;">${brand === "地平線" ? horizonLogoHtml : platformLogoHtml}</div>`;
   if (/<body\b[^>]*>/i.test(html)) {
     return html.replace(/<body\b[^>]*>/i, (bodyTag) => `${bodyTag}${header}`);
   }

@@ -1,3 +1,5 @@
+import { refundEligibility } from "../lib/refundEligibility";
+import { paymentProcessingExpiryCutoff } from "../lib/orderExpiry";
 import {
   and,
   asc,
@@ -32,6 +34,7 @@ import {
 } from "./utils/query";
 import { recordAdminActivityWithTx } from "./adminActivity";
 import { resolveAdminSellerScope } from "./adminScope";
+import { linkOrderChatrooms, publishOrderChatrooms } from "./orderChatroom";
 
 type OrderItemWithProductVariant = {
   product?: schema.Product | null;
@@ -269,6 +272,12 @@ export async function createOrder({
       }),
     ]);
 
+    await linkOrderChatrooms(tx, newOrder, items.map((item) => ({
+      productId: item.productId,
+      productVariantId: item.productVariantId!,
+      sellerId: productMap.get(item.productId)!.sellerId,
+    })));
+
     return tx.query.orderTable.findFirst({
       where: eq(schema.orderTable.id, newOrder.id),
       with: {
@@ -341,7 +350,7 @@ export async function updateOrderStatus({
   status: Exclude<schema.NewOrder["orderStatus"], undefined>;
   metadata?: schema.NewOrder["metadata"];
   paymentInfo?: schema.NewOrder["paymentInfo"];
-}) {
+}, expirationGuard?: { status: "pending" | "payment-processing"; createdBefore: Date }) {
   return db.transaction(async (tx) => {
     await tx
       .select({ id: schema.orderTable.id })
@@ -365,6 +374,14 @@ export async function updateOrderStatus({
     });
 
     if (!order) throw new CustomError("Order not found", 404);
+
+    // The candidate query runs before this lock. A payment or another worker
+    // may have finished meanwhile; only expire an order that is still due.
+    if (expirationGuard && (
+      status !== "expired" ||
+      order.orderStatus !== expirationGuard.status ||
+      order.createdAt.getTime() >= expirationGuard.createdBefore.getTime()
+    )) return undefined;
 
     const coinInfo: Record<string, number> = {};
 
@@ -660,7 +677,8 @@ export async function updateOrderStatus({
       .set({
         orderStatus: status,
         updatedAt: new Date(),
-        completedAt: status === "paid" ? new Date() : null,
+        // Preserve first payment confirmation; callback retries must not restart refund windows.
+        completedAt: order.completedAt ?? (status === "paid" ? new Date() : null),
         ...(paymentInfo ? { paymentInfo } : {}),
         ...(Object.keys(coinInfo).length > 0 ? { coinInfo } : {}),
         ...(metadata
@@ -671,6 +689,11 @@ export async function updateOrderStatus({
           : {}),
       })
       .where(eq(schema.orderTable.id, orderId));
+
+    const nextMerchantTradeNo = metadata ? (metadata as any).MerchantTradeNo ?? null : order.merchantTradeNo;
+    if (order.orderStatus !== status || order.merchantTradeNo !== nextMerchantTradeNo) {
+      await publishOrderChatrooms(tx, order);
+    }
 
     if (order.orderStatus !== status) {
       const sellerIds = [
@@ -761,14 +784,16 @@ export async function expirePendingOrders(expireInMs: number) {
 
   const results = await Promise.all(
     expiredOrders.map((order) =>
-      updateOrderStatus({ orderId: order.id, status: "expired" }),
+      updateOrderStatus({ orderId: order.id, status: "expired" }, {
+        status: "pending", createdBefore: cutoffTime,
+      }),
     ),
   );
-  return results;
+  return results.filter((order) => order !== undefined);
 }
 
-export async function expirePaymentProcessingOrders(expireInMs: number) {
-  const cutoffTime = new Date(Date.now() - expireInMs);
+export async function expirePaymentProcessingOrders(now = new Date()) {
+  const cutoffTime = paymentProcessingExpiryCutoff(now);
 
   const expiredOrders = await db
     .select({ id: schema.orderTable.id })
@@ -782,10 +807,12 @@ export async function expirePaymentProcessingOrders(expireInMs: number) {
 
   const results = await Promise.all(
     expiredOrders.map((order) =>
-      updateOrderStatus({ orderId: order.id, status: "expired" }),
+      updateOrderStatus({ orderId: order.id, status: "expired" }, {
+        status: "payment-processing", createdBefore: cutoffTime,
+      }),
     ),
   );
-  return results;
+  return results.filter((order) => order !== undefined);
 }
 
 export interface ListOrdersParams extends PaginationParams {
@@ -1029,60 +1056,6 @@ export async function getOrderStatusById(orderId: string) {
   return order?.orderStatus;
 }
 
-type RefundableOrder = Pick<schema.Order, "orderStatus">;
-
-type RefundableOrderDelivery = Pick<schema.Delivery, "id" | "status">;
-
-type RefundableOrderItem = Pick<schema.OrderItem, "deliveryId" | "quantity"> & {
-  refundItems: Pick<schema.RefundItem, "quantity" | "status">[];
-};
-
-function getRefundedQuantity(item: RefundableOrderItem) {
-  return item.refundItems.reduce(
-    (total, refundItem) =>
-      refundItem.status === "cancelled" ? total : total + refundItem.quantity,
-    0,
-  );
-}
-
-function isRefundableOrderDelivery(
-  order: RefundableOrder,
-  delivery?: RefundableOrderDelivery,
-) {
-  if (order.orderStatus !== "paid" || !delivery) {
-    return false;
-  }
-
-  if (
-    (process.env.NODE_ENV === "stg" || process.env.NODE_ENV === "production") &&
-    delivery.status !== "delivered"
-  ) {
-    return false;
-  }
-
-  return true;
-}
-
-function getRemainingRefundQuantity(
-  order: RefundableOrder,
-  delivery: RefundableOrderDelivery | undefined,
-  item: RefundableOrderItem,
-) {
-  if (!item.deliveryId || !isRefundableOrderDelivery(order, delivery)) {
-    return 0;
-  }
-
-  return Math.max(item.quantity - getRefundedQuantity(item), 0);
-}
-
-function canRefundOrderItem(
-  order: RefundableOrder,
-  delivery: RefundableOrderDelivery | undefined,
-  item: RefundableOrderItem,
-) {
-  return getRemainingRefundQuantity(order, delivery, item) > 0;
-}
-
 export async function getOrderById(
   orderId: string,
   options?: { userId?: string; includeUser?: boolean },
@@ -1179,12 +1152,7 @@ export async function getOrderById(
 
       return {
         ...itemWithVariantAtSale,
-        canRefund: canRefundOrderItem(order, delivery, item),
-        remainingRefundQuantity: getRemainingRefundQuantity(
-          order,
-          delivery,
-          item,
-        ),
+        ...refundEligibility(order.orderStatus, item, item.refundItems, new Date(), delivery?.status, order.completedAt),
       };
     }),
     deliveries: order.deliveries.map((delivery) => ({

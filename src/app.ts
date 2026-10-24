@@ -1,3 +1,4 @@
+import AppBadgeRouter from "./routers/appBadge";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import express from "express";
@@ -45,6 +46,7 @@ app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.use(morgan(process.env.NODE_ENV === "test" ? "tiny" : "dev"));
 app.use("/api/admin", AdminRouter);
 app.use("/api/auth", AuthRouter);
+app.use("/api/app", AppBadgeRouter);
 app.use("/api/treasureBox", TreasureBoxRouter);
 app.use("/api/advertisement", AdvertisementRouter);
 app.use("/api/product", ProductRouter);

@@ -4,6 +4,7 @@ import "./lib/env";
 import app from "./app";
 import { ensureEcpayStoreListOnStartup } from "./lib/initEcpayStoreList";
 import {
+  appBadgeTask,
   accountRecoveryCleanupTask,
   coinLedgerMaintenanceTask,
   chatSyncCleanupTask,
@@ -14,6 +15,7 @@ import {
   deleteIdempotencyKeysTask,
   deleteUnusedDeviceTokensTask,
   expireOrdersTask,
+  expirePaymentProcessingOrdersTask,
   fetchEcPayStoreListTask,
   monthlyCoinExpirationNotificationTask,
   monthlyCoinStatExpirationTask,
@@ -22,6 +24,7 @@ import {
 
 const PORT = process.env.PORT ?? 4000;
 
+appBadgeTask.start();
 accountRecoveryCleanupTask.start();
 chatSyncCleanupTask.start();
 notificationSyncCleanupTask.start();
@@ -33,6 +36,7 @@ monthlyCoinStatExpirationTask.start();
 monthlyCoinExpirationNotificationTask.start();
 deleteUnusedDeviceTokensTask.start();
 expireOrdersTask.start();
+expirePaymentProcessingOrdersTask.start();
 pollLogisticsTradeInfoTask.start();
 fetchEcPayStoreListTask.start();
 deleteIdempotencyKeysTask.start();

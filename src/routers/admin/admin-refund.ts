@@ -10,7 +10,7 @@ const router = Router();
  * @swagger
  * tags:
  *   name: Refund
- *   description: Refund management for administrators
+ *   description: Refund review for active admins and owning sellers. Only app buyers create requests; POST /api/admin/refund is retired.
  *
  * components:
  *   schemas:
@@ -72,11 +72,54 @@ const router = Router();
  *           type: integer
  *         status:
  *           type: string
- *           enum: [pending, processing, completed, cancelled]
+ *           enum: [pending, processing, completed, cancelled, rejected]
  *         reason:
  *           type: string
  *         note:
  *           type: string
+ *           nullable: true
+ *         clientRequestId:
+ *           type: string
+ *           format: uuid
+ *           nullable: true
+ *           description: Optional buyer retry key, scoped to the order item.
+ *         originalRequest:
+ *           type: object
+ *           nullable: true
+ *           description: Immutable initial request; null on legacy rows. Amounts are server-calculated.
+ *           properties:
+ *             quantity:
+ *               type: integer
+ *             refundAmount:
+ *               type: number
+ *               description: Original unit refund amount.
+ *             paidRefundAmount:
+ *               type: number
+ *             coins:
+ *               type: number
+ *             reason:
+ *               type: string
+ *             note:
+ *               type: string
+ *               nullable: true
+ *         rejectedAt:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *         rejectedBy:
+ *           type: string
+ *           format: uuid
+ *           nullable: true
+ *         rejectionReason:
+ *           type: string
+ *           nullable: true
+ *         rejectionDeadlineBefore:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *         rejectionDeadlineAfter:
+ *           type: string
+ *           format: date-time
  *           nullable: true
  *         refundAmount:
  *           type: number
@@ -127,10 +170,44 @@ const router = Router();
  *           format: uuid
  *         status:
  *           type: string
- *           enum: [pending, processing, completed, cancelled]
+ *           enum: [pending, processing, completed, cancelled, rejected]
  *         message:
  *           type: string
  *           nullable: true
+ *         actorAccountId:
+ *           type: string
+ *           format: uuid
+ *           nullable: true
+ *         audit:
+ *           type: object
+ *           nullable: true
+ *           description: Server-recorded before/after values, optional agreement attestation and rejection timing. Legacy logs may be null.
+ *           properties:
+ *             before:
+ *               type: object
+ *             after:
+ *               type: object
+ *             agreement:
+ *               type: object
+ *               properties:
+ *                 confirmed:
+ *                   type: boolean
+ *                 note:
+ *                   type: string
+ *             rejectedAt:
+ *               type: string
+ *               format: date-time
+ *             rejectedBy:
+ *               type: string
+ *               format: uuid
+ *             rejectionReason:
+ *               type: string
+ *             rejectionDeadlineBefore:
+ *               type: string
+ *               format: date-time
+ *             rejectionDeadlineAfter:
+ *               type: string
+ *               format: date-time
  *         createdAt:
  *           type: string
  *           format: date-time
@@ -296,7 +373,7 @@ const router = Router();
  *         name: status
  *         schema:
  *           type: string
- *           enum: [pending, processing, completed, cancelled]
+ *           enum: [pending, processing, completed, cancelled, rejected]
  *     responses:
  *       '401':
  *         description: Missing or invalid bearer token.
@@ -365,96 +442,11 @@ router.get(
 
 /**
  * @swagger
- * /api/admin/refund:
- *   post:
- *     tags: [Refund]
- *     summary: Create a refund item
- *     description: Only active platform admins and sellers can create refunds; sellers are limited to their own products and employees receive 403. Ownership is derived from the order item product, not client accountId. A successful request automatically creates an initial pending refund log with message 申請退貨, then sends the user a fire-and-forget push notification and email linked to the order detail page. paidRefundAmount plus extraRefundAmount is rounded down to whole TWD in cashRefundAmount; the fractional TWD remainder is exposed as cashRemainderCoins at NT$1 = 10 coins and is credited only when the refund completes.
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [orderItemId, quantity]
- *             properties:
- *               orderItemId:
- *                 type: string
- *                 format: uuid
- *               quantity:
- *                 type: integer
- *               reason:
- *                 type: string
- *                 description: Optional refund reason.
- *               note:
- *                 type: string
- *                 nullable: true
- *               refundAmount:
- *                 type: number
- *                 description: Unit refund amount. Rounded to two decimal places, must be greater than 0, and defaults to the order item's unitPriceAtSale when omitted.
- *               extraRefundAmount:
- *                 type: number
- *                 description: Additional refund amount for shipping, fees, or manual adjustments. Rounded to two decimal places and defaults to 0.
- *               metadata:
- *                 type: object
- *                 nullable: true
- *     responses:
- *       '401':
- *         description: Missing or invalid bearer token.
- *       '403':
- *         description: Account is inactive or deleted, seller scope is unavailable, or an employee attempted a write.
- *       '200':
- *         description: The created refund item.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 data:
- *                   $ref: '#/components/schemas/RefundItem'
- *             example:
- *               success: true
- *               data:
- *                 id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
- *                 orderItemId: cccccccc-cccc-4ccc-8ccc-cccccccccccc
- *                 quantity: 1
- *                 status: pending
- *                 reason: Partial refund
- *                 note: null
- *                 refundAmount: 71.33
- *                 paidRefundAmount: 57.06
- *                 extraRefundAmount: 0
- *                 cashRefundAmount: 57
- *                 cashRemainderCoins: 0.6
- *                 coins: 142.66
- *                 returnableCoins: null
- *                 metadata: null
- *                 summary: null
- *                 createdAt: "2026-09-13T04:51:21.827Z"
- *                 updatedAt: "2026-09-13T04:51:21.827Z"
- *       '400':
- *         description: Invalid quantity, refund amount, order, or delivery state.
- *       '404':
- *         description: Order item, order, or product not found, or the product belongs to another seller.
- */
-router.post(
-  "/",
-  isAuth,
-  validateZod({ body: adminValidation.refund.createBody }),
-  RefundController.createRefund,
-);
-
-/**
- * @swagger
  * /api/admin/refund/{refundItemId}/status:
  *   patch:
  *     tags: [Refund]
  *     summary: Update refund item
- *     description: Only active platform admins and sellers can update refunds; sellers are limited to their own products and employees receive 403. These checks apply to every field, log-only updates, and no-op requests. Status, quantity, refundAmount, reason, note, extraRefundAmount, and metadata are mutable. Message is independent from the refund note and is used only for refund logs. A log is appended only when status actually changes or the provided message differs from the latest log message. An actual status change triggers a fire-and-forget push notification linked to order detail; message-only and other field updates do not notify, and status changes do not send email. Quantity, refundAmount, and extraRefundAmount can only be changed while the current refund status is pending or processing. Completed and cancelled statuses are terminal and cannot transition to another status. Completion credits cashRemainderCoins as a product-seller-funded coin lot that expires at the end of the next month in the user's timezone.
+ *     description: Only active platform admins and owning sellers may review existing requests; employees are read-only. All checks also apply to retries. Requests accepted within the item deadline remain reviewable after expiry. Completed, cancelled and rejected requests are immutable; matching terminal retries return 200 without repeating effects, conflicting writes return 409. Explicit rejection requires rejectionReason and atomically extends the item deadline to max(current deadline, rejection time + 120 hours, or 12 hours in local/development), releases its quantity and records the actor/audit. Rejection cannot be combined with financial edits. Quantity or base amount changes require a buyer-agreement attestation; a quantity increase also requires an open effective request window in every environment. Local/development use 24-hour new pickup windows or payment confirmation plus 24 hours when no receipt window exists; historical stored deadlines are preserved; rejection extensions persist in the decision deadline-before/after fields without fabricating receipt timestamps. If no receipt or payment time is known, local/development rejection returns 409 PAYMENT_TIME_UNKNOWN. Agreed partial completion consumes only the final quantity and does not extend time for the rest. Extra compensation is admin/seller-controlled. All actual field edits are logged. Status changes enqueue existing notification workflows; this endpoint does not execute an ECPay cash refund. Existing coin and inventory completion effects remain unchanged. See ADMIN_REFUND_STRATEGY_API_CHANGES.md for rollout and receipt coverage.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -470,11 +462,30 @@ router.post(
  *         application/json:
  *           schema:
  *             type: object
- *             description: Provide at least one of status, quantity, refundAmount, reason, note, message, extraRefundAmount, or metadata.
+ *             additionalProperties: false
+ *             description: Provide at least one editable field. Unknown fields are rejected. Do not send server-owned timestamps, actors, originalRequest or audit.
  *             properties:
+ *               rejectionReason:
+ *                 type: string
+ *                 minLength: 1
+ *                 maxLength: 2000
+ *                 description: Required only with rejected status. Decision time starts the 120-hour extension (12 hours in local/development), independent of notification delivery. The effective deadline is never shortened by rejection.
+ *               agreement:
+ *                 type: object
+ *                 additionalProperties: false
+ *                 required: [confirmed, note]
+ *                 description: Required for actual quantity or base refundAmount changes. Seller/admin attests that the buyer agreed in chat; this is not a buyer signature.
+ *                 properties:
+ *                   confirmed:
+ *                     type: boolean
+ *                     enum: [true]
+ *                   note:
+ *                     type: string
+ *                     minLength: 1
+ *                     maxLength: 2000
  *               status:
  *                 type: string
- *                 enum: [pending, processing, completed, cancelled]
+ *                 enum: [pending, processing, completed, cancelled, rejected]
  *                 description: When status changes to completed, backend restocks the linked orderItem.productVariantId.
  *               quantity:
  *                 type: integer
@@ -548,6 +559,8 @@ router.post(
  *         description: Invalid transition, quantity, or refund amount.
  *       '404':
  *         description: Refund item, order item, order, product, or user not found, or the refund belongs to another seller.
+ *       '409':
+ *         description: REFUND_TERMINAL, REFUND_AGREEMENT_REQUIRED, REFUND_WINDOW_EXPIRED, RECEIPT_TIME_UNKNOWN, or PAYMENT_TIME_UNKNOWN. Error JSON includes code; refresh detail before retrying.
  *       '503':
  *         description: Coin ledger is required to complete a fractional-cash refund.
  */

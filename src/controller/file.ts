@@ -1,13 +1,11 @@
 import { Request, Response } from "express";
-import path from "path";
+import { getUserContentAssetPath } from "../lib/userContentAssets";
 import fileService from "../services/file";
 import { sendJsonResponse } from "../lib/general";
 
 class FileController {
   renderUserConsentDocument(_: Request, res: Response) {
-    res.sendFile(
-      path.resolve(process.cwd(), "src/assets/html/user-consent.html")
-    );
+    res.sendFile(getUserContentAssetPath("consent"));
   }
 
   async uploadImage(req: Request, res: Response) {

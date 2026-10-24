@@ -1,3 +1,5 @@
+import { captureReceipt, lockRefundOrder, ReceiptSource } from "./refundWindow";
+import { refundEligibility, isAwaitingPickup } from "../lib/refundEligibility";
 import {
   and,
   count,
@@ -29,6 +31,7 @@ import {
 import { minimumVariantPrice } from "./utils/product";
 import { recordAdminActivityWithTx } from "./adminActivity";
 import { resolveAdminSellerScope } from "./adminScope";
+import { publishDeliveryChatrooms } from "./orderChatroom";
 
 type DeliveryItemWithProductVariant = schema.OrderItem & {
   product?: schema.Product | null;
@@ -72,21 +75,19 @@ function withVariantAtSaleDisplay<T extends DeliveryItemWithProductVariant>(
 export async function createDelivery(
   deliveryData: schema.NewDelivery,
   products?: { productId: string; variantId: string }[],
+  receiptSource?: ReceiptSource,
 ) {
   return db.transaction(async (tx) => {
-    const [newDelivery] = await tx
+    await lockRefundOrder(tx, deliveryData.orderId);
+    const { receivedAt: _receivedAt, receiptEvidence: _evidence, ...safeData } = deliveryData;
+    if (receiptSource && safeData.status === "delivered" && isAwaitingPickup({ ...safeData, LogisticsSubType: safeData.LogisticsSubType ?? null, RtnCode: safeData.RtnCode ?? null })) {
+      safeData.status = "ready_for_pickup";
+    }
+    let [newDelivery] = await tx
       .insert(schema.deliveryTable)
-      .values(deliveryData)
+      .values(safeData)
       .returning();
 
-    if (newDelivery.RtnCode && newDelivery.RtnMsg) {
-      await tx.insert(schema.deliveryLogTable).values({
-        deliveryId: newDelivery.id,
-        status: newDelivery.status,
-        RtnCode: newDelivery.RtnCode,
-        RtnMsg: newDelivery.RtnMsg,
-      });
-    }
 
     if (products && products.length > 0) {
       if (
@@ -116,6 +117,19 @@ export async function createDelivery(
         );
     }
 
+    newDelivery = await captureReceipt(tx, newDelivery, receiptSource);
+    if (newDelivery.RtnCode && newDelivery.RtnMsg) {
+      await tx.insert(schema.deliveryLogTable).values({
+        deliveryId: newDelivery.id,
+        status: newDelivery.status,
+        RtnCode: newDelivery.RtnCode,
+        RtnMsg: newDelivery.RtnMsg,
+      });
+    }
+
+    // Publish after item association and receipt/log writes so the event carries
+    // the final delivery summary, in the same transaction as the delivery.
+    await publishDeliveryChatrooms(tx, newDelivery);
     return newDelivery;
   });
 }
@@ -133,11 +147,15 @@ export async function updateDeliveryWithNotificationContext(
   deliveryId: string,
   updates: Omit<
     Partial<schema.NewDelivery>,
-    "id" | "orderId" | "createdAt" | "updatedAt"
+    "id" | "orderId" | "createdAt" | "updatedAt" | "receivedAt" | "receiptEvidence"
   >,
   actorAccountId?: string,
+  receiptSource?: ReceiptSource,
 ) {
   const result = await db.transaction(async (tx) => {
+    const reference = await tx.query.deliveryTable.findFirst({ columns: { orderId: true }, where: eq(schema.deliveryTable.id, deliveryId) });
+    if (!reference) return null;
+    await lockRefundOrder(tx, reference.orderId);
     const [existingDelivery] = await tx
       .select()
       .from(schema.deliveryTable)
@@ -151,11 +169,16 @@ export async function updateDeliveryWithNotificationContext(
       orderBy: (logs, { desc }) => [desc(logs.createdAt)],
     });
 
-    const [updatedDelivery] = await tx
+    if (receiptSource && updates.status === "delivered" && isAwaitingPickup({ ...existingDelivery, ...updates })) {
+      updates = { ...updates, status: "ready_for_pickup" };
+    }
+    let [updatedDelivery] = await tx
       .update(schema.deliveryTable)
-      .set({ ...updates, updatedAt: new Date() })
+      .set({ ...updates, receivedAt: existingDelivery.receivedAt, receiptEvidence: existingDelivery.receiptEvidence, updatedAt: new Date() })
       .where(eq(schema.deliveryTable.id, deliveryId))
       .returning();
+
+    updatedDelivery = await captureReceipt(tx, updatedDelivery, receiptSource, existingDelivery);
 
     const shouldLog =
       (updates.status !== undefined && updates.status !== latestLog?.status) ||
@@ -205,6 +228,11 @@ export async function updateDeliveryWithNotificationContext(
       );
     }
 
+    const chatFields = ["merchantTradeNo", "LogisticsType", "LogisticsSubType", "status", "RtnCode", "RtnMsg"] as const;
+    if (chatFields.some((field) => existingDelivery[field] !== updatedDelivery[field])) {
+      await publishDeliveryChatrooms(tx, updatedDelivery);
+    }
+
     return { updatedDelivery, latestLog, shouldLog };
   });
 
@@ -236,58 +264,6 @@ export async function updateDelivery(
   );
 
   return result?.delivery ?? null;
-}
-
-type RefundableDelivery = Pick<schema.Delivery, "status"> & {
-  order: Pick<schema.Order, "orderStatus">;
-};
-
-type RefundableDeliveryItem = Pick<
-  schema.OrderItem,
-  "deliveryId" | "quantity"
-> & {
-  refundItems: Pick<schema.RefundItem, "quantity" | "status">[];
-};
-
-function isRefundableDelivery(delivery: RefundableDelivery) {
-  if (delivery.order.orderStatus !== "paid") {
-    return false;
-  }
-
-  if (
-    (process.env.NODE_ENV === "stg" || process.env.NODE_ENV === "production") &&
-    delivery.status !== "delivered"
-  ) {
-    return false;
-  }
-
-  return true;
-}
-
-function getRefundedQuantity(item: RefundableDeliveryItem) {
-  return item.refundItems.reduce(
-    (total, refundItem) =>
-      refundItem.status === "cancelled" ? total : total + refundItem.quantity,
-    0,
-  );
-}
-
-function getRemainingRefundQuantity(
-  delivery: RefundableDelivery,
-  item: RefundableDeliveryItem,
-) {
-  if (!isRefundableDelivery(delivery) || !item.deliveryId) {
-    return 0;
-  }
-
-  return Math.max(item.quantity - getRefundedQuantity(item), 0);
-}
-
-function canRefundDeliveryItem(
-  delivery: RefundableDelivery,
-  item: RefundableDeliveryItem,
-) {
-  return getRemainingRefundQuantity(delivery, item) > 0;
 }
 
 export async function getDeliveryById(deliveryId: string) {
@@ -337,8 +313,7 @@ export async function getDeliveryById(deliveryId: string) {
 
       return {
         ...itemWithVariantAtSale,
-        canRefund: canRefundDeliveryItem(delivery, item),
-        remainingRefundQuantity: getRemainingRefundQuantity(delivery, item),
+        ...refundEligibility(delivery.order.orderStatus, item, item.refundItems, new Date(), delivery.status, delivery.order.completedAt),
       };
     }),
   };

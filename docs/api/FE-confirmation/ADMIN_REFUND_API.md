@@ -1,5 +1,7 @@
 # Admin Refund API Guide
 
+> **Superseded for the refund-strategy rollout (2026-10-22):** use [Admin refund strategy changes](ADMIN_REFUND_STRATEGY_API_CHANGES.md). Admin POST creation is removed; new rejection, agreement, immutable terminal-state and deadline rules override the legacy examples below. These older examples do not authorize app financial inputs.
+
 This document describes the current backend behavior for the admin/frontend
 refund workflow. It is intended as the handoff document for frontend
 implementation.

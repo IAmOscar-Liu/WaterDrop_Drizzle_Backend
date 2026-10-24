@@ -1,3 +1,4 @@
+import { invalidateBadge } from "./appBadge";
 import { and, asc, desc, eq, gt, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import * as schema from "../db/schema";
 import {
@@ -430,6 +431,7 @@ export async function expireUnclaimedTreasureBoxes(limit = 200) {
             settledAt: new Date(),
           })
           .where(eq(schema.treasureBoxTable.id, box.id));
+        await invalidateBadge(tx, box.userId);
         return true;
       });
       return didExpire ? candidate.id : null;

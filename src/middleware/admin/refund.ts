@@ -12,6 +12,7 @@ import {
 } from "./common";
 
 const refundStatus = z.enum([
+  "rejected",
   "pending",
   "processing",
   "completed",
@@ -30,19 +31,10 @@ export const refundValidation = {
   refundItemIdParams: z.object({
     refundItemId: uuid,
   }),
-  // The authenticated actor and product ownership are checked in the repository.
-  // Actor, role, and seller scope cannot be supplied by the client.
-  createBody: z.object({
-    orderItemId: uuid,
-    quantity: positiveInt,
-    reason: nonEmptyString.optional(),
-    note: z.string().optional().nullable(),
-    refundAmount: positiveNumber.optional(),
-    extraRefundAmount: nonNegativeNumber.optional(),
-    metadata: jsonObject.optional().nullable(),
-  }),
   updateStatusBody: requireAtLeastOneField(
     z.object({
+      rejectionReason: nonEmptyString.max(2000).optional(),
+      agreement: z.object({ confirmed: z.literal(true), note: nonEmptyString.max(2000) }).strict().optional(),
       status: refundStatus.optional(),
       quantity: positiveInt.optional(),
       refundAmount: positiveNumber.optional(),
@@ -51,6 +43,6 @@ export const refundValidation = {
       message: nonEmptyString.optional(),
       extraRefundAmount: nonNegativeNumber.optional(),
       metadata: jsonObject.optional().nullable(),
-    }),
+    }).strict(),
   ),
 };

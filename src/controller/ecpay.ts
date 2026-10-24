@@ -179,7 +179,7 @@ class EcPayController {
           const nonCvsPickupGroup = (result?.shippingInfo as any)
             ?.nonCvsPickupGroup;
 
-          if (Array.isArray(cvsPickupGroup)) {
+          if (status === "paid" && Array.isArray(cvsPickupGroup)) {
             Promise.allSettled(
               cvsPickupGroup.map((info: any) =>
                 ecpayService.createExpressServerReturn({
@@ -190,7 +190,7 @@ class EcPayController {
             );
           }
 
-          if (Array.isArray(nonCvsPickupGroup)) {
+          if (status === "paid" && Array.isArray(nonCvsPickupGroup)) {
             Promise.allSettled(
               nonCvsPickupGroup.map((info: any) => {
                 const { merchantTradeNo, products, ...rest } = info;
@@ -613,11 +613,12 @@ class EcPayController {
         const RtnMsg = getLogisticsStatusText(type, RtnCode);
         const status = getLogisticsStatus(type, RtnCode);
 
-        await deliveryService.updateDelivery(existingDelivery.id, {
+        const result = await deliveryService.updateDelivery(existingDelivery.id, {
           status,
           RtnCode,
           RtnMsg,
-        });
+        }, undefined, "provider_callback");
+        if (!result.success) throw new Error("Could not persist logistics callback");
       } else {
         if (
           merchantTrade.productIds.length !== merchantTrade.variantIds.length ||
@@ -630,6 +631,7 @@ class EcPayController {
 
         await createDelivery(
           {
+            status: getLogisticsStatus(data.LogisticsSubType.replace("CVS_", ""), String(data.RtnCode)),
             orderId: merchantTrade.orderId,
             merchantTradeNo: merchantTrade.merchantTradeNo,
             AllPayLogisticsID: data.AllPayLogisticsID,
@@ -649,10 +651,12 @@ class EcPayController {
             productId,
             variantId: merchantTrade?.variantIds[i] || "",
           })),
+          "provider_callback",
         );
       }
     } catch (error) {
-      console.log(error);
+      console.error("Logistics callback persistence failed", error);
+      return res.status(500).send("0|Persistence failed");
     }
 
     res.send(`1|OK`);

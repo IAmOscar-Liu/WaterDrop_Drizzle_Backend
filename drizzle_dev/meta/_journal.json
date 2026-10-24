@@ -470,6 +470,20 @@
       "when": 1792325555288,
       "tag": "0066_furry_tempest",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1792502728821,
+      "tag": "0067_puzzling_frightful_four",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1792691178063,
+      "tag": "0068_bitter_mandarin",
+      "breakpoints": true
     }
   ]
 }
