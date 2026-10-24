@@ -86,6 +86,8 @@
     "_test:account-sessions": "NODE_ENV=test NO_CRON=true tsx src/tests/accountSession.integration.ts",
     "test:logistics-verification": "NODE_ENV=test tsx src/tests/runTestSuite.ts logistics-verification",
     "_test:logistics-verification": "NODE_ENV=test NO_CRON=true tsx src/tests/logisticsVerification.integration.ts",
+    "test:order-expiry": "NODE_ENV=test tsx src/tests/runTestSuite.ts order-expiry",
+    "_test:order-expiry": "NODE_ENV=test NO_CRON=true tsx src/tests/orderExpiry.integration.ts",
     "test:order-chatroom": "NODE_ENV=test tsx src/tests/runTestSuite.ts order-chatroom",
     "_test:order-chatroom": "NODE_ENV=test NO_CRON=true tsx src/tests/orderChatroom.integration.ts",
     "test:checkout-validation": "NODE_ENV=test tsx src/tests/runTestSuite.ts checkout-validation",

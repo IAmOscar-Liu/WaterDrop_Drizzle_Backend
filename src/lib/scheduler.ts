@@ -276,24 +276,36 @@ export const deleteUnusedDeviceTokensTask = cron.schedule(
 );
 
 export const expireOrdersTask = cron.schedule(
-  "*/30 * * * *", // every 30 minutes
+  "*/30 * * * *", // pending-order cleanup every 30 minutes
   async () => {
     if (process.env.NO_CRON === "true") return;
     console.log(
-      `30 minute cron job for expireOrdersTask started. Time: ${new Date()}`,
+      `Order expiry cron job started. Time: ${new Date()}`,
     );
     try {
-      const [pendingResult, paymentProcessingResult] = await Promise.all([
-        expirePendingOrders(30 * 60 * 1000), // 30 minutes ago
-        expirePaymentProcessingOrders(2 * 24 * 60 * 60 * 1000), // 2 days ago
-      ]);
+      const pendingResult = await expirePendingOrders(30 * 60 * 1000);
       console.log(
-        `${pendingResult.length + paymentProcessingResult.length} orders expired.`,
+        `${pendingResult.length} pending orders expired.`,
       );
     } catch (error) {
       console.error(`Error during expireOrdersTask:`, error);
     }
   },
+  { noOverlap: true },
+);
+
+export const expirePaymentProcessingOrdersTask = cron.schedule(
+  "0 0 * * *", // once daily, after the next calendar day's payment window ends
+  async () => {
+    if (process.env.NO_CRON === "true") return;
+    try {
+      const result = await expirePaymentProcessingOrders();
+      console.log(`${result.length} payment-processing orders expired.`);
+    } catch (error) {
+      console.error("Error during expirePaymentProcessingOrdersTask:", error);
+    }
+  },
+  { timezone: "Asia/Taipei", noOverlap: true },
 );
 
 // Deadlines are stored as UTC instants computed from each user's timezone.

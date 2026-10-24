@@ -1,4 +1,5 @@
 import { refundEligibility } from "../lib/refundEligibility";
+import { paymentProcessingExpiryCutoff } from "../lib/orderExpiry";
 import {
   and,
   asc,
@@ -349,7 +350,7 @@ export async function updateOrderStatus({
   status: Exclude<schema.NewOrder["orderStatus"], undefined>;
   metadata?: schema.NewOrder["metadata"];
   paymentInfo?: schema.NewOrder["paymentInfo"];
-}) {
+}, expirationGuard?: { status: "pending" | "payment-processing"; createdBefore: Date }) {
   return db.transaction(async (tx) => {
     await tx
       .select({ id: schema.orderTable.id })
@@ -373,6 +374,14 @@ export async function updateOrderStatus({
     });
 
     if (!order) throw new CustomError("Order not found", 404);
+
+    // The candidate query runs before this lock. A payment or another worker
+    // may have finished meanwhile; only expire an order that is still due.
+    if (expirationGuard && (
+      status !== "expired" ||
+      order.orderStatus !== expirationGuard.status ||
+      order.createdAt.getTime() >= expirationGuard.createdBefore.getTime()
+    )) return undefined;
 
     const coinInfo: Record<string, number> = {};
 
@@ -775,14 +784,16 @@ export async function expirePendingOrders(expireInMs: number) {
 
   const results = await Promise.all(
     expiredOrders.map((order) =>
-      updateOrderStatus({ orderId: order.id, status: "expired" }),
+      updateOrderStatus({ orderId: order.id, status: "expired" }, {
+        status: "pending", createdBefore: cutoffTime,
+      }),
     ),
   );
-  return results;
+  return results.filter((order) => order !== undefined);
 }
 
-export async function expirePaymentProcessingOrders(expireInMs: number) {
-  const cutoffTime = new Date(Date.now() - expireInMs);
+export async function expirePaymentProcessingOrders(now = new Date()) {
+  const cutoffTime = paymentProcessingExpiryCutoff(now);
 
   const expiredOrders = await db
     .select({ id: schema.orderTable.id })
@@ -796,10 +807,12 @@ export async function expirePaymentProcessingOrders(expireInMs: number) {
 
   const results = await Promise.all(
     expiredOrders.map((order) =>
-      updateOrderStatus({ orderId: order.id, status: "expired" }),
+      updateOrderStatus({ orderId: order.id, status: "expired" }, {
+        status: "payment-processing", createdBefore: cutoffTime,
+      }),
     ),
   );
-  return results;
+  return results.filter((order) => order !== undefined);
 }
 
 export interface ListOrdersParams extends PaginationParams {

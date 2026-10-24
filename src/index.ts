@@ -15,6 +15,7 @@ import {
   deleteIdempotencyKeysTask,
   deleteUnusedDeviceTokensTask,
   expireOrdersTask,
+  expirePaymentProcessingOrdersTask,
   fetchEcPayStoreListTask,
   monthlyCoinExpirationNotificationTask,
   monthlyCoinStatExpirationTask,
@@ -35,6 +36,7 @@ monthlyCoinStatExpirationTask.start();
 monthlyCoinExpirationNotificationTask.start();
 deleteUnusedDeviceTokensTask.start();
 expireOrdersTask.start();
+expirePaymentProcessingOrdersTask.start();
 pollLogisticsTradeInfoTask.start();
 fetchEcPayStoreListTask.start();
 deleteIdempotencyKeysTask.start();

@@ -256,6 +256,7 @@ const router = Router();
  *           nullable: true
  *         orderStatus:
  *           type: string
+ *           description: Payment-processing orders expire at midnight Asia/Taipei after the calendar day following createdAt ends. This job runs once daily; pending orders retain their 30-minute timeout and cleanup schedule.
  *           enum: [pending, payment-processing, paid, failed, expired, canceled]
  *         orderPayment:
  *           type: string

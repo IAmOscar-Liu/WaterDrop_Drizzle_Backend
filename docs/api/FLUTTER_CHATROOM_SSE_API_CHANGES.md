@@ -42,6 +42,8 @@ Flutter should merge each newer room by ID/version, including its nested `order`
 
 This applies to newly created orders after deployment. Historical unlinked rooms/orders are not backfilled. Existing「聯絡賣家」from order details still explicitly links or opens the appropriate order room.
 
+**Payment deadline (2026-10-24):** `payment-processing` orders now expire at **midnight Asia/Taipei after the calendar day following `createdAt` ends**, replacing the rolling 48-hour timeout. For example, an order created October 24 at 09:00 or 22:00 remains payable through October 25 and expires October 26 at 00:00. The job runs once daily at 00:00 Taiwan time (`0 0 * * *`, explicit `Asia/Taipei` timezone). If the server is down at midnight, overdue orders are handled at the next scheduled midnight run; `NO_CRON=true` disables it. Existing unpaid orders use the same rule after deployment. `pending` orders retain their 30-minute timeout and separate cleanup every 30 minutes. Expiry uses the normal status transition, releases reservations and publishes the updated chat summary. A payment already committed before the expiry lock is acquired is not overwritten. No schema migration or new response field is required. Verify with `npm run test:order-expiry`.
+
 Validation: `npm run test:order-chatroom` uses a disposable test database to check association, ownership/variant isolation, app/admin journal publication, legacy and sync list summaries, preserved history, empty rooms, retries, rollback and concurrent purchases.
 
 ## Agreed behavior
