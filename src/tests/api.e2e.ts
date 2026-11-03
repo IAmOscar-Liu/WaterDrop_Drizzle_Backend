@@ -167,7 +167,8 @@ async function run() {
       const push = pushed.find((message) => message.tokens.includes(`fake-${expiryUser.user.id}`));
       assert.ok(push);
       assert.match(push.notification!.body!, /7\.5金幣/);
-      assert.match(push.notification!.body!, /2026\/11\/01 00:00 \(Asia\/Taipei\)/);
+      assert.match(push.notification!.body!, /2026年9月獲得/);
+      assert.match(push.notification!.body!, /2026\/11\/01 00:00（台北時間）/);
       const saved = await db.query.userNotificationTable.findFirst({ where: eq(schema.userNotificationTable.userId, expiryUser.user.id) });
       assert.equal(saved?.body, push.notification!.body);
       // Saving the in-app message must not depend on a registered push token.

@@ -13,7 +13,7 @@ export type CoinExpirySummary = {
   userId: string;
   userTimezone: string;
   amount: number;
-  deadlines: { expiresAt: Date; timezone: string; amount: number }[];
+  deadlines: { expiresAt: Date; timezone: string; earningLocalMonth: string; amount: number }[];
 };
 
 // Shared source of truth for app login/profile and the expiry notification job.
@@ -24,7 +24,7 @@ export async function getCoinExpirySummaries(
   if (userIds?.length === 0) return [];
   const summaries = new Map<string, CoinExpirySummary>();
   function add(userId: string, userTimezone: string | null, expiresAt: Date,
-    timezone: string, amount: number | string) {
+    timezone: string, earningLocalMonth: string, amount: number | string) {
     const units = toCoinUnits(amount);
     if (units <= 0 || !isCoinExpirySoon(now, expiresAt, timezone)) return;
     const summary = summaries.get(userId) ?? {
@@ -32,10 +32,11 @@ export async function getCoinExpirySummaries(
     };
     summary.amount = (toCoinUnits(summary.amount) + units) / 100;
     const deadline = summary.deadlines.find(
-      (entry) => entry.expiresAt.getTime() === expiresAt.getTime() && entry.timezone === timezone,
+      (entry) => entry.expiresAt.getTime() === expiresAt.getTime() && entry.timezone === timezone
+        && entry.earningLocalMonth === earningLocalMonth,
     );
     if (deadline) deadline.amount = (toCoinUnits(deadline.amount) + units) / 100;
-    else summary.deadlines.push({ expiresAt, timezone, amount: units / 100 });
+    else summary.deadlines.push({ expiresAt, timezone, earningLocalMonth, amount: units / 100 });
     summaries.set(userId, summary);
   }
 
@@ -45,6 +46,7 @@ export async function getCoinExpirySummaries(
       userTimezone: schema.userTable.timezone,
       expiresAt: schema.userCoinLotTable.expiresAt,
       timezone: schema.userCoinLotTable.timezoneSnapshot,
+      earningLocalMonth: schema.userCoinLotTable.earningLocalMonth,
       amount: schema.userCoinLotTable.availableAmount,
     }).from(schema.userCoinLotTable)
       .innerJoin(schema.userTable, eq(schema.userTable.id, schema.userCoinLotTable.userId))
@@ -57,7 +59,7 @@ export async function getCoinExpirySummaries(
         lte(schema.userCoinLotTable.expiresAt, new Date(now.getTime() + 8 * 86400000)),
       ));
     for (const lot of lots) {
-      add(lot.userId, lot.userTimezone, lot.expiresAt, effectiveTimezone(lot.timezone), lot.amount);
+      add(lot.userId, lot.userTimezone, lot.expiresAt, effectiveTimezone(lot.timezone), lot.earningLocalMonth, lot.amount);
     }
   } else {
     const stats = await db.select({
@@ -77,7 +79,7 @@ export async function getCoinExpirySummaries(
       const [year, month] = stat.month.split("-").map(Number);
       const timezone = effectiveTimezone(stat.timezone);
       const expiry = getEndOfNextLocalMonth(new Date(Date.UTC(year, month - 1, 15, 12)), timezone);
-      add(stat.userId, stat.timezone, expiry, timezone,
+      add(stat.userId, stat.timezone, expiry, timezone, stat.month,
         (toCoinUnits(stat.coinsEarned) - toCoinUnits(stat.coinsSpent)) / 100);
     }
   }

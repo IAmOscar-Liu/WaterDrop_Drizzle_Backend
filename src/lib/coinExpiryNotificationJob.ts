@@ -20,10 +20,11 @@ export async function runCoinExpiryNotificationJob(
     const results = await Promise.allSettled(recipients.slice(i, i + 100).map(async (summary) => {
       const title = "金幣即將過期通知";
       const body = summary.deadlines.map((deadline) => {
-        const date = getLocalDate(deadline.expiresAt, deadline.timezone).replace(/-/g, "/");
-        const { hour, minute } = getZonedParts(deadline.expiresAt, deadline.timezone);
+        const [year, month] = deadline.earningLocalMonth.split("-").map(Number);
+        const date = getLocalDate(deadline.expiresAt, "Asia/Taipei").replace(/-/g, "/");
+        const { hour, minute } = getZonedParts(deadline.expiresAt, "Asia/Taipei");
         const time = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
-        return `您尚有${deadline.amount}金幣未使用，將於 ${date} ${time} (${deadline.timezone}) 過期。`;
+        return `您於${year}年${month}月獲得的金幣尚有${deadline.amount}金幣未使用，將於 ${date} ${time}（台北時間）過期。`;
       }).join("\n") + "快把握時間使用您的金幣吧!";
       await dependencies.createNotification({
         userId: summary.userId, type: "system_alert", title, body,
