@@ -2,7 +2,7 @@
 
 Date: 2026-11-04
 
-Implemented in source; local migration applied. Development/staging migrations are generated but have not been applied. Production migration/deployment requires its established migration baseline; this checkout does not contain one. Apply migrations before starting the updated server.
+Implemented in source; local and development migrations applied (verified 2026-11-04). Staging migrations are generated but have not been applied. Production migration/deployment requires its established migration baseline; this checkout does not contain one. Apply migrations before starting the updated server.
 
 ## Problem and resulting flow
 
@@ -71,7 +71,7 @@ The unmanaged real-money `/api/ecpay/test?realAccount=true` path is disabled. Sa
 ## Migration and validation
 
 - Local: `drizzle_local/0119_payment_safety.sql` (applied).
-- Development: `drizzle_dev/0070_payment_safety.sql` (generated).
+- Development: `drizzle_dev/0070_payment_safety.sql` (applied 2026-11-04).
 - Staging: `drizzle_stg/0018_payment_safety.sql` (generated).
 - Integration suites construct disposable databases from the current schema; no catch-up migration was generated from the stale test baseline.
 

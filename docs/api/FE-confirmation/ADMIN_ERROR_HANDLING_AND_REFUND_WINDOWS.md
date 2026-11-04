@@ -167,13 +167,15 @@ Finite windows use exact elapsed hours, never calendar-day midnight. Local/devel
 
 `0` stays disabled everywhere. Unlimited stays unlimited but still requires payment, quantity and receipt eligibility. Local/development retain the payment-confirmation fallback before receipt; unknown payment/receipt time still blocks. Persisted receipt deadlines and extensions are never recalculated after deployment or an environment change.
 
+Verification on 2026-11-04: local and development have no pending migrations, and all 1,206 compared public-schema definitions match (66 tables, columns/defaults/nullability, constraints, indexes, enums, views, triggers and sequence definitions). PostgreSQL 17 local versus PostgreSQL 18 development NOT NULL catalog representation is normalized using column nullability. Both environment migration snapshots also match `schema.ts`; their historical migration counts differ. This checks schema synchronization; application data was not copied.
+
 Refund-window migration files and status:
 
 - Local: `drizzle_local/0118_product_refund_windows.sql` — applied.
-- Development: `drizzle_dev/0069_product_refund_windows.sql` — generated, not applied in this session.
+- Development: `drizzle_dev/0069_product_refund_windows.sql` — applied 2026-11-04.
 - Staging: `drizzle_stg/0017_product_refund_windows.sql` — generated, not applied in this session.
 
-The current backend additionally requires the payment-attempt table from `0119_payment_safety.sql` (local, applied), `0070_payment_safety.sql` (development, generated), or `0018_payment_safety.sql` (staging, generated). Apply the full intended migration sequence before deploying; the refund-window migration alone is not sufficient for the current source. See the [payment safety rollout](../PAYMENT_SAFETY_API_CHANGES.md).
+The current backend additionally requires the payment-attempt table from `0119_payment_safety.sql` (local, applied), `0070_payment_safety.sql` (development, applied 2026-11-04), or `0018_payment_safety.sql` (staging, generated). Apply the full intended migration sequence before deploying; the refund-window migration alone is not sufficient for the current source. See the [payment safety rollout](../PAYMENT_SAFETY_API_CHANGES.md).
 
 Integration tests generate disposable databases directly from `schema.ts`; no test-environment migration is included because its tracked baseline contains unrelated pending schema changes.
 

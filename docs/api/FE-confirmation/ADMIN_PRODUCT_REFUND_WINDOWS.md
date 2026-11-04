@@ -3,7 +3,7 @@
 Date: 2026-11-03
 Last reviewed: 2026-11-04
 
-Implemented in source. Local refund-window and payment-safety migrations are applied. Development/staging migrations are generated and still require application/deployment. Production requires its established migration baseline and deployment. Apply each environment's migrations before starting the updated server.
+Implemented in source. Local and development refund-window and payment-safety migrations are applied (verified 2026-11-04). Staging migrations are generated and still require application/deployment. Production requires its established migration baseline and deployment. Apply each environment's migrations before starting the updated server.
 
 ## Product editor and APIs
 
@@ -93,10 +93,10 @@ Finite windows use exact elapsed hours, never calendar-day midnight. Local/devel
 Refund-window migration files and status:
 
 - Local: `drizzle_local/0118_product_refund_windows.sql` — applied.
-- Development: `drizzle_dev/0069_product_refund_windows.sql` — generated, not applied in this session.
+- Development: `drizzle_dev/0069_product_refund_windows.sql` — applied 2026-11-04.
 - Staging: `drizzle_stg/0017_product_refund_windows.sql` — generated, not applied in this session.
 
-The current backend additionally requires the payment-attempt table from `0119_payment_safety.sql` (local, applied), `0070_payment_safety.sql` (development, generated), or `0018_payment_safety.sql` (staging, generated). Apply the full intended migration sequence before deploying; the refund-window migration alone is not sufficient for the current source. See the [payment safety rollout](../PAYMENT_SAFETY_API_CHANGES.md).
+The current backend additionally requires the payment-attempt table from `0119_payment_safety.sql` (local, applied), `0070_payment_safety.sql` (development, applied 2026-11-04), or `0018_payment_safety.sql` (staging, generated). Apply the full intended migration sequence before deploying; the refund-window migration alone is not sufficient for the current source. See the [payment safety rollout](../PAYMENT_SAFETY_API_CHANGES.md).
 
 Integration tests generate disposable databases directly from `schema.ts`; no test-environment migration is included because its tracked baseline contains unrelated pending schema changes.
 
