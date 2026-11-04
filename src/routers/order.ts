@@ -19,7 +19,7 @@ router.get(
  *   get:
  *     tags: [Order]
  *     summary: Get the authenticated user's order by ID
- *     description: Returns order detail without the admin-only user relation. Each nested refund item includes reverse-chronological refund logs; existing refunds may have an empty logs array.
+ *     description: Credit and ATM remain payment-processing while ECPay confirmation or settlement is pending; only a verified provider result can mark paid. Returns order detail without the admin-only user relation. Each nested refund item includes reverse-chronological refund logs; existing refunds may have an empty logs array.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -44,7 +44,7 @@ router.get(
  */
 router.get("/:id", isAuth, OrderController.getOwnOrder);
 router.post("/", isAuth, OrderController.createOrder);
-router.put("/:orderId", isAuth, OrderController.updateOrderStatus);
+router.put("/:orderId", isAuth, validateZod({ params: orderValidation.updateParams, body: orderValidation.updateBody }), OrderController.updateOrderStatus);
 router.post(
   "/send-notification",
   isAuth,

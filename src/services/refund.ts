@@ -1,5 +1,7 @@
+import { logDiagnosticError } from "../lib/requestContext";
 import { handleServiceError } from "../lib/error";
-import { generateRefundCreatedEmailHtml } from "../lib/mailTemplate";
+import { getRefundStatusBody } from "../lib/refundStatusNotification";
+import { generateRefundCreatedEmailHtml, generateRefundStatusChangedEmailHtml } from "../lib/mailTemplate";
 import { sendEmail } from "../lib/sendGrid";
 import { sendMulticastPushNotification } from "../lib/sendNotification";
 import { findOrCreateChatRoom, sendSystemChatMessage } from "../repository/chatroom";
@@ -56,7 +58,7 @@ function sendRefundCreatedChatMessageAsync(
   if (!input) return;
 
   void sendRefundCreatedChatMessage(input).catch((error) => {
-    console.error("Failed to send refund chat message:", error);
+    logDiagnosticError("Failed to send refund chat message", error);
   });
 }
 
@@ -148,58 +150,62 @@ function sendRefundCreatedNotificationsAsync(
   if (!context) return;
 
   void sendRefundCreatedNotifications(context).catch((error) => {
-    console.error("Failed to send refund-created notifications:", error);
+    logDiagnosticError("Failed to send refund-created notifications", error);
   });
 }
 
-function getRefundStatusBody(
-  context: RefundStatusChangedNotificationContext,
-) {
-  const productDisplayName = getProductDisplayName(context);
-  const statusText = {
-    rejected: "已拒絕",
-    pending: "等待處理",
-    processing: "處理中",
-    completed: "已完成",
-    cancelled: "已取消",
-  }[context.status];
+const refundStatusNotificationDependencies = {
+  getSimpleUserById,
+  getFcmTokensInUserIds,
+  createNotification,
+  sendEmail,
+  sendMulticastPushNotification,
+};
 
-  return `您的商品「${productDisplayName}」退貨申請狀態已更新為「${statusText}」。(訂單編號: ${context.merchantTradeNo ?? ""})`;
-}
-
-async function sendRefundStatusChangedNotifications(
+export async function sendRefundStatusChangedNotifications(
   context: RefundStatusChangedNotificationContext,
+  overrides: Partial<typeof refundStatusNotificationDependencies> = {},
 ) {
-  const fcmTokens = await getFcmTokensInUserIds([context.userId]);
+  const dependencies = { ...refundStatusNotificationDependencies, ...overrides };
   const body = getRefundStatusBody(context);
-
-  const savedNotification = await createNotification({
-    userId: context.userId,
-    type: "order_status",
-    title: "退貨狀態更新通知",
-    body: `${body}\n如有任何問題，請聯繫客服人員。`,
-    orderId: context.orderId,
-    metadata: {
-      clickAction: "view_order_details",
-      refundItemId: context.refundItemId,
-    },
-  });
-
-  await Promise.all([
-    sendMulticastPushNotification({
+  // Start email independently so an FCM lookup or in-app notification failure cannot suppress it.
+  const emailTask = (async () => {
+    const user = await dependencies.getSimpleUserById(context.userId);
+    if (!user) return;
+    const result = await dependencies.sendEmail({
+      to: user.email,
+      subject: `[${getAppDisplayName()}]退貨狀態更新通知`,
+      html: generateRefundStatusChangedEmailHtml({ userName: user.name ?? "", orderId: context.orderId, body, details: context }),
+    });
+    if (!result.success) throw result.error;
+  })();
+  const appTask = (async () => {
+    const savedNotification = await dependencies.createNotification({
+      userId: context.userId,
+      type: "order_status",
+      title: "退貨狀態更新通知",
+      body: `${body}\n如有任何問題，請聯繫客服人員。`,
+      orderId: context.orderId,
+      metadata: { clickAction: "view_order_details", refundItemId: context.refundItemId },
+    });
+    const fcmTokens = await dependencies.getFcmTokensInUserIds([context.userId]);
+    await dependencies.sendMulticastPushNotification({
       tokens: fcmTokens,
-      notification: {
-        title: "退貨狀態更新通知",
-        body,
-      },
+      notification: { title: "退貨狀態更新通知", body },
       data: {
         notificationId: savedNotification.id,
         command: "refund_updated",
         orderId: context.orderId,
         refundItemId: context.refundItemId,
       },
-    }, context.userId),
-  ]);
+    }, context.userId);
+  })();
+  const results = await Promise.allSettled([emailTask, appTask]);
+  for (const [index, result] of results.entries()) {
+    if (result.status === "rejected") {
+      logDiagnosticError(`Failed to send refund status ${index === 0 ? "email" : "app notification"}`, result.reason);
+    }
+  }
 }
 
 function sendRefundStatusChangedNotificationsAsync(
@@ -208,7 +214,7 @@ function sendRefundStatusChangedNotificationsAsync(
   if (!context) return;
 
   void sendRefundStatusChangedNotifications(context).catch((error) => {
-    console.error("Failed to send refund status notification:", error);
+    logDiagnosticError("Failed to send refund status notification", error);
   });
 }
 

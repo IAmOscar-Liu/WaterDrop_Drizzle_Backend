@@ -55,6 +55,7 @@ const productWriteBody = z.object({
   avatar: z.string().optional().nullable(),
   type: productType.optional(),
   allowHomeDelivery: z.coerce.boolean().optional(),
+  refundWindowDays: z.number().int().min(0).max(3650000).nullable().optional(),
   images: z.array(z.string()).optional().nullable(),
   categoryIds: z.array(uuid).optional(),
   status: productStatus.optional(),

@@ -120,6 +120,20 @@
       "when": 1792822811617,
       "tag": "0016_round_magik",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1793694611758,
+      "tag": "0017_product_refund_windows",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1793777047802,
+      "tag": "0018_payment_safety",
+      "breakpoints": true
     }
   ]
 }

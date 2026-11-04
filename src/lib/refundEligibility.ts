@@ -1,11 +1,13 @@
 import { isLocalOrDevelopment } from "./env";
 import type { Delivery, OrderItem, RefundItem } from "../db/schema";
 
-export const REFUND_WINDOW_MS = 240 * 60 * 60 * 1000;
+export const DEFAULT_REFUND_WINDOW_DAYS = 8;
+export const REFUND_WINDOW_MS = DEFAULT_REFUND_WINDOW_DAYS * 24 * 60 * 60 * 1000;
 export const REFUND_EXTENSION_MS = 120 * 60 * 60 * 1000;
 // Only explicit local/development environments use accelerated testing durations.
-export function getRefundWindowMs() {
-  return isLocalOrDevelopment() ? REFUND_WINDOW_MS / 10 : REFUND_WINDOW_MS;
+export function getRefundWindowMs(days = DEFAULT_REFUND_WINDOW_DAYS) {
+  const duration = days * 24 * 60 * 60 * 1000;
+  return isLocalOrDevelopment() ? duration / 10 : duration;
 }
 
 export function getRefundExtensionMs() {
@@ -48,7 +50,7 @@ export function isConfirmedReceipt(delivery: ReceiptDelivery) {
 }
 
 export type RefundWindowItem = Pick<OrderItem,
-  "deliveryId" | "quantity" | "refundWindowStartsAt" | "originalRefundDeadlineAt" | "refundDeadlineAt"
+  "deliveryId" | "quantity" | "refundWindowDaysAtSale" | "refundWindowStartsAt" | "originalRefundDeadlineAt" | "refundDeadlineAt"
 >;
 
 type RefundWindowDecision = Pick<RefundItem, "status"> & Partial<Pick<RefundItem, "rejectionDeadlineAfter">>;
@@ -58,7 +60,7 @@ export function resolveRefundWindow(
   refunds: RefundWindowDecision[],
   paymentConfirmedAt?: Date | null,
 ) {
-  if (item.refundWindowStartsAt && item.originalRefundDeadlineAt && item.refundDeadlineAt) {
+  if (item.refundWindowStartsAt) {
     return {
       refundWindowSource: "receipt" as const,
       refundWindowStartsAt: item.refundWindowStartsAt,
@@ -67,10 +69,11 @@ export function resolveRefundWindow(
     };
   }
   if (isLocalOrDevelopment() && paymentConfirmedAt) {
-    const originalDeadline = new Date(paymentConfirmedAt.getTime() + getRefundWindowMs());
+    const originalDeadline = item.refundWindowDaysAtSale === null || item.refundWindowDaysAtSale === 0
+      ? null : new Date(paymentConfirmedAt.getTime() + getRefundWindowMs(item.refundWindowDaysAtSale));
     // Test-only windows are derived, never written as real receipt evidence. Rejections
     // persist their extension on the existing decision rows, under the same order lock.
-    const deadline = refunds.reduce((latest, refund) =>
+    const deadline = originalDeadline === null ? null : refunds.reduce((latest, refund) =>
       refund.status === "rejected" && refund.rejectionDeadlineAfter && refund.rejectionDeadlineAfter > latest
         ? refund.rejectionDeadlineAfter : latest, originalDeadline);
     return {
@@ -101,18 +104,20 @@ export function refundEligibility(
   ));
   const refundReceiptChecksBypassed = isLocalOrDevelopment();
   const window = resolveRefundWindow(item, refunds, paymentConfirmedAt);
-  const hasWindow = !!(window.refundWindowStartsAt && window.refundDeadlineAt);
-  const windowStatus = !hasWindow
+  const unlimited = item.refundWindowDaysAtSale === null;
+  const disabled = item.refundWindowDaysAtSale === 0;
+  const hasWindow = !!(window.refundWindowStartsAt && (unlimited || window.refundDeadlineAt));
+  const windowStatus = disabled ? "disabled" : !hasWindow
     ? (refundReceiptChecksBypassed || deliveryStatus === "delivered" ? "unknown" : "not_started")
     : now < window.refundWindowStartsAt! ? "not_started"
-      : now >= window.refundDeadlineAt! ? "expired" : "open";
+      : !unlimited && now >= window.refundDeadlineAt! ? "expired" : "open";
   const receiptBlockReason = !refundReceiptChecksBypassed && !item.deliveryId ? "NOT_RECEIVED"
     : !hasWindow ? (refundReceiptChecksBypassed ? "PAYMENT_TIME_UNKNOWN"
       : deliveryStatus === "delivered" ? "RECEIPT_TIME_UNKNOWN" : "NOT_RECEIVED")
       : windowStatus === "not_started" ? "NOT_RECEIVED"
         : windowStatus === "expired" ? "REFUND_WINDOW_EXPIRED" : null;
   const reason = orderStatus !== "paid" ? "ORDER_NOT_PAID"
-    : receiptBlockReason ?? (unreserved === 0 ? "NO_REFUNDABLE_QUANTITY" : null);
+    : disabled ? "REFUNDS_DISABLED" : receiptBlockReason ?? (unreserved === 0 ? "NO_REFUNDABLE_QUANTITY" : null);
 
   return {
     refundReceiptChecksBypassed,

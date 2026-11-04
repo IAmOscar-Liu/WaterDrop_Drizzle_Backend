@@ -8,6 +8,7 @@ import * as s from "../db/schema";
 import { createOrder, updateOrderStatus } from "../repository/order";
 import { findOrCreateChatRoom, getChatRoomById, listAdminChatRooms, listChatRooms, sendChatMessage } from "../repository/chatroom";
 import ecpayController from "../controller/ecpay";
+import { preparePayment } from "../repository/payment";
 import ecpayService from "../services/ecpay";
 import { createDelivery, updateDeliveryWithNotificationContext } from "../repository/delivery";
 import { openChatFeed, readChatFeed, readChatSummaries } from "../repository/chatroomSync";
@@ -26,7 +27,7 @@ async function run() {
       profileCompletedAt: new Date(), emailVerifiedAt: new Date(),
     }))).returning();
     const [product] = await db.insert(s.productTable).values({
-      sellerId: seller.id, name: "Chat order fixture", description: "Fixture",
+      sellerId: seller.id, name: "Chat order fixture", description: "Fixture", allowHomeDelivery: true,
     }).returning();
     const variants = await db.insert(s.productVariantTable).values(
       Array.from({ length: 6 }, (_, i) => ({ productId: product.id, name: `Variant ${i}`, price: 100, stock: 100 })),
@@ -126,9 +127,12 @@ async function run() {
     }).returning();
     await db.update(s.orderItemTable).set({ deliveryId: legacyDelivery.id }).where(eq(s.orderItemTable.orderId, failedOrder.id));
     await db.update(s.orderTable).set({ shippingInfo: {
-      cvsPickupGroup: [{ orderId: failedOrder.id }],
-      nonCvsPickupGroup: [{ LogisticsType: "HOME", GoodsAmount: 100, products: [] }],
+      cvsPickupGroup: [],
+      nonCvsPickupGroup: [{ LogisticsType: "home_delivery", GoodsAmount: 100,
+        products: [{ productId: product.id, variantId: variants[4].id }] }],
     } }).where(eq(s.orderTable.id, failedOrder.id));
+    const failedPaymentAttempt = await preparePayment({ orderId: failedOrder.id, userId: buyer.id,
+      idempotencyKey: failedInput.idempotencyKey, amount: 100, method: "Credit" });
     const failureHead = await openChatFeed(buyer.id);
     const failureAdminHead = await openAdminChatFeed(principal);
     const deliveryCount = (await db.query.deliveryTable.findMany()).length;
@@ -141,6 +145,7 @@ async function run() {
     try {
       await ecpayController.handleReturn({ body: {
         CustomField1: failedOrder.id, CustomField2: failedInput.idempotencyKey,
+        MerchantID: process.env.MERCHANTID!, MerchantTradeNo: failedPaymentAttempt.merchantTradeNo, TradeAmt: "100",
         RtnCode: "10100058", RtnMsg: "付款失敗",
       } } as Request, { send: (value: unknown) => { acknowledgement = value; } } as Response);
     } finally {
@@ -274,6 +279,83 @@ async function run() {
     const tradeRetryHead = await openChatFeed(buyer.id);
     await updateOrderStatus({ orderId: order.id, status: "paid", metadata: { MerchantTradeNo: "updated-trade" } });
     assert.deepEqual(await readChatFeed(buyer.id, tradeRetryHead.sequence), []);
+    // Paid virtual/home-delivery items create one order-linked reminder per exact variant.
+    const [virtualProduct, homeProduct] = await db.insert(s.productTable).values([
+      { sellerId: seller.id, name: "Virtual followup", description: "Fixture", type: "virtual" },
+      { sellerId: otherSeller.id, name: "Home followup", description: "Fixture", allowHomeDelivery: true },
+    ]).returning();
+    const followupVariants = await db.insert(s.productVariantTable).values([
+      { productId: virtualProduct.id, price: 100, stock: 20 },
+      ...["Home A", "Home B", "CVS"].map(name => ({ productId: homeProduct.id, name, price: 100, stock: 20 })),
+    ]).returning();
+    const virtualRoom = await findOrCreateChatRoom({ userId: buyer.id, accountId: seller.id,
+      productId: virtualProduct.id, productVariantId: followupVariants[0].id });
+    await sendChatMessage({ actor: { kind: "user", id: buyer.id }, chatRoomId: virtualRoom.id,
+      senderType: "user", content: "Please confirm delivery" });
+    const followupInput = {
+      orderData: { userId: buyer.id, subTotal: 400, totalAmount: 400, shippingInfo: {
+        nonCvsPickupGroup: [
+          { LogisticsType: "virtual", products: [{ productId: virtualProduct.id, variantId: followupVariants[0].id }] },
+          { LogisticsType: "home_delivery", products: followupVariants.slice(1, 3).map(v => ({ productId: v.productId, variantId: v.id })) },
+        ],
+        cvsPickupGroup: [{ products: [{ productId: homeProduct.id, variantId: followupVariants[3].id }] }],
+      } },
+      items: followupVariants.map(v => ({ productId: v.productId, productVariantId: v.id,
+        productNameAtSale: v.productId === virtualProduct.id ? virtualProduct.name : homeProduct.name,
+        variantNameAtSale: v.name, unitPriceAtSale: 100, quantity: 1 })),
+      idempotencyKey: randomUUID(),
+    };
+    const followupOrder = (await createOrder(followupInput))!;
+    const reminderMessages = () => db.query.chatMessageTable.findMany({ where: eq(s.chatMessageTable.senderIdentity, "system:order-fulfillment") });
+    assert.equal((await reminderMessages()).length, 0);
+    await updateOrderStatus({ orderId: followupOrder.id, status: "payment-processing" });
+    assert.equal((await reminderMessages()).length, 0);
+    const followupHead = await openChatFeed(buyer.id);
+    const followupAdminHead = await openAdminChatFeed(principal);
+    await Promise.all([1, 2].map(() => updateOrderStatus({ orderId: followupOrder.id, status: "paid" })));
+    const reminders = await reminderMessages();
+    assert.equal(reminders.length, 3, "Concurrent payment retries must not duplicate reminders");
+    const followupRooms = await db.query.chatRoomTable.findMany({ where: eq(s.chatRoomTable.orderId, followupOrder.id) });
+    assert.equal(followupRooms.length, 3, "No room/reminder for the CVS-selected variant");
+    assert.ok(followupRooms.some(r => r.id === virtualRoom.id), "Reuse the pre-sale conversation");
+    for (const reminder of reminders) {
+      const targetRoom = followupRooms.find(r => r.id === reminder.chatRoomId)!;
+      assert.ok(targetRoom);
+      assert.equal(targetRoom.userId, buyer.id);
+      assert.equal(targetRoom.accountId, targetRoom.productId === virtualProduct.id ? seller.id : otherSeller.id);
+      assert.equal(reminder.senderType, "admin");
+      assert.equal(reminder.isRead, false);
+      assert.ok(reminder.content!.includes(targetRoom.productId === virtualProduct.id ? "虛擬商品" : "賣家宅配"));
+    }
+    const originalQuestion = await db.query.chatMessageTable.findFirst({ where: and(
+      eq(s.chatMessageTable.chatRoomId, virtualRoom.id), eq(s.chatMessageTable.senderType, "user"),
+    ) });
+    assert.equal(originalQuestion!.isRead, false, "System messages cannot read on behalf of a participant");
+    const reminderEvents = (await readChatFeed(buyer.id, followupHead.sequence)).filter(e => e.eventType === "message.created");
+    assert.equal(reminderEvents.length, 3);
+    assert.ok(reminderEvents.every(e => Array.isArray((e.payload.message as any).attachments)));
+    assert.equal((await readAdminChatFeed(principal, followupAdminHead.sequence)).filter(e => e.eventType === "message.created").length, 1, "Each seller sees only its own reminders");
+    await updateOrderStatus({ orderId: followupOrder.id, status: "paid", metadata: { MerchantTradeNo: "followup-retry" } });
+    assert.equal((await reminderMessages()).length, 3);
+
+    const rollbackFollowup = (await createOrder({ ...followupInput, idempotencyKey: randomUUID() }))!;
+    await client.unsafe("CREATE FUNCTION fail_followup_event() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.event_type = 'message.created' THEN RAISE EXCEPTION 'test followup rollback'; END IF; RETURN NEW; END $$");
+    await client.unsafe("CREATE TRIGGER fail_followup_event BEFORE INSERT ON chat_feed_events FOR EACH ROW EXECUTE FUNCTION fail_followup_event()");
+    try {
+      await assert.rejects(updateOrderStatus({ orderId: rollbackFollowup.id, status: "paid" }));
+    } finally {
+      await client.unsafe("DROP TRIGGER fail_followup_event ON chat_feed_events");
+      await client.unsafe("DROP FUNCTION fail_followup_event()");
+    }
+    const rolledBackOrder = (await db.query.orderTable.findFirst({ where: eq(s.orderTable.id, rollbackFollowup.id) }))!;
+    assert.equal(rolledBackOrder.orderStatus, "pending");
+    assert.equal(rolledBackOrder.completedAt, null);
+    assert.equal((await reminderMessages()).length, 3);
+    assert.equal((await db.query.chatRoomTable.findMany({ where: eq(s.chatRoomTable.orderId, rollbackFollowup.id) })).length, 0);
+    await updateOrderStatus({ orderId: rollbackFollowup.id, status: "failed" });
+    assert.equal((await reminderMessages()).length, 3, "Failed payment must not create reminders");
+    await updateOrderStatus({ orderId: rollbackFollowup.id, status: "paid" });
+    assert.equal((await reminderMessages()).length, 6, "A later successful payment creates its reminders");
     console.log("Order/chat tests passed: association/reuse, live payment and delivery summaries, scoped app/admin events, unchanged-poll suppression, rollback, retries and concurrent purchases.");
   } finally {
     await client.end();

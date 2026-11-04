@@ -6,6 +6,7 @@ import { sendMulticastPushNotification } from "../lib/sendNotification";
 import { createNotification } from "../repository/notification";
 import {
   createOrder,
+  cancelOwnOrder,
   getOrderById,
   listAdminOrders,
   ListAdminOrdersParams,
@@ -123,9 +124,11 @@ class OrderService {
     orderId: string,
     status: Exclude<schema.Order["orderStatus"], undefined>,
     metadata?: any,
+    requesterId?: string,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof updateOrderStatus>>>> {
     try {
-      const order = await updateOrderStatus({ orderId, status, metadata });
+      if (status !== "canceled" || !requesterId) throw new CustomError("Only ECPay may confirm payment", 403);
+      const order = await cancelOwnOrder(orderId, requesterId);
       if (order) {
         return { success: true, data: order };
       } else {

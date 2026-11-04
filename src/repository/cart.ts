@@ -50,11 +50,11 @@ export async function upsertCartItem(
       .for("update");
 
     if (!product) {
-      throw new CustomError("Product not found", 404);
+      throw new CustomError("Product not found", 404, "PRODUCT_NOT_FOUND");
     }
 
     if (product.status !== "active" || product.deletedAt) {
-      throw new CustomError("Product is unavailable", 400);
+      throw new CustomError("Product is unavailable", 400, "PRODUCT_UNAVAILABLE");
     }
 
     const [variant] = await tx
@@ -64,15 +64,15 @@ export async function upsertCartItem(
       .for("update");
 
     if (!variant || variant.productId !== productId) {
-      throw new CustomError("Product variant not found", 404);
+      throw new CustomError("Product variant not found", 404, "VARIANT_UNAVAILABLE");
     }
 
     if (variant.status !== "active") {
-      throw new CustomError("Product variant is inactive", 400);
+      throw new CustomError("Product variant is inactive", 400, "VARIANT_UNAVAILABLE");
     }
 
     if (quantity > variant.stock - variant.reserve) {
-      throw new CustomError("Insufficient stock", 400);
+      throw new CustomError("Insufficient stock", 400, "INSUFFICIENT_STOCK");
     }
 
     const existingCartItem = await tx.query.cartItemTable.findFirst({
@@ -122,7 +122,7 @@ export async function toggleCartItem({
     });
 
     if (!cartItem) {
-      throw new CustomError("Cart item not found", 404);
+      throw new CustomError("Cart item not found", 404, "CART_ITEM_NOT_FOUND");
     }
 
     const [updatedCartItem] = await tx
@@ -152,7 +152,7 @@ export async function updateCartItemVariant({
     });
 
     if (!cartItemSnapshot) {
-      throw new CustomError("Cart item not found", 404);
+      throw new CustomError("Cart item not found", 404, "CART_ITEM_NOT_FOUND");
     }
 
     const [product] = await tx
@@ -162,7 +162,7 @@ export async function updateCartItemVariant({
       .for("update");
 
     if (!product || product.status !== "active" || product.deletedAt) {
-      throw new CustomError("Product is unavailable", 400);
+      throw new CustomError("Product is unavailable", 400, "PRODUCT_UNAVAILABLE");
     }
 
     const [variant] = await tx
@@ -172,11 +172,11 @@ export async function updateCartItemVariant({
       .for("update");
 
     if (!variant || variant.productId !== cartItemSnapshot.productId) {
-      throw new CustomError("Product variant not found", 404);
+      throw new CustomError("Product variant not found", 404, "VARIANT_UNAVAILABLE");
     }
 
     if (variant.status !== "active") {
-      throw new CustomError("Product variant is inactive", 400);
+      throw new CustomError("Product variant is inactive", 400, "VARIANT_UNAVAILABLE");
     }
 
     const [cartItem] = await tx
@@ -192,7 +192,7 @@ export async function updateCartItemVariant({
       .for("update");
 
     if (!cartItem) {
-      throw new CustomError("Cart item not found", 404);
+      throw new CustomError("Cart item not found", 404, "CART_ITEM_NOT_FOUND");
     }
 
     if (cartItem.productVariantId === productVariantId) {
@@ -213,7 +213,7 @@ export async function updateCartItemVariant({
 
     const nextQuantity = cartItem.quantity + (targetCartItem?.quantity ?? 0);
     if (nextQuantity > variant.stock - variant.reserve) {
-      throw new CustomError("Insufficient stock", 400);
+      throw new CustomError("Insufficient stock", 400, "INSUFFICIENT_STOCK");
     }
 
     if (targetCartItem) {

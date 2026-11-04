@@ -20,6 +20,7 @@ import { getCoinsExpireSoon } from "../repository/coinExpiry";
 import { runCoinExpiryNotificationJob } from "../lib/coinExpiryNotificationJob";
 import { createNotification } from "../repository/notification";
 import ecpayService from "../services/ecpay";
+import { preparePayment } from "../repository/payment";
 
 type ApiEnvelope = {
   success: boolean;
@@ -2008,9 +2009,11 @@ async function run() {
     assert.equal(order.orderStatus, "pending");
     assert.equal(order.coinInfo, null);
 
+    const paymentAttempt = await preparePayment({ orderId: order.id, userId: orderUser.user.id,
+      idempotencyKey: orderIdempotencyKey, amount: 95, method: "Credit" });
     const callbackData = {
       MerchantID: process.env.MERCHANTID!,
-      MerchantTradeNo: `API${Date.now()}`,
+      MerchantTradeNo: paymentAttempt.merchantTradeNo,
       RtnCode: "1",
       RtnMsg: "Succeeded",
       TradeAmt: "95",
@@ -2094,7 +2097,7 @@ async function run() {
         where: eq(schema.chatRoomTable.orderId, order.id),
         with: { messages: true },
       });
-      return Boolean(chatRoom?.messages.length);
+      return Boolean(chatRoom?.messages.some(message => message.content?.includes("退款金額：")));
     }, "refund chat message");
     const refundChatRoom = await db.query.chatRoomTable.findFirst({
       where: eq(schema.chatRoomTable.orderId, order.id),
@@ -2102,7 +2105,7 @@ async function run() {
     });
     const refundMessages = refundChatRoom?.messages ?? [];
     const refundChatContent =
-      refundMessages[refundMessages.length - 1]?.content ?? "";
+      refundMessages.find(message => message.content?.includes("退款金額："))?.content ?? "";
     assert.match(refundChatContent, /退款金額：NT\$ 95/);
     assert.match(refundChatContent, /退還金幣：50/);
     assert.match(

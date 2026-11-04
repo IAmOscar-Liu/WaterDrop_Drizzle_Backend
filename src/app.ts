@@ -3,6 +3,8 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import express from "express";
 import morgan from "morgan";
+import { isApiRequest } from "./lib/requestContext";
+import { requestContextMiddleware } from "./middleware/requestContext";
 import swaggerUi from "swagger-ui-express";
 import { swaggerSpec } from "./lib/swagger";
 import { errorHandler } from "./middleware/errorHandler";
@@ -23,27 +25,27 @@ import SystemRouter from "./routers/system";
 import TreasureBoxRouter from "./routers/treasureBox";
 
 const app = express();
+app.use(requestContextMiddleware);
 
+const corsOptions = {
+  origin: ["https://waterdropping.com", "https://dev.waterdropping.com", "https://stg.waterdropping.com"],
+  credentials: true,
+};
+const apiCors = cors({ ...corsOptions, exposedHeaders: ["X-Request-ID", "Retry-After"] });
+const otherCors = cors(corsOptions);
+// API parsing failures also need exposed request references.
+app.use((req, res, next) => isApiRequest(req) ? apiCors(req, res, next) : next());
 app.use(express.json({ limit: "50mb" }));
 app.use(cookieParser());
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
-app.use(
-  cors({
-    origin: [
-      "https://waterdropping.com",
-      "https://dev.waterdropping.com",
-      "https://stg.waterdropping.com",
-    ],
-    credentials: true,
-  }),
-);
+app.use((req, res, next) => isApiRequest(req) ? next() : otherCors(req, res, next));
 
 app.get("/api/test", (_, res) => {
   res.send({ success: true, data: "OK" });
 });
 
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-app.use(morgan(process.env.NODE_ENV === "test" ? "tiny" : "dev"));
+app.use(morgan(process.env.NODE_ENV === "test" ? "tiny" : "dev", { skip: req => isApiRequest(req) }));
 app.use("/api/admin", AdminRouter);
 app.use("/api/auth", AuthRouter);
 app.use("/api/app", AppBadgeRouter);
@@ -61,6 +63,10 @@ app.use("/api/collection", CollectionRouter);
 app.use("/api/notification", NotificationRouter);
 app.use("/api/file", FileRouter);
 
+app.use("/api", (req, res, next) => {
+  if (!isApiRequest(req)) return next();
+  res.status(404).json({ success: false, statusCode: 404, code: "RESOURCE_NOT_FOUND" });
+});
 app.use(errorHandler);
 
 export default app;

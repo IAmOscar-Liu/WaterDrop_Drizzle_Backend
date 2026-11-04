@@ -52,15 +52,20 @@ export async function captureReceipt(
   }
 
   if (receivedAt) {
-    const deadline = new Date(receivedAt.getTime() + getRefundWindowMs());
-    await tx.update(schema.orderItemTable).set({
-      refundWindowStartsAt: receivedAt,
-      originalRefundDeadlineAt: deadline,
-      refundDeadlineAt: deadline,
-    }).where(and(
+    const items = await tx.select().from(schema.orderItemTable).where(and(
       eq(schema.orderItemTable.deliveryId, delivery.id),
       isNull(schema.orderItemTable.refundWindowStartsAt),
-    ));
+    )).orderBy(schema.orderItemTable.id).for("update");
+    for (const item of items) {
+      const days = item.refundWindowDaysAtSale;
+      const deadline = days === null || days === 0 ? null
+        : new Date(receivedAt.getTime() + getRefundWindowMs(days));
+      await tx.update(schema.orderItemTable).set({
+        refundWindowStartsAt: receivedAt,
+        originalRefundDeadlineAt: deadline,
+        refundDeadlineAt: deadline,
+      }).where(and(eq(schema.orderItemTable.id, item.id), isNull(schema.orderItemTable.refundWindowStartsAt)));
+    }
   }
   return delivery;
 }

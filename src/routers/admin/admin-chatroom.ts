@@ -11,7 +11,7 @@ router.use(adminChatroomSyncRouter);
  * @swagger
  * tags:
  *   name: Chatroom
- *   description: Chatroom management for administrators
+ *   description: Chatroom management for administrators. The first successful payment automatically posts an admin-type system reminder in each virtual-product or seller-home-delivery order/variant room, creating the room when needed. ECPay CVS items are excluded. Reminders appear in existing history and app/admin message.created and chatroom.updated events; payment retries do not duplicate them.
  *
  * components:
  *   schemas:

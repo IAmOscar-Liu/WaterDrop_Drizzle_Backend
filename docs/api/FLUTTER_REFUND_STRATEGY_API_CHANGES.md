@@ -1,8 +1,10 @@
 # Flutter — buyer refund requests and deadlines
 
-Date: 2026-10-23
+Date: 2026-11-03
 
-Status: **Implemented; local and development migrations applied. Development deployment and staging migration/deployment remain required.** App endpoints remain outside admin Swagger.
+Product policy update: [FLUTTER_PRODUCT_REFUND_WINDOWS.md](FLUTTER_PRODUCT_REFUND_WINDOWS.md). This supersedes fixed 10-day examples in earlier integrations.
+
+Status: Implemented in source. Product refund window migrations must be applied before deployment; see the 2026-11-03 handoff below.
 
 ## Allowed operations
 
@@ -15,10 +17,10 @@ Use the existing app bearer token. There is no app refund status/quantity/amount
 
 ## Local/development testing exception
 
-With **`NODE_ENV=local` or `NODE_ENV=development`**, a buyer may request a refund for a **paid** order before delivery/pickup. **For faster testing, the base window is 24 hours and the rejection extension is 12 hours (one tenth of the normal durations).** Delivery/pickup prerequisites are relaxed; ownership, available quantity, strict app input, reviewer permissions and agreement requirements remain enforced.
+With **`NODE_ENV=local` or `NODE_ENV=development`**, a buyer may request a refund for a **paid** order before delivery/pickup. **For faster testing, finite product windows run at one tenth of their configured duration (default 8 days becomes 19 hours 12 minutes) and the rejection extension is 12 hours (one tenth of the normal durations).** Delivery/pickup prerequisites are relaxed; ownership, available quantity, strict app input, reviewer permissions and agreement requirements remain enforced.
 
-- If the item already has a trusted pickup window, use that stored window and its existing rejection extensions. Newly recorded pickup windows in these environments last 24 hours.
-- Otherwise, use the order's **payment confirmation time (`orders.completedAt`) + 24 hours**, including when no delivery exists. Order creation time is not used. Repeated payment confirmations preserve the first recorded payment time.
+- If the item already has a trusted pickup window, use that stored window and its existing rejection extensions. New pickup windows use the purchase policy divided by ten; disabled and unlimited policies retain their meanings.
+- Otherwise, use the order's **payment confirmation time (`orders.completedAt`) + one tenth of the purchased duration**, including when no delivery exists. Order creation time is not used. Repeated payment confirmations preserve the first recorded payment time.
 - Explicit rejection still sets `max(currentDeadline, rejectedAt + 12 hours)`. New requests and review quantity increases are blocked at or after the effective deadline. Previously accepted requests remain reviewable after expiry.
 - If neither a receipt window nor a payment confirmation timestamp is known, block new requests and deadline-extending rejection with `409 PAYMENT_TIME_UNKNOWN`. Do not invent a timestamp for historical data.
 
@@ -26,9 +28,9 @@ Order/delivery detail returns the **effective** window timestamps plus `refundWi
 
 Payment-based test windows are derived without writing fake receipt timestamps to the item or delivery. Rejection deadline-before/after values are stored on the existing refund decision rows and included when deriving subsequent test eligibility. Once a real pickup window is recorded, it becomes authoritative. Refund detail's raw nested `orderItem` and items nested under order deliveries do not substitute for computed order/delivery detail eligibility.
 
-**Staging, production, test and unknown/unset environments require the normal receipt window below**, with `refundReceiptChecksBypassed:false`; they retain the normal 240-hour window and 120-hour rejection extension and do not use the payment fallback. This correction requires no additional database migration or environment variable.
+**Staging, production, test and unknown/unset environments require the normal receipt window below**, with `refundReceiptChecksBypassed:false`; they use the purchased product policy (default 8 days) and 120-hour rejection extension and do not use the payment fallback. The product-policy schema migration is required; no new environment variable is needed.
 
-Previously stored pickup deadlines and rejection extensions are preserved; this change does not rewrite historical database rows. Payment-based fallback windows are recalculated as payment confirmation + 24 hours, while retaining any longer recorded rejection extension. Use fresh test orders for the accelerated flow. FE should display the returned `refundDeadlineAt`, not hardcode either duration.
+Previously stored pickup deadlines and rejection extensions are preserved; this change does not rewrite historical database rows. Payment-based fallback windows are recalculated as payment confirmation + one tenth of the purchased duration, while retaining any longer recorded rejection extension. Use fresh test orders for the accelerated flow. FE should display the returned `refundDeadlineAt`, not hardcode either duration.
 
 ## Environment-specific help and consent content
 
@@ -39,7 +41,7 @@ Existing URLs remain `GET /api/system/customer-support` (app bearer token) and `
 | `local`, `development` | `src/assets/json/local-development/customer-support-content.json` | `src/assets/html/local-development/user-consent.html` |
 | Other environments, including staging/production/test or unset | `src/assets/json/customer-support-content.json` | `src/assets/html/user-consent.html` |
 
-The testing versions retain the standard 240-hour/120-hour rules and examples, and clearly explain the 1/10 testing durations (24/12 hours), payment-time fallback and preservation of previously saved deadlines. The JSON adds a testing FAQ first in the refund section. Standard versions contain no testing exception. Maintain both versions when changing shared policy wording.
+The testing versions retain the product-specific durations and the 120-hour rejection rule, and clearly explain the 1/10 testing durations (default 19 hours 12 minutes / 12 hours), payment-time fallback and preservation of previously saved deadlines. The JSON adds a testing FAQ first in the refund section. Standard versions contain no testing exception. Maintain both versions when changing shared policy wording.
 
 Deploy the additional asset files with the server code. Rebuild/restart once for the new selector; subsequent content-only edits are read from the selected files on requests, subject to client/HTTP caching. This content separation requires no database migration.
 
@@ -82,6 +84,7 @@ Read `GET /api/order/:id`, then use **`data.items[]`** for the refund button and
 
 ```json
 {
+  "refundWindowDaysAtSale": 10,
   "refundReceiptChecksBypassed": false,
   "refundWindowSource": "receipt",
   "refundWindowStartsAt": "2026-10-22T02:00:00.000Z",
@@ -98,8 +101,8 @@ Read `GET /api/order/:id`, then use **`data.items[]`** for the refund button and
 
 - Show the create button when `canRefund:true`; limit the picker to `remainingRefundQuantity`.
 - Display `refundDeadlineAt` as the deadline for **new requests**. It is exactly elapsed hours, not midnight on a calendar date.
-- `refundWindowStatus` is `not_started`, `open`, `expired`, or `unknown`. The three timestamps are nullable when no applicable window is known. In local/development, the payment fallback described above can supply the window.
-- `refundBlockReason` is null or `ORDER_NOT_PAID`, `NOT_RECEIVED`, `RECEIPT_TIME_UNKNOWN`, `PAYMENT_TIME_UNKNOWN`, `REFUND_WINDOW_EXPIRED`, `NO_REFUNDABLE_QUANTITY`.
+- `refundWindowStatus` is `not_started`, `open`, `expired`, `unknown`, or `disabled`. Deadlines are also null for disabled and unlimited policies; use the purchase snapshot and canRefund, never deadline-null alone. In local/development, the payment fallback described above can supply the window.
+- `refundBlockReason` is null or `REFUNDS_DISABLED`, `ORDER_NOT_PAID`, `NOT_RECEIVED`, `RECEIPT_TIME_UNKNOWN`, `PAYMENT_TIME_UNKNOWN`, `REFUND_WINDOW_EXPIRED`, `NO_REFUNDABLE_QUANTITY`.
 - `unreservedRefundQuantity` ignores time restrictions. Do not use it to enable a button when `canRefund:false`.
 - A display can become stale. The backend rechecks ownership, payment, the database clock and available quantity under transaction locks when accepting a request. Refresh the order after success or a business failure.
 - Use UTC ISO timestamps and display in the user's timezone. Use `refundServerTime` to help display remaining time; device time does not determine acceptance.
@@ -107,7 +110,9 @@ Read `GET /api/order/:id`, then use **`data.items[]`** for the refund button and
 
 ## Normal-environment decisions, retrying requests and examples
 
-The first trusted buyer pickup/receipt observation grants **240 hours**. Store arrival does not start that clock. All units in one order-item row share the deadline; other items/deliveries can have different deadlines. Review time does not pause or extend it.
+The first trusted buyer pickup/receipt observation starts the purchased product policy (default **8 days**, `0` disables requests, `null` means unlimited after receipt). Store arrival does not start that clock. All units in one order-item row share the deadline; other items/deliveries can have different deadlines. Review time does not pause or extend it.
+
+These examples assume an existing purchase with a 10-day policy. New default purchases use 8 days; other products may differ.
 
 | Situation | Outcome |
 | --- | --- |
@@ -161,3 +166,6 @@ Receipt time is the first trusted backend observation from a logistics callback/
 Coin restoration, original coin expiration and cash-remainder calculations remain unchanged. The refund deadline extension does not extend coin validity or add a new automatic cash payout API. See the [admin handoff](FE-confirmation/ADMIN_REFUND_STRATEGY_API_CHANGES.md) for review actions and operations.
 
 Development verification on 2026-10-23 found 64 legacy paid orders without a payment-confirmation timestamp and no recorded pickup windows. Their items need verified historical evidence before new requests can use the local/development fallback; they may return `PAYMENT_TIME_UNKNOWN`. Use a newly paid order for testing. No historical timestamps or original request snapshots were fabricated. See the [admin verification notes](FE-confirmation/ADMIN_REFUND_STRATEGY_API_CHANGES.md#development-migration-verification--2026-10-23) for schema/data checks. The development server still needs deployment/restart with this code.
+
+
+Unlimited policies retain null deadlines on rejection; actor, reason and rejection time are still recorded. They remain subject to payment, receipt (except the local/development payment fallback), quantity and ownership checks.

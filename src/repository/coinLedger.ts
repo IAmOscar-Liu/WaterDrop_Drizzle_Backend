@@ -1408,7 +1408,7 @@ export async function allocateOrderCoinsWithTx(
     remainingUnits -= usedUnits;
   }
   if (remainingUnits > 0) {
-    throw new Error("Insufficient non-expired attributed coin lots.");
+    throw new CustomError("Insufficient non-expired attributed coin lots.", 409, "INSUFFICIENT_SPENDABLE_COINS");
   }
   await tx
     .update(schema.userTable)

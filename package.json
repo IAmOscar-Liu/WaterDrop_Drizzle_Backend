@@ -41,7 +41,7 @@
     "db:studio:production": "DRIZZLE_ENV=production npx drizzle-kit studio",
     "test:app-badge": "NODE_ENV=test tsx src/tests/runTestSuite.ts app-badge",
     "_test:app-badge": "NODE_ENV=test NO_CRON=true tsx src/tests/appBadge.integration.ts",
-    "test": "npm run build && NODE_ENV=test tsx src/tests/runTestSuite.ts all",
+    "test": "npm run build && npm run test:error-handling && NODE_ENV=test tsx src/tests/runTestSuite.ts all",
     "test:api": "NODE_ENV=test tsx src/tests/runTestSuite.ts api",
     "test:refund-auth": "NODE_ENV=test tsx src/tests/runTestSuite.ts refund-auth",
     "notification:auto-send:local": "NODE_ENV=local tsx src/scripts/notificationAutoSend.ts",
@@ -91,7 +91,10 @@
     "test:checkout-validation": "NODE_ENV=test tsx src/tests/runTestSuite.ts checkout-validation",
     "_test:checkout-validation": "NODE_ENV=test NO_CRON=true tsx src/tests/checkoutValidation.integration.ts",
     "test:refund-strategy": "NODE_ENV=test tsx src/tests/runTestSuite.ts refund-strategy",
-    "_test:refund-strategy": "NODE_ENV=test NO_CRON=true tsx src/tests/refundStrategy.integration.ts"
+    "_test:refund-strategy": "NODE_ENV=test NO_CRON=true tsx src/tests/refundStrategy.integration.ts",
+    "test:payment-safety": "NODE_ENV=test tsx src/tests/runTestSuite.ts payment-safety",
+    "_test:payment-safety": "NODE_ENV=test NO_CRON=true tsx src/tests/paymentSafety.integration.ts",
+    "test:error-handling": "tsx src/tests/errorHandling.integration.ts"
   },
   "keywords": [],
   "author": "",

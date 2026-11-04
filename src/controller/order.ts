@@ -109,13 +109,14 @@ class OrderController {
     sendJsonResponse(res, result);
   }
 
-  async updateOrderStatus(req: Request, res: Response): Promise<any> {
+  async updateOrderStatus(req: RequestWithId, res: Response): Promise<any> {
     const { orderId } = req.params;
     const { status, metadata } = req.body;
     const result = await orderService.updateOrderStatus(
       orderId,
       status as Exclude<schema.Order["orderStatus"], undefined>,
       metadata,
+      req.userId,
     );
     sendJsonResponse(res, result);
   }

@@ -1,4 +1,4 @@
-import type { Order, OrderItem } from "../db/schema";
+import type { Order, OrderItem, RefundItem } from "../db/schema";
 
 export const PLATFORM_LOGO_CONTENT_ID = "waterdrop-platform-logo";
 export const HORIZON_LOGO_CONTENT_ID = "horizon-platform-logo";
@@ -232,6 +232,80 @@ export function generateRefundCreatedEmailHtml({
           <p style="margin:0;font-size:14px;line-height:1.8;color:#6b7280;">
             水滴團隊 敬上
           </p>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+
+export type RefundStatusEmailDetails = {
+  productName: string;
+  variantName: string | null;
+  merchantTradeNo: string | null;
+  status: RefundItem["status"];
+  reason: string;
+  note: string | null;
+  quantity: number;
+  originalQuantity: number;
+  cashRefundAmount: number | null;
+  returnableCoins: number | null;
+  rejectionReason: string | null;
+};
+
+export function generateRefundStatusChangedEmailHtml({
+  userName, orderId, body, details,
+}: { userName: string; orderId: string; body: string; details: RefundStatusEmailDetails }): string {
+  const partial = details.status === "completed" && details.quantity < details.originalQuantity;
+  const title = partial ? "部分退款已完成" : {
+    completed: "退貨退款已完成", rejected: "退貨申請已拒絕", pending: "退貨申請等待處理",
+    processing: "退貨申請處理中", cancelled: "退貨申請已取消",
+  }[details.status];
+  const row = (label: string, value: string) => `
+    <tr>
+      <th scope="row" width="35%" style="padding:12px 16px;border-bottom:1px solid #e5e7eb;text-align:left;vertical-align:top;background-color:#f8fafc;color:#6b7280;font-weight:400;">${escapeHtml(label)}</th>
+      <td style="padding:12px 16px;border-bottom:1px solid #e5e7eb;word-break:break-word;">${escapeHtml(value).replace(/\n/g, "<br />")}</td>
+    </tr>`;
+  const productName = details.variantName?.trim()
+    ? `${details.productName}（${details.variantName.trim()}）` : details.productName;
+  const rows = [
+    row("訂單編號", details.merchantTradeNo ?? "—"),
+    row("商品", productName),
+    row("處理結果", title),
+    row("申請原因", details.reason),
+    ...(details.note ? [row("申請備註", details.note)] : []),
+    row("原申請數量", `${details.originalQuantity} 件`),
+    row(details.status === "completed" ? "完成退款數量" : "本次申請數量", `${details.quantity} 件`),
+    ...(partial ? [row("未退款數量", `${details.originalQuantity - details.quantity} 件`)] : []),
+    ...(details.status === "rejected" && details.rejectionReason ? [row("拒絕原因", details.rejectionReason)] : []),
+    ...(details.status === "completed" && details.cashRefundAmount !== null
+      ? [row("現金退款金額", `NT$ ${formatAmount(details.cashRefundAmount)}`)] : []),
+    ...(details.status === "completed" && details.returnableCoins !== null
+      ? [row("退還金幣", `${formatAmount(details.returnableCoins)} 金幣`)] : []),
+  ].join("");
+  // Reasons are displayed in the table; preserve deadline/reapplication guidance below it.
+  const guidance = body.split("\n").filter(line => !line.startsWith("拒絕原因：")).join("\n");
+  return `
+    <div style="margin:0;padding:32px 16px;background-color:#f4f7fb;font-family:Arial,'Noto Sans TC',sans-serif;color:#1f2937;">
+      <div style="max-width:560px;margin:0 auto;background-color:#ffffff;border-radius:20px;overflow:hidden;box-shadow:0 12px 32px rgba(15,23,42,0.08);">
+        <div style="padding:32px 32px 24px;background-color:#2563eb;background:linear-gradient(135deg,#0ea5e9 0%,#2563eb 100%);color:#ffffff;">
+          ${platformLogoHtml}
+          <div style="font-size:14px;letter-spacing:1px;opacity:0.9;">水滴</div>
+          <h1 style="margin:12px 0 0;font-size:28px;line-height:1.3;">${title}</h1>
+          <p style="margin:12px 0 0;font-size:15px;line-height:1.8;opacity:0.95;">您的退貨申請已有新的處理結果，請查看以下明細。</p>
+        </div>
+        <div style="padding:32px;">
+          <p style="margin:0 0 20px;font-size:16px;line-height:1.8;">您好，${escapeHtml(userName)}：</p>
+          <h2 style="margin:0 0 12px;font-size:18px;">退貨處理明細</h2>
+          <table width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin-bottom:24px;font-size:14px;line-height:1.8;border:1px solid #e5e7eb;">
+            <tbody>${rows}</tbody>
+          </table>
+          <p style="margin:0 0 24px;font-size:14px;line-height:1.8;color:#4b5563;">${escapeHtml(guidance).replace(/\n/g, "<br />")}</p>
+          ${partial ? '<p style="margin:0 0 24px;font-size:14px;line-height:1.8;color:#4b5563;">其餘數量未退款，已釋出可申請數量；如仍符合資格，可於有效期限內另建申請。部分退款不另建拒絕紀錄，也不延長新申請期限。</p>' : ""}
+          <div style="margin-bottom:28px;">
+            <a href="${escapeHtml(getOrderLink(orderId))}" style="display:inline-block;padding:14px 24px;border-radius:999px;background-color:#2563eb;color:#ffffff;font-size:15px;font-weight:700;text-decoration:none;">查看訂單</a>
+          </div>
+          <p style="margin:0;font-size:14px;line-height:1.8;color:#6b7280;">如有任何問題，請聯繫客服人員。<br />水滴團隊 敬上</p>
         </div>
       </div>
     </div>

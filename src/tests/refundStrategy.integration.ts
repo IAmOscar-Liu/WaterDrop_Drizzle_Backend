@@ -1,18 +1,20 @@
 import "../lib/env";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import app from "../app";
 import db, { client } from "../lib/initDB";
 import * as s from "../db/schema";
 import { fixtureToken } from "./accountSessionFixture";
 import { createRefundWithChatContext, updateRefundItemStatus } from "../repository/refund";
 import { createDelivery, updateDeliveryWithNotificationContext, getDeliveryById } from "../repository/delivery";
-import { getOrderById, updateOrderStatus } from "../repository/order";
+import { createOrder, getOrderById, updateOrderStatus } from "../repository/order";
 import { refundEligibility, getRefundWindowMs, getRefundExtensionMs, REFUND_WINDOW_MS, REFUND_EXTENSION_MS } from "../lib/refundEligibility";
 import { swaggerSpec } from "../lib/swagger";
 import ecpayService from "../services/ecpay";
+import { sendRefundStatusChangedNotifications } from "../services/refund";
 
 async function run() {
   assert.equal(process.env.TEST_DATABASE_MANAGED, "true");
@@ -27,6 +29,35 @@ async function run() {
     await db.update(s.accountTable).set({ accountGroupId: group.id }).where(eq(s.accountTable.id, employee.id));
     const [product] = await db.insert(s.productTable).values({ sellerId: seller.id, name: "Refund strategy", description: "Fixture" }).returning();
     const [variant] = await db.insert(s.productVariantTable).values({ productId: product.id, price: 100, stock: 30 }).returning();
+    assert.equal(product.refundWindowDays, 8);
+    // Verify the actual upgrade SQL preserves legacy rows and changes only future defaults.
+    const rollbackMigration = new Error("Rollback migration verification");
+    await assert.rejects(db.transaction(async tx => {
+      await tx.execute(sql.raw("ALTER TABLE order_items DROP CONSTRAINT order_items_refund_window_ck"));
+      await tx.execute(sql.raw("ALTER TABLE order_items DROP COLUMN refund_window_days_at_sale"));
+      await tx.execute(sql.raw("ALTER TABLE products DROP COLUMN refund_window_days"));
+      await tx.execute(sql.raw("ALTER TABLE order_items ADD CONSTRAINT order_items_refund_window_ck CHECK (true)"));
+      const [legacyOrder] = await tx.insert(s.orderTable).values({ userId: buyer.id, subTotal: 100, totalAmount: 100 }).returning();
+      const legacyItemId = randomUUID();
+      const start = new Date("2026-01-01T00:00:00Z");
+      const deadline = new Date("2026-01-11T00:00:00Z");
+      await tx.execute(sql`insert into order_items (id, order_id, product_id, product_variant_id, quantity, unit_price_at_sale, line_total, product_name_at_sale,
+        refund_window_starts_at, original_refund_deadline_at, refund_deadline_at)
+        values (${legacyItemId}, ${legacyOrder.id}, ${product.id}, ${variant.id}, 1, 100, 100, 'Legacy', ${start.toISOString()}::timestamptz, ${deadline.toISOString()}::timestamptz, ${deadline.toISOString()}::timestamptz)`);
+      const migration = readFileSync("drizzle_local/0118_product_refund_windows.sql", "utf8");
+      for (const statement of migration.split("--> statement-breakpoint")) {
+        if (statement.trim()) await tx.execute(sql.raw(statement));
+      }
+      const legacy = (await tx.select().from(s.orderItemTable).where(eq(s.orderItemTable.id, legacyItemId)))[0];
+      assert.equal(legacy.refundWindowDaysAtSale, 10);
+      assert.deepEqual(legacy.refundDeadlineAt, deadline);
+      assert.equal((await tx.select().from(s.productTable).where(eq(s.productTable.id, product.id)))[0].refundWindowDays, 8);
+      const [newOrder] = await tx.insert(s.orderTable).values({ userId: buyer.id, subTotal: 100, totalAmount: 100 }).returning();
+      const [newPurchase] = await tx.insert(s.orderItemTable).values({ orderId: newOrder.id, productId: product.id, productVariantId: variant.id,
+        quantity: 1, unitPriceAtSale: 100, lineTotal: 100, productNameAtSale: "New" }).returning();
+      assert.equal(newPurchase.refundWindowDaysAtSale, 8);
+      throw rollbackMigration;
+    }), error => error === rollbackMigration);
     async function fixture(quantity = 2) {
       const [order] = await db.insert(s.orderTable).values({ userId: buyer.id, subTotal: quantity * 100, totalAmount: quantity * 100, orderStatus: "paid", completedAt: new Date(), discountCoin: 0 }).returning();
       const [item] = await db.insert(s.orderItemTable).values({ orderId: order.id, productId: product.id, productVariantId: variant.id, quantity, unitPriceAtSale: 100, lineTotal: quantity * 100, productNameAtSale: product.name }).returning();
@@ -42,6 +73,98 @@ async function run() {
       await updateDeliveryWithNotificationContext(f.delivery.id, { status: "delivered", RtnCode: "2067", RtnMsg: "Picked up" }, undefined, "provider_poll");
       return (await db.query.orderItemTable.findFirst({ where: eq(s.orderItemTable.id, f.item.id) }))!;
     }
+    // Exercise the real checkout snapshot and mixed-policy receipt path.
+    const policyProducts = await db.insert(s.productTable).values([0, 3, 7, 10, 50, null].map(days => ({
+      sellerId: seller.id, name: `Policy ${days}`, description: "Fixture", refundWindowDays: days,
+    }))).returning();
+    const policyVariants = await db.insert(s.productVariantTable).values(policyProducts.map(p => ({ productId: p.id, price: 100, stock: 10 }))).returning();
+    const policyOrder = await createOrder({
+      orderData: { userId: buyer.id, subTotal: 600, totalAmount: 600, orderStatus: "paid", completedAt: new Date() },
+      items: policyProducts.map(p => ({ productId: p.id, productVariantId: policyVariants.find(v => v.productId === p.id)!.id,
+        quantity: 2, unitPriceAtSale: 100, productNameAtSale: p.name, refundWindowDaysAtSale: 99, deliveryId: randomUUID(),
+        refundWindowStartsAt: new Date(), originalRefundDeadlineAt: new Date("2099-01-01"), refundDeadlineAt: new Date("2099-01-01") })),
+      idempotencyKey: randomUUID(),
+    });
+    assert.ok(policyOrder);
+    const beforeReceipt = await db.query.orderItemTable.findMany({ where: eq(s.orderItemTable.orderId, policyOrder.id) });
+    assert.ok(beforeReceipt.every(row => row.refundWindowStartsAt === null && row.refundDeadlineAt === null && row.deliveryId === null));
+    await db.update(s.productTable).set({ refundWindowDays: 1 }).where(eq(s.productTable.sellerId, seller.id));
+    const policyDelivery = await createDelivery({ orderId: policyOrder.id, LogisticsType: "home_delivery", GoodsAmount: 600, status: "delivered" },
+      policyVariants.map(v => ({ productId: v.productId, variantId: v.id })), "provider_callback");
+    const policyItems = (await getOrderById(policyOrder.id))!.items;
+    for (const p of policyProducts) {
+      const row = policyItems.find(i => i.productId === p.id)!;
+      assert.equal(row.refundWindowDaysAtSale, p.refundWindowDays); // Client input/live product changes cannot overwrite it.
+      assert.ok(row.refundWindowStartsAt);
+      if (p.refundWindowDays === 0 || p.refundWindowDays === null) assert.equal(row.refundDeadlineAt, null);
+      else assert.equal(row.refundDeadlineAt!.getTime() - row.refundWindowStartsAt!.getTime(), getRefundWindowMs(p.refundWindowDays));
+      assert.equal(row.canRefund, p.refundWindowDays !== 0);
+    }
+    assert.equal(refundEligibility("paid", { ...policyItems.find(i => i.refundWindowDaysAtSale === null)!, refundWindowStartsAt: null }, [], new Date(), "delivered").refundBlockReason, "RECEIPT_TIME_UNKNOWN");
+    const disabled = policyItems.find(i => i.refundWindowDaysAtSale === 0)!;
+    const disabledRequest = await request("/api/refund", buyer.id, "POST", { orderItemId: disabled.id, quantity: 1 });
+    assert.equal(disabledRequest.status, 409);
+    assert.equal(disabledRequest.data.code, "REFUNDS_DISABLED");
+    assert.equal(disabled.refundWindowStatus, "disabled");
+    const unlimited = policyItems.find(i => i.refundWindowDaysAtSale === null)!;
+    assert.equal(refundEligibility("paid", unlimited, [], new Date("2099-01-01")).canRefund, true);
+    const unlimitedInput = { orderItemId: unlimited.id, quantity: 1, reason: "Unlimited", actor: { kind: "user" as const, id: buyer.id } };
+    const unlimitedRefund = await createRefundWithChatContext(unlimitedInput);
+    await updateRefundItemStatus(unlimitedRefund.refundItem.id, { quantity: 2, agreement: { confirmed: true, note: "Agreed" } }, seller.id);
+    const unlimitedRejection = await updateRefundItemStatus(unlimitedRefund.refundItem.id, { status: "rejected", rejectionReason: "Review" }, seller.id);
+    assert.equal(unlimitedRejection.refundItem.rejectionDeadlineBefore, null);
+    assert.equal(unlimitedRejection.refundItem.rejectionDeadlineAfter, null);
+    assert.ok(unlimitedRejection.refundItem.rejectedAt);
+    assert.ok(unlimitedRejection.notificationContext);
+    const statusEmails: { to: string; subject: string; html: string }[] = [];
+    await sendRefundStatusChangedNotifications(unlimitedRejection.notificationContext, {
+      sendEmail: async input => { statusEmails.push(input); return { success: true }; },
+      getFcmTokensInUserIds: async () => [],
+      sendMulticastPushNotification: async () => undefined,
+    });
+    assert.equal(statusEmails.length, 1);
+    assert.equal(statusEmails[0].to, buyer.email);
+    assert.ok(statusEmails[0].html.includes("不限期"));
+    // App notification failure must not prevent the independent email attempt.
+    const loggedFailures: unknown[][] = [];
+    const originalConsoleError = console.error;
+    console.error = (...args: unknown[]) => { loggedFailures.push(args); };
+    try {
+      await sendRefundStatusChangedNotifications({ ...unlimitedRejection.notificationContext,
+        refundWindowDaysAtSale: 8, refundDeadlineAt: new Date("2026-11-04T04:10:35Z"),
+      }, {
+        sendEmail: async input => { statusEmails.push(input); return { success: true }; },
+        createNotification: async () => { throw new Error("Simulated app notification failure"); },
+      });
+    } finally { console.error = originalConsoleError; }
+    assert.equal(statusEmails.length, 2);
+    assert.ok(statusEmails[1].html.includes("2026-11-04 12:10"));
+    assert.ok(loggedFailures.some(args => String(args[0]).includes("app notification")));
+    await sendRefundStatusChangedNotifications({ ...unlimitedRejection.notificationContext, status: "completed" }, {
+      sendEmail: async input => { statusEmails.push(input); return { success: true }; },
+      getFcmTokensInUserIds: async () => [],
+      sendMulticastPushNotification: async () => undefined,
+    });
+    assert.equal(statusEmails.length, 3);
+    assert.ok(statusEmails[2].html.includes("已完成"));
+    assert.ok(!statusEmails[2].html.includes("重新提出"));
+
+    assert.equal(unlimitedRejection.notificationContext?.refundDeadlineAt, null);
+    assert.equal(unlimitedRejection.notificationContext?.refundWindowDaysAtSale, null);
+    await updateRefundItemStatus(unlimitedRefund.refundItem.id, { status: "rejected", rejectionReason: "Review" }, seller.id);
+    await createRefundWithChatContext(unlimitedInput);
+    assert.equal((await getDeliveryById(policyDelivery.id))!.items.find(i => i.id === unlimited.id)!.refundDeadlineAt, null);
+    // Product writes preserve explicit null and zero, and reject invalid values.
+    for (const days of [null, 0, 7]) {
+      const result = await request(`/api/admin/product/${product.id}`, seller.id, "PUT", { refundWindowDays: days });
+      assert.equal(result.status, 200, JSON.stringify(result));
+      assert.equal(result.data.data.refundWindowDays, days);
+    }
+    for (const days of [-1, 1.5, "7", false, 3650001]) {
+      assert.equal((await request(`/api/admin/product/${product.id}`, seller.id, "PUT", { refundWindowDays: days })).status, 400);
+    }
+    const omitted = await request(`/api/admin/product/${product.id}`, seller.id, "PUT", { description: "Updated" });
+    assert.equal(omitted.data.data.refundWindowDays, 7);
     const f = await fixture();
     assert.equal(f.delivery.receivedAt, null);
     assert.equal(f.delivery.status, "ready_for_pickup");
@@ -181,17 +304,35 @@ async function run() {
     try {
       for (const environment of ["local", "development"]) {
         process.env.NODE_ENV = environment;
-        assert.equal(getRefundWindowMs(), 24 * 60 * 60 * 1000);
+        assert.equal(getRefundWindowMs(), REFUND_WINDOW_MS / 10);
         assert.equal(getRefundExtensionMs(), 12 * 60 * 60 * 1000);
+        for (const days of [0, 3, 7, 8, 50, null]) {
+          const testItem = { ...f.item, deliveryId: null, refundWindowDaysAtSale: days };
+          const paidAt = new Date();
+          const effective = refundEligibility("paid", testItem, [], paidAt, undefined, paidAt);
+          assert.equal(effective.canRefund, days !== 0);
+          if (days !== null && days > 0) {
+            assert.equal(effective.refundDeadlineAt!.getTime() - paidAt.getTime(), days * 86400000 / 10);
+          } else assert.equal(effective.refundDeadlineAt, null);
+        }
+        const unlimitedTesting = await fixture(2);
+        await db.update(s.orderTable).set({ completedAt: new Date(Date.now() - 60000) }).where(eq(s.orderTable.id, unlimitedTesting.order.id));
+        await db.update(s.orderItemTable).set({ refundWindowDaysAtSale: null, deliveryId: null }).where(eq(s.orderItemTable.id, unlimitedTesting.item.id));
+        const unlimitedTestRefund = await createRefundWithChatContext({ ...unlimitedInput, orderItemId: unlimitedTesting.item.id });
+        const unlimitedTestRejection = await updateRefundItemStatus(unlimitedTestRefund.refundItem.id, { status: "rejected", rejectionReason: "Testing" }, seller.id);
+        assert.equal(unlimitedTestRejection.refundItem.rejectionDeadlineAfter, null);
+        assert.equal((await getOrderById(unlimitedTesting.order.id))!.items[0].canRefund, true);
+
         const receiptTesting = await fixture(1);
         const receiptItem = await picked(receiptTesting);
-        assert.equal(receiptItem.refundDeadlineAt!.getTime() - receiptItem.refundWindowStartsAt!.getTime(), 24 * 60 * 60 * 1000);
+        assert.equal(receiptItem.refundDeadlineAt!.getTime() - receiptItem.refundWindowStartsAt!.getTime(), REFUND_WINDOW_MS / 10);
         assert.deepEqual((await picked(receiptTesting)).refundDeadlineAt, receiptItem.refundDeadlineAt);
         const earlyRequest = await createRefundWithChatContext({ orderItemId: receiptItem.id, quantity: 1, reason: "Receipt-window test", actor: { kind: "user", id: buyer.id } });
         const earlyRejection = await updateRefundItemStatus(earlyRequest.refundItem.id, { status: "rejected", rejectionReason: "Early rejection" }, seller.id);
         assert.deepEqual(earlyRejection.refundItem.rejectionDeadlineAfter, receiptItem.refundDeadlineAt);
+        assert.deepEqual(earlyRejection.notificationContext?.refundDeadlineAt, receiptItem.refundDeadlineAt);
         const testing = await fixture(3);
-        const paidAt = new Date(Date.now() - 20 * 60 * 60 * 1000);
+        const paidAt = new Date(Date.now() - 18 * 60 * 60 * 1000);
         const createdAt = new Date(Date.now() - 20 * 86400000);
         await db.update(s.orderTable).set({ completedAt: paidAt, createdAt }).where(eq(s.orderTable.id, testing.order.id));
         await db.update(s.orderItemTable).set({ deliveryId: null }).where(eq(s.orderItemTable.id, testing.item.id));
@@ -200,12 +341,12 @@ async function run() {
         assert.equal(prePickup.refundReceiptChecksBypassed, true);
         assert.equal(prePickup.refundWindowSource, "payment_for_testing");
         assert.equal(prePickup.refundWindowStartsAt!.getTime(), paidAt.getTime());
-        assert.equal(prePickup.originalRefundDeadlineAt!.getTime(), paidAt.getTime() + 24 * 60 * 60 * 1000);
+        assert.equal(prePickup.originalRefundDeadlineAt!.getTime(), paidAt.getTime() + REFUND_WINDOW_MS / 10);
         assert.equal(prePickup.refundWindowStatus, "open");
         assert.equal(prePickup.remainingRefundQuantity, 3);
         assert.equal(refundEligibility("paid", testing.item, [], prePickup.refundDeadlineAt!, undefined, paidAt).canRefund, false);
         assert.equal(refundEligibility("paid", testing.item, [], new Date(prePickup.refundDeadlineAt!.getTime() - 1), undefined, paidAt).canRefund, true);
-        // A duplicate payment confirmation cannot restart the 24-hour window.
+        // A duplicate payment confirmation cannot restart the policy window.
         await updateOrderStatus({ orderId: testing.order.id, status: "paid" });
         assert.equal((await getOrderById(testing.order.id))!.completedAt!.getTime(), paidAt.getTime());
         const input = { orderItemId: testing.item.id, quantity: 1, reason: "Pre-pickup testing", actor: { kind: "user" as const, id: buyer.id } };
@@ -217,6 +358,8 @@ async function run() {
         const testingRejection = await updateRefundItemStatus(testingRefund.refundItem.id, { status: "rejected", rejectionReason: "Test" }, seller.id);
         assert.equal(testingRejection.refundItem.rejectionDeadlineBefore!.getTime(), prePickup.refundDeadlineAt!.getTime());
         assert.equal(testingRejection.refundItem.rejectionDeadlineAfter!.getTime(), testingRejection.refundItem.rejectedAt!.getTime() + 12 * 60 * 60 * 1000);
+        assert.deepEqual(testingRejection.notificationContext?.refundDeadlineAt, testingRejection.refundItem.rejectionDeadlineAfter);
+        assert.equal(testingRejection.notificationContext?.rejectionReason, "Test");
         const repeated = await updateRefundItemStatus(testingRefund.refundItem.id, { status: "rejected", rejectionReason: "Test" }, seller.id);
         assert.deepEqual(repeated.refundItem.rejectionDeadlineAfter, testingRejection.refundItem.rejectionDeadlineAfter);
         assert.deepEqual((await getOrderById(testing.order.id))!.items[0].refundDeadlineAt, testingRejection.refundItem.rejectionDeadlineAfter);
@@ -272,7 +415,7 @@ async function run() {
       for (const environment of ["stg", "production", "test", "unknown", undefined]) {
         if (environment === undefined) delete process.env.NODE_ENV;
         else process.env.NODE_ENV = environment;
-        assert.equal(getRefundWindowMs(), 240 * 60 * 60 * 1000);
+        assert.equal(getRefundWindowMs(), REFUND_WINDOW_MS);
         assert.equal(getRefundExtensionMs(), 120 * 60 * 60 * 1000);
         const noReceipt = { ...f.item, deliveryId: null };
         assert.equal(refundEligibility("paid", noReceipt, [], new Date(), undefined, new Date()).canRefund, false);

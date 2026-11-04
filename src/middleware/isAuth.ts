@@ -1,3 +1,4 @@
+import { usesApiErrorContract } from "../lib/requestContext";
 import { NextFunction, Response } from "express";
 import jwt from "jsonwebtoken";
 import { eq } from "drizzle-orm";
@@ -40,6 +41,7 @@ async function authenticate(
   try {
     decodedPayload = jwt.verify(token, JWT_SECRET, { algorithms: ["HS256"] });
   } catch (error: any) {
+    if (usesApiErrorContract()) return next(new CustomError("Please sign in again", 401, "UNAUTHENTICATED"));
     console.error("Token validation error:", error.message);
     return next(new CustomError(`Token validation error -  ${error.message}`, 401));
   }

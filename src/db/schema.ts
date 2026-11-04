@@ -721,6 +721,7 @@ export const productTable = pgTable("products", {
   status: productStatusEnum("status").default("active").notNull(),
   type: productTypeEnum("type").default("normal").notNull(),
   allowHomeDelivery: boolean("allow_home_delivery").default(false).notNull(),
+  refundWindowDays: integer("refund_window_days").default(8),
   metadata: jsonb("metadata"),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   deletedByAccountId: uuid("deleted_by_account_id").references(
@@ -734,7 +735,9 @@ export const productTable = pgTable("products", {
     .defaultNow()
     .$onUpdate(() => new Date())
     .notNull(),
-});
+}, (t) => ({
+  refundWindowDaysCheck: check("products_refund_window_days_ck", sql`${t.refundWindowDays} is null or ${t.refundWindowDays} between 0 and 3650000`),
+}));
 
 export const productVariantTable = pgTable(
   "product_variants",
@@ -1187,6 +1190,7 @@ export const orderItemTable = pgTable(
 
     quantity: integer("quantity").notNull(),
     pendingQuantity: integer("pending_quantity").notNull().default(0),
+    refundWindowDaysAtSale: integer("refund_window_days_at_sale").default(8),
     refundWindowStartsAt: timestamp("refund_window_starts_at", { withTimezone: true }),
     originalRefundDeadlineAt: timestamp("original_refund_deadline_at", { withTimezone: true }),
     refundDeadlineAt: timestamp("refund_deadline_at", { withTimezone: true }),
@@ -1213,11 +1217,16 @@ export const orderItemTable = pgTable(
       .notNull(),
   },
   (t) => ({
+    refundWindowDaysCheck: check("order_items_refund_window_days_ck", sql`${t.refundWindowDaysAtSale} is null or ${t.refundWindowDaysAtSale} between 0 and 3650000`),
     refundWindowCheck: check("order_items_refund_window_ck", sql`(
       ${t.refundWindowStartsAt} is null and ${t.originalRefundDeadlineAt} is null and ${t.refundDeadlineAt} is null
     ) or (
-      ${t.refundWindowStartsAt} is not null and ${t.originalRefundDeadlineAt} is not null and ${t.refundDeadlineAt} is not null
-      and ${t.originalRefundDeadlineAt} > ${t.refundWindowStartsAt} and ${t.refundDeadlineAt} >= ${t.originalRefundDeadlineAt}
+      ${t.refundWindowStartsAt} is not null and (
+        ((${t.refundWindowDaysAtSale} is null or ${t.refundWindowDaysAtSale} = 0)
+          and ${t.originalRefundDeadlineAt} is null and ${t.refundDeadlineAt} is null)
+        or (${t.refundWindowDaysAtSale} is not null and ${t.refundWindowDaysAtSale} > 0 and ${t.originalRefundDeadlineAt} is not null and ${t.refundDeadlineAt} is not null
+          and ${t.originalRefundDeadlineAt} > ${t.refundWindowStartsAt} and ${t.refundDeadlineAt} >= ${t.originalRefundDeadlineAt})
+      )
     )`),
     orderItemUnique: uniqueIndex("order_items_order_variant_uk").on(
       t.orderId,
@@ -1341,6 +1350,26 @@ export const deliveryLogTable = pgTable("delivery_logs", {
     .defaultNow()
     .notNull(),
 });
+
+// One server-issued payment attempt per order; callbacks are durably recorded before settlement.
+export const orderPaymentAttemptTable = pgTable("order_payment_attempts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orderId: uuid("order_id").notNull().references(() => orderTable.id, { onDelete: "restrict" }),
+  merchantTradeNo: text("merchant_trade_no").notNull(),
+  idempotencyKey: text("idempotency_key").notNull(),
+  amount: integer("amount").notNull(),
+  method: orderPaymentEnum("method").notNull(),
+  state: text("state").$type<"prepared" | "succeeded" | "failed" | "settled">().default("prepared").notNull(),
+  providerData: jsonb("provider_data").$type<Record<string, string>>(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().$onUpdate(() => new Date()).notNull(),
+}, t => ({
+  orderUnique: uniqueIndex("order_payment_attempts_order_uk").on(t.orderId),
+  tradeUnique: uniqueIndex("order_payment_attempts_trade_uk").on(t.merchantTradeNo),
+  stateIdx: index("order_payment_attempts_state_idx").on(t.state, t.updatedAt),
+  amountCheck: check("order_payment_attempts_amount_ck", sql`${t.amount} > 0`),
+  stateCheck: check("order_payment_attempts_state_ck", sql`${t.state} in ('prepared', 'succeeded', 'failed', 'settled')`),
+}));
 
 export const merchantTradeTable = pgTable(
   "merchant_trades",
@@ -2999,3 +3028,5 @@ export const userBadgeWorkTable = pgTable("user_badge_work", {
 
 export type UserBadgeState = typeof userBadgeStateTable.$inferSelect;
 export type UserBadgeWork = typeof userBadgeWorkTable.$inferSelect;
+
+export type OrderPaymentAttempt = typeof orderPaymentAttemptTable.$inferSelect;

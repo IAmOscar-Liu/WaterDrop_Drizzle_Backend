@@ -12,6 +12,8 @@ const orderDate = z.iso.datetime({
 });
 
 export const orderValidation = {
+  updateParams: z.object({ orderId: z.uuid() }),
+  updateBody: z.object({ status: z.literal("canceled") }).strict(),
   listQuery: z
     .object({
       startDate: orderDate.optional(),

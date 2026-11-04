@@ -1,3 +1,4 @@
+import { recordErrorCause, usesApiErrorContract } from "../lib/requestContext";
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
@@ -23,6 +24,23 @@ import {
 import { createMerchantTrade } from "../repository/order";
 
 class EcPayService {
+  async queryPaymentTradeInfo(merchantTradeNo: string): Promise<Record<string, string>> {
+    const parameters = {
+      MerchantID: process.env.MERCHANTID!, MerchantTradeNo: merchantTradeNo,
+      TimeStamp: Math.floor(Date.now() / 1000),
+    };
+    const CheckMacValue = this.generateCheckValue(parameters, process.env.HASHKEY!, process.env.HASHIV!);
+    const response = await axios.post(ECPAY_CHECKOUT_URL.replace("AioCheckOut", "QueryTradeInfo"),
+      new URLSearchParams({ ...parameters, TimeStamp: String(parameters.TimeStamp), CheckMacValue }).toString(),
+      { timeout: 8000, headers: { "Content-Type": "application/x-www-form-urlencoded" }, responseType: "text" });
+    const data = Object.fromEntries(new URLSearchParams(String(response.data)));
+    if (!this.validateCheckMacValue(data, { hashKey: process.env.HASHKEY!, hashIV: process.env.HASHIV! })
+      || data.MerchantID !== parameters.MerchantID || data.MerchantTradeNo !== merchantTradeNo) {
+      throw new Error("Untrusted ECPay payment query response");
+    }
+    return data;
+  }
+
   getTestMerchantID(realAccount: boolean): string {
     return !realAccount ? "3002607" : process.env.MERCHANTID!;
   }
@@ -103,16 +121,12 @@ class EcPayService {
       hashIV: string;
     };
   }) {
-    let formHtml = `<form id="ecpayForm" action="${actionUrl}" method="POST" style="display: none;">`;
-
-    // 插入所有參數作為隱藏欄位
-    for (const key in parameters) {
-      if (Object.hasOwnProperty.call(parameters, key)) {
-        // 確保值被轉換為字串，以正確插入 HTML value 屬性
-        formHtml += `<input name="${key}" value="${String(
-          parameters[key],
-        )}"/>\n`;
-      }
+    const attribute = (value: unknown) => String(value).replace(/[&<>"']/g, character => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    }[character]!));
+    let formHtml = `<form id="ecpayForm" action="${attribute(actionUrl)}" method="POST" style="display: none;">`;
+    for (const [key, value] of Object.entries(parameters)) {
+      formHtml += `<input type="hidden" name="${attribute(key)}" value="${attribute(value)}"/>\n`;
     }
 
     // 插入 CheckMacValue
@@ -180,7 +194,7 @@ class EcPayService {
 
     //最後，轉成大寫
     if (process.env.NODE_ENV !== "test") {
-      console.log(`check value: ${hexHash.toUpperCase()}`);
+      if (!usesApiErrorContract()) console.log(`check value: ${hexHash.toUpperCase()}`);
     }
     return hexHash.toUpperCase();
   }
@@ -199,7 +213,8 @@ class EcPayService {
       );
       return generatedCheckMacValue === CheckMacValue;
     } catch (error) {
-      console.error("Error validating CheckMacValue:", error);
+      if (usesApiErrorContract()) recordErrorCause(error);
+      else console.error("Error validating CheckMacValue:", error);
       return false;
     }
   }
@@ -257,7 +272,7 @@ class EcPayService {
 
     // 1.2 驗證 SenderNames, 規定同上
     if (Array.isArray(SenderNames)) {
-      console.log(`validating sender names: ${SenderNames}`);
+      if (!usesApiErrorContract()) console.log(`validating sender names: ${SenderNames}`);
       for (let SenderName of SenderNames) {
         if (!SenderName) return `寄件人姓名不存在`;
 
@@ -283,7 +298,7 @@ class EcPayService {
 
     // 2.1 驗證 SenderCellPhone, 規定同上
     if (Array.isArray(SenderCellPhones)) {
-      console.log(`validating sender cell phones: ${SenderCellPhones}`);
+      if (!usesApiErrorContract()) console.log(`validating sender cell phones: ${SenderCellPhones}`);
       for (let SenderCellPhone of SenderCellPhones) {
         if (!SenderCellPhone) return `寄件人手機不存在`;
 
@@ -525,7 +540,8 @@ class EcPayService {
       "md5",
     );
 
-    console.log("base_param: ", base_param);
+
+    if (!usesApiErrorContract()) console.log("base_param: ", base_param);
 
     try {
       // 使用 axios 發送 POST 到綠界 (注意：不是 res.send(formHtml))
@@ -543,7 +559,8 @@ class EcPayService {
       // 回傳 JSON 給 Client
       return resultData;
     } catch (error) {
-      console.error("Create ECPay Express Error:", error);
+      if (usesApiErrorContract()) recordErrorCause(error);
+      else console.error("Create ECPay Express Error:", error);
       if (options?.throwError) throw error;
       return null;
     }
@@ -684,7 +701,8 @@ class EcPayService {
       // 回傳 JSON 給 Client
       return resultData;
     } catch (error) {
-      console.error("Query ECPay Error:", error);
+      if (usesApiErrorContract()) recordErrorCause(error);
+      else console.error("Query ECPay Error:", error);
       if (options?.throwError) throw error;
       return null;
     }
@@ -732,7 +750,8 @@ class EcPayService {
 
       return data.StoreList;
     } catch (error) {
-      console.error("Query ECPay Error:", error);
+      if (usesApiErrorContract()) recordErrorCause(error);
+      else console.error("Query ECPay Error:", error);
       if (options?.throwError) throw error;
       return null;
     }

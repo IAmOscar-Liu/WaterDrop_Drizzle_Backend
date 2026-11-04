@@ -5,6 +5,7 @@ import app from "./app";
 import { ensureEcpayStoreListOnStartup } from "./lib/initEcpayStoreList";
 import {
   appBadgeTask,
+  paymentReconciliationTask,
   accountRecoveryCleanupTask,
   coinLedgerMaintenanceTask,
   chatSyncCleanupTask,
@@ -24,6 +25,7 @@ import {
 
 const PORT = process.env.PORT ?? 4000;
 
+paymentReconciliationTask.start();
 appBadgeTask.start();
 accountRecoveryCleanupTask.start();
 chatSyncCleanupTask.start();

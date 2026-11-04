@@ -61,6 +61,10 @@ const router = Router();
  *         lineTotal:
  *           type: number
  *           format: double
+ *         refundWindowDaysAtSale:
+ *           type: integer
+ *           nullable: true
+ *           description: Purchased policy; 0 disables refunds, null means unlimited after receipt. Legacy items retain 10 days; new purchases default to 8.
  *         refundWindowStartsAt:
  *           type: string
  *           format: date-time
@@ -70,12 +74,12 @@ const router = Router();
  *           type: string
  *           format: date-time
  *           nullable: true
- *           description: Window start plus 240 hours normally, or 24 hours for new local/development windows. Stored historical deadlines are preserved; computed details may use the payment fallback.
+ *           description: Window start plus the purchased policy duration (default 8 days), divided by 10 in local/development. Null for disabled or unlimited policies. Stored historical deadlines are preserved; computed details may use the payment fallback.
  *         refundDeadlineAt:
  *           type: string
  *           format: date-time
  *           nullable: true
- *           description: Effective deadline for new requests; explicit rejection may extend it. A timely existing request stays reviewable after this time.
+ *           description: Null for disabled or unlimited policies, or unknown receipt. Use canRefund and refundWindowDaysAtSale to distinguish. Effective deadline for new requests; explicit rejection may extend it. A timely existing request stays reviewable after this time.
  *         createdAt:
  *           type: string
  *           format: date-time
@@ -256,7 +260,7 @@ const router = Router();
  *           nullable: true
  *         orderStatus:
  *           type: string
- *           description: Payment-processing orders expire at midnight Asia/Taipei after the calendar day following createdAt ends. This job runs once daily; pending orders retain their 30-minute timeout and cleanup schedule.
+ *           description: Credit and ATM enter payment-processing only after checkout validation and resource reservation. Paid requires verified matching ECPay success and committed settlement. Orders with unresolved payment attempts retain reservations for reconciliation and are excluded from ordinary expiry; legacy processing orders without an attempt retain their existing expiry schedule. Pending orders retain their 30-minute timeout.
  *           enum: [pending, payment-processing, paid, failed, expired, canceled]
  *         orderPayment:
  *           type: string
@@ -390,7 +394,7 @@ const router = Router();
  *                                     $ref: '#/components/schemas/RefundLog'
  *                       refundReceiptChecksBypassed:
  *                         type: boolean
- *                         description: True only in local/development; delivery/pickup checks are relaxed, but deadline, payment and quantity checks remain. New local/development windows last 24 hours with 12-hour rejection extensions. Without a receipt window, start at payment confirmation. Previously stored deadlines/extensions are preserved.
+ *                         description: True only in local/development; delivery/pickup checks are relaxed, but deadline, payment and quantity checks remain. Finite local/development windows use one tenth of the purchased duration (8 days becomes 19 hours 12 minutes), with 12-hour rejection extensions. Without a receipt window, start at payment confirmation. Previously stored deadlines/extensions are preserved.
  *                       refundWindowSource:
  *                         type: string
  *                         nullable: true
@@ -398,11 +402,11 @@ const router = Router();
  *                         description: Source of the effective window. Payment fallback is local/development only; absent payment time returns PAYMENT_TIME_UNKNOWN. Stored receipt evidence is unchanged.
  *                       refundWindowStatus:
  *                         type: string
- *                         enum: [not_started, open, expired, unknown]
+ *                         enum: [not_started, open, expired, unknown, disabled]
  *                       refundBlockReason:
  *                         type: string
  *                         nullable: true
- *                         enum: [ORDER_NOT_PAID, NOT_RECEIVED, RECEIPT_TIME_UNKNOWN, PAYMENT_TIME_UNKNOWN, REFUND_WINDOW_EXPIRED, NO_REFUNDABLE_QUANTITY]
+ *                         enum: [REFUNDS_DISABLED, ORDER_NOT_PAID, NOT_RECEIVED, RECEIPT_TIME_UNKNOWN, PAYMENT_TIME_UNKNOWN, REFUND_WINDOW_EXPIRED, NO_REFUNDABLE_QUANTITY]
  *                       unreservedRefundQuantity:
  *                         type: integer
  *                         description: Purchased minus pending, processing and completed quantities, independent of deadline.

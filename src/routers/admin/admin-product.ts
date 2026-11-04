@@ -57,6 +57,13 @@ const router = Router();
  *         type:
  *           type: string
  *           enum: [normal, refrigeration, virtual]
+ *         refundWindowDays:
+ *           type: integer
+ *           nullable: true
+ *           minimum: 0
+ *           maximum: 3650000
+ *           default: 8
+ *           description: Days after receipt; 0 disables refunds, null means unlimited. Omit on create for 8 days; omit on update to preserve. Applies to all variants and new purchases only; local/development use one tenth of finite durations.
  *         allowHomeDelivery:
  *           type: boolean
  *         images:
@@ -500,6 +507,13 @@ router.get(
  *                 type: string
  *                 enum: [normal, refrigeration, virtual]
  *                 default: "normal"
+ *               refundWindowDays:
+ *                 type: integer
+ *                 nullable: true
+ *                 minimum: 0
+ *                 maximum: 3650000
+ *                 default: 8
+ *                 description: Days after receipt; 0 disables refunds, null means unlimited. Omit on create for 8 days; omit on update to preserve. Applies to all variants and new purchases only; local/development use one tenth of finite durations.
  *               allowHomeDelivery:
  *                 type: boolean
  *               images:
@@ -619,6 +633,13 @@ router.post(
  *               type:
  *                 type: string
  *                 enum: [normal, refrigeration, virtual]
+ *               refundWindowDays:
+ *                 type: integer
+ *                 nullable: true
+ *                 minimum: 0
+ *                 maximum: 3650000
+ *                 default: 8
+ *                 description: Days after receipt; 0 disables refunds, null means unlimited. Omit on create for 8 days; omit on update to preserve. Applies to all variants and new purchases only; local/development use one tenth of finite durations.
  *               allowHomeDelivery:
  *                 type: boolean
  *               images:

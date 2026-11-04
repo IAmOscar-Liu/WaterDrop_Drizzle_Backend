@@ -827,6 +827,20 @@
       "when": 1792643510662,
       "tag": "0117_watery_oracle",
       "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1793694610294,
+      "tag": "0118_product_refund_windows",
+      "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1793777045990,
+      "tag": "0119_payment_safety",
+      "breakpoints": true
     }
   ]
 }

@@ -34,7 +34,7 @@ import {
 } from "./utils/query";
 import { recordAdminActivityWithTx } from "./adminActivity";
 import { resolveAdminSellerScope } from "./adminScope";
-import { linkOrderChatrooms, publishOrderChatrooms } from "./orderChatroom";
+import { linkOrderChatrooms, publishOrderChatrooms, sendOrderFulfillmentFollowups } from "./orderChatroom";
 
 type OrderItemWithProductVariant = {
   product?: schema.Product | null;
@@ -237,6 +237,12 @@ export async function createOrder({
       tx.insert(schema.orderItemTable).values(
         items.map((item) => ({
           ...item,
+          // Refund policy and receipt evidence are always server-owned.
+          refundWindowDaysAtSale: productMap.get(item.productId)!.refundWindowDays,
+          refundWindowStartsAt: null,
+          originalRefundDeadlineAt: null,
+          refundDeadlineAt: null,
+          deliveryId: null,
           variantNameAtSale:
             item.variantNameAtSale ?? variantMap.get(item.productVariantId!)?.name,
           variantSkuAtSale:
@@ -266,6 +272,7 @@ export async function createOrder({
         key: idempotencyKey,
         requestPath: "/orders", // You can adjust this to be more specific if needed
         requestData: {
+          orderId: newOrder.id,
           orderData,
           items,
         },
@@ -300,6 +307,18 @@ export async function createOrder({
           }
         : order,
     );
+  });
+}
+
+export async function cancelOwnOrder(orderId: string, userId: string) {
+  return db.transaction(async tx => {
+    const [order] = await tx.select().from(schema.orderTable)
+      .where(and(eq(schema.orderTable.id, orderId), eq(schema.orderTable.userId, userId))).for("update");
+    if (!order) throw new CustomError("Order not found", 404);
+    if (order.orderStatus !== "pending" && order.orderStatus !== "canceled") {
+      throw new CustomError("Payment may already be in progress; cancellation requires reconciliation", 409, "PAYMENT_CONFIRMATION_PENDING");
+    }
+    return updateOrderStatusWithTx(tx, { orderId, status: "canceled" });
   });
 }
 
@@ -340,7 +359,20 @@ export async function updateIdempotencyKey({
   return updatedIdempotencyKey;
 }
 
-export async function updateOrderStatus({
+type OrderStatusInput = {
+  orderId: string;
+  status: Exclude<schema.NewOrder["orderStatus"], undefined>;
+  metadata?: schema.NewOrder["metadata"];
+  paymentInfo?: schema.NewOrder["paymentInfo"];
+};
+type OrderExpirationGuard = { status: "pending" | "payment-processing"; createdBefore: Date };
+type OrderTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+export async function updateOrderStatus(input: OrderStatusInput, expirationGuard?: OrderExpirationGuard) {
+  return db.transaction(tx => updateOrderStatusWithTx(tx, input, expirationGuard));
+}
+
+export async function updateOrderStatusWithTx(tx: OrderTx, {
   orderId,
   status,
   metadata,
@@ -350,8 +382,7 @@ export async function updateOrderStatus({
   status: Exclude<schema.NewOrder["orderStatus"], undefined>;
   metadata?: schema.NewOrder["metadata"];
   paymentInfo?: schema.NewOrder["paymentInfo"];
-}, expirationGuard?: { status: "pending" | "payment-processing"; createdBefore: Date }) {
-  return db.transaction(async (tx) => {
+}, expirationGuard?: OrderExpirationGuard, authorizedPaymentAttemptId?: string) {
     await tx
       .select({ id: schema.orderTable.id })
       .from(schema.orderTable)
@@ -382,6 +413,17 @@ export async function updateOrderStatus({
       order.orderStatus !== expirationGuard.status ||
       order.createdAt.getTime() >= expirationGuard.createdBefore.getTime()
     )) return undefined;
+
+    const paymentAttempt = await tx.query.orderPaymentAttemptTable.findFirst({
+      where: eq(schema.orderPaymentAttemptTable.orderId, orderId),
+    });
+    const protectedPayment = paymentAttempt && ["prepared", "succeeded", "settled"].includes(paymentAttempt.state);
+    if (protectedPayment && authorizedPaymentAttemptId !== paymentAttempt.id) {
+      if (expirationGuard) return undefined;
+      if (status !== order.orderStatus) throw new CustomError("Payment confirmation is controlled by ECPay", 409, "PAYMENT_CONFIRMATION_PENDING");
+    }
+    // A delayed failure or ATM-info callback can never undo an already-paid order.
+    if (order.orderStatus === "paid" && status !== "paid") return order;
 
     const coinInfo: Record<string, number> = {};
 
@@ -690,6 +732,10 @@ export async function updateOrderStatus({
       })
       .where(eq(schema.orderTable.id, orderId));
 
+    if (status === "paid" && !order.completedAt) {
+      await sendOrderFulfillmentFollowups(tx, order);
+    }
+
     const nextMerchantTradeNo = metadata ? (metadata as any).MerchantTradeNo ?? null : order.merchantTradeNo;
     if (order.orderStatus !== status || order.merchantTradeNo !== nextMerchantTradeNo) {
       await publishOrderChatrooms(tx, order);
@@ -739,8 +785,8 @@ export async function updateOrderStatus({
           }
         : order,
     );
-  });
 }
+
 
 export async function deleteIdempotencyKeys(
   expireInMs: number,

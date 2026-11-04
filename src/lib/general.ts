@@ -1,11 +1,17 @@
 import { Response } from "express";
+import { usesApiErrorContract } from "./requestContext";
+import { serializeFailure } from "./errorPolicy";
 import { ServiceResponse } from "../type/general";
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 
 export function sendJsonResponse<T>(res: Response, result: ServiceResponse<T>) {
-  res.status(result.statusCode ?? 200).json(result);
+  if (!result.success && usesApiErrorContract()) {
+    const failure = serializeFailure(result, res.statusCode, res.locals.requestId);
+    return res.status(failure.statusCode ?? 500).json(failure);
+  }
+  return res.status(result.statusCode ?? 200).json(result);
 }
 
 export function getRandomInteger(min: number = 0, max: number = 100) {

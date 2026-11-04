@@ -67,13 +67,17 @@ const router = Router();
  *                         type: string
  *                         nullable: true
  *                         description: Current first image of the live variant; not a historical snapshot.
+ *                       refundWindowDaysAtSale:
+ *                         type: integer
+ *                         nullable: true
+ *                         description: Purchased policy; 0 disables refunds, null means unlimited after receipt. Legacy items retain 10 days; new purchases default to 8.
  *                       refundItems:
  *                         type: array
  *                         items:
  *                           $ref: '#/components/schemas/RefundItem'
  *                       refundReceiptChecksBypassed:
  *                         type: boolean
- *                         description: True only in local/development; delivery/pickup checks are relaxed, but deadline, payment and quantity checks remain. New local/development windows last 24 hours with 12-hour rejection extensions. Without a receipt window, start at payment confirmation. Previously stored deadlines/extensions are preserved.
+ *                         description: True only in local/development; delivery/pickup checks are relaxed, but deadline, payment and quantity checks remain. Finite local/development windows use one tenth of the purchased duration (8 days becomes 19 hours 12 minutes), with 12-hour rejection extensions. Without a receipt window, start at payment confirmation. Previously stored deadlines/extensions are preserved.
  *                       refundWindowSource:
  *                         type: string
  *                         nullable: true
@@ -81,11 +85,11 @@ const router = Router();
  *                         description: Source of the effective window. Payment fallback is local/development only; absent payment time returns PAYMENT_TIME_UNKNOWN. Stored receipt evidence is unchanged.
  *                       refundWindowStatus:
  *                         type: string
- *                         enum: [not_started, open, expired, unknown]
+ *                         enum: [not_started, open, expired, unknown, disabled]
  *                       refundBlockReason:
  *                         type: string
  *                         nullable: true
- *                         enum: [ORDER_NOT_PAID, NOT_RECEIVED, RECEIPT_TIME_UNKNOWN, PAYMENT_TIME_UNKNOWN, REFUND_WINDOW_EXPIRED, NO_REFUNDABLE_QUANTITY]
+ *                         enum: [REFUNDS_DISABLED, ORDER_NOT_PAID, NOT_RECEIVED, RECEIPT_TIME_UNKNOWN, PAYMENT_TIME_UNKNOWN, REFUND_WINDOW_EXPIRED, NO_REFUNDABLE_QUANTITY]
  *                       unreservedRefundQuantity:
  *                         type: integer
  *                         description: Purchased minus pending, processing and completed quantities, independent of deadline.
@@ -414,7 +418,7 @@ router.put(
  *   get:
  *     tags: [Delivery]
  *     summary: Generate ECPay trade document HTML
- *     description: Returns an HTML form that auto-submits to ECPay to print the trade document. Requires a valid JWT token in the query parameters.
+ *     description: Returns an HTML form that auto-submits to ECPay to print the trade document. Requires a valid JWT token in the query parameters. Failures return the shared JSON error envelope; success remains HTML.
  *     parameters:
  *       - in: query
  *         name: token
@@ -451,6 +455,18 @@ router.put(
  *           text/html:
  *             schema:
  *               type: string
+ *       '400':
+ *         description: Invalid query fields or missing C2C print identifiers.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiFailure'
+ *       '401':
+ *         description: Invalid or expired query token.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiFailure'
  */
 router.get(
   "/helper/printTradeDocument",

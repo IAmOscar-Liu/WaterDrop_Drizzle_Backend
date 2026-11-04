@@ -1,3 +1,4 @@
+import { recordErrorCause, usesApiErrorContract } from "./requestContext";
 import jwt, { type SignOptions } from "jsonwebtoken";
 import { CookieOptions, Response } from "express";
 import { CustomError } from "./error";
@@ -43,7 +44,8 @@ export function generateToken(
     );
     return token;
   } catch (error) {
-    console.error("Error generating JWT:", error);
+    if (usesApiErrorContract()) recordErrorCause(error);
+    else console.error("Error generating JWT:", error);
     // Depending on your application's needs, you might want to re-throw
     // or handle this more gracefully.
     return undefined;
@@ -99,7 +101,8 @@ export function validateToken(token?: string) {
     return decodedPayload;
   } catch (error: any) {
     // Common errors include 'TokenExpiredError' and 'JsonWebTokenError' (for bad signature)
-    console.error("Invalid token:", error.message);
+    if (usesApiErrorContract()) recordErrorCause(error);
+    else console.error("Invalid token:", error.message);
     return null;
   }
 }

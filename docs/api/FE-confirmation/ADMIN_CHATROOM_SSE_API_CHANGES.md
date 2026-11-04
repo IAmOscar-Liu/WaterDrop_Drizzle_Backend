@@ -222,3 +222,15 @@ npm run test:admin-chatroom-sse
 The suite creates and drops a disposable database on the `.env.test` PostgreSQL server, using the current schema in memory without generating migration files or migrating configured databases. It tests two API processes, platform/seller/employee isolation, empty-room first message, live/replay, snapshots, canonical REST, duplicate send/conflict, read no-ops, rollback, concurrent publication across users, access resets, token expiry, oversized events and retention. It also runs existing chat authorization, legacy response compatibility and app SSE regressions. No real device pushes are sent. Actual FE behavior, FCM presentation, proxy streaming and production load remain deployment checks.
 
 Related app contracts: [Flutter chat SSE](../FLUTTER_CHATROOM_SSE_API_CHANGES.md) and [chat authorization](../CHATROOM_AUTHORIZATION_API_CHANGES.md). FE should use this document for admin-specific scope, unread counts and endpoint paths.
+
+
+## Paid-order delivery follow-up (2026-11-03)
+
+The first successful payment now automatically posts an `admin`-type message prefixed `【系統通知】` in each applicable order/product-variant conversation. Virtual-product messages ask the buyer and seller to confirm delivery method, usage/redemption information and delivery time. Seller-home-delivery messages ask them to confirm shipment timing, delivery information and tracking details. Selection uses checkout's `nonCvsPickupGroup` and exact product/variant references, not merely `allowHomeDelivery`; ECPay CVS purchases do not receive a home-delivery reminder.
+
+An existing linked/pre-sale conversation is reused; otherwise the backend creates an order-linked buyer/seller/product-variant conversation. Separate purchased variants receive separate reminders. The message makes the room visible in chat lists. Existing chat history, `message.created` and `chatroom.updated` app/admin synchronization events expose the message without new client request fields or enums. Seller scoping and unread state remain enforced; reminders do not mark participant messages as read.
+
+Messages and payment state commit in the same transaction. Concurrent callbacks or repeated successful payment updates do not create duplicate reminders. No schema migration is required. This applies to new payment confirmations; it does not backfill already-paid orders or send additional emails/FCM notifications.
+
+
+Payment confirmation update (2026-11-04): Credit and ATM now enter `payment-processing` after pre-charge validation/reservation. Only verified ECPay success and committed settlement produce `paid`. See [payment safety and client changes](../PAYMENT_SAFETY_API_CHANGES.md).

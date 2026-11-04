@@ -1,6 +1,6 @@
 import { and, asc, eq, isNull, or, sql } from "drizzle-orm";
 import * as schema from "../db/schema";
-import { ChatTx, lockChatFeed, publishChatRoom } from "./chatroomSync";
+import { appendChatEvent, canonicalChatMessage, ChatTx, lockChatFeed, publishChatRoom } from "./chatroomSync";
 
 function reusableChatOrderCondition() {
   return or(isNull(schema.chatRoomTable.orderId), sql`exists (
@@ -96,6 +96,63 @@ export async function linkOrderChatrooms(
     if (!room) continue;
     await tx.update(schema.chatRoomTable).set({ orderId: order.id })
       .where(eq(schema.chatRoomTable.id, room.id));
+    await publishChatRoom(tx, room.id);
+  }
+}
+
+
+/** Persist fulfillment reminders with the first successful payment, under its order lock. */
+export async function sendOrderFulfillmentFollowups(tx: ChatTx, order: Pick<schema.Order, "id" | "userId" | "shippingInfo"> & {
+  items: Array<Pick<schema.OrderItem, "productId" | "productVariantId" | "productNameAtSale" | "variantNameAtSale"> & {
+    product: Pick<schema.Product, "sellerId" | "type">;
+  }>;
+}) {
+  const shipping = order.shippingInfo as { nonCvsPickupGroup?: Array<{
+    LogisticsType?: string; type?: string; products?: Array<{ productId: string; variantId: string }>;
+  }> } | null;
+  const groups = Array.isArray(shipping?.nonCvsPickupGroup) ? shipping.nonCvsPickupGroup : [];
+  const targets = order.items.flatMap(item => {
+    const group = groups.find(group => group && Array.isArray(group.products) && group.products.some(product =>
+      product && product.productId === item.productId && product.variantId === item.productVariantId));
+    const method = group?.LogisticsType ?? group?.type;
+    const virtual = method === "virtual" || item.product.type === "virtual";
+    // Membership is snapshotted checkout selection, not the product's allowHomeDelivery flag.
+    const homeDelivery = Boolean(group) && (method === "home_delivery" || method === "HOME");
+    return virtual || homeDelivery ? [{ item, virtual }] : [];
+  });
+  if (!targets.length) return;
+  await lockChatFeed(tx, order.userId);
+  for (const { item, virtual } of targets) {
+    const lookup = { userId: order.userId, accountId: item.product.sellerId,
+      productId: item.productId, productVariantId: item.productVariantId };
+    let room = await tx.query.chatRoomTable.findFirst({ where: and(
+      eq(schema.chatRoomTable.userId, order.userId), eq(schema.chatRoomTable.accountId, lookup.accountId),
+      eq(schema.chatRoomTable.productId, item.productId), eq(schema.chatRoomTable.productVariantId, item.productVariantId),
+      eq(schema.chatRoomTable.orderId, order.id),
+    ) });
+    if (!room) {
+      room = await findReusableProductChatroom(tx, lookup);
+      if (room) {
+        [room] = await tx.update(schema.chatRoomTable).set({ orderId: order.id })
+          .where(eq(schema.chatRoomTable.id, room.id)).returning();
+      } else {
+        [room] = await tx.insert(schema.chatRoomTable).values({ ...lookup, orderId: order.id }).returning();
+      }
+    }
+    if (room.status !== "active") {
+      [room] = await tx.update(schema.chatRoomTable).set({ status: "active", accessVersion: sql`${schema.chatRoomTable.accessVersion} + 1` })
+        .where(eq(schema.chatRoomTable.id, room.id)).returning();
+    }
+    const productName = item.variantNameAtSale?.trim()
+      ? `${item.productNameAtSale}（${item.variantNameAtSale.trim()}）` : item.productNameAtSale;
+    const content = virtual
+      ? `【系統通知】訂單已付款成功。您購買的「${productName}」為虛擬商品，請透過此聊天室與賣家確認提供方式、使用／兌換資訊及交付時間；也請賣家在此回覆交付詳情。`
+      : `【系統通知】訂單已付款成功。您購買的「${productName}」選擇賣家宅配，請透過此聊天室與賣家確認配送資訊、出貨時間及物流追蹤資料；也請賣家在此回覆配送詳情。`;
+    const [message] = await tx.insert(schema.chatMessageTable).values({
+      chatRoomId: room.id, senderType: "admin", senderIdentity: "system:order-fulfillment", content,
+    }).returning();
+    // System reminders do not mark existing messages as read on either participant's behalf.
+    await appendChatEvent(tx, room, "message.created", { message: { ...canonicalChatMessage(message), attachments: [] } });
     await publishChatRoom(tx, room.id);
   }
 }

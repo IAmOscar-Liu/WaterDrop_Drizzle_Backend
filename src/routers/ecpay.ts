@@ -12,6 +12,8 @@ router.post("/express/test/validate", isAuth,
 router.post("/express/test/validation/server-reply", acknowledgeTestValidation);
 
 router.get("/test", EcPayController.createTestPayment);
+// Checkout validates ownership, cash/coins/inventory/delivery and commits reservations before issuing a payable form.
+// See docs/api/PAYMENT_SAFETY_API_CHANGES.md. ReturnURL is acknowledged only after durable settlement.
 router.get("/new", EcPayController.createPayment);
 router.post("/return", EcPayController.handleReturn);
 router.get("/clientReturn", EcPayController.handleClientReturn);

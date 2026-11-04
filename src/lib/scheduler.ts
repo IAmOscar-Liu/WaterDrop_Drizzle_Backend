@@ -1,3 +1,4 @@
+import { reconcileRecordedPayments } from "../services/payment";
 import { runBadgeWorker } from "../services/appBadge";
 import { cleanupEmailVerification } from "../repository/accountEmailVerification";
 import { cleanupAccountSessions } from "../repository/accountSession";
@@ -485,3 +486,11 @@ export const appBadgeTask = cron.schedule("* * * * *", async () => {
   try { await runBadgeWorker(); }
   catch { console.error("[badge-worker] Reconciliation failed; pending work will retry."); }
 }, { noOverlap: true, timezone: "Asia/Taipei" });
+
+
+// Signed callbacks survive failed settlement and are retried independently of provider retries.
+export const paymentReconciliationTask = cron.schedule("* * * * *", async () => {
+  if (process.env.NO_CRON === "true") return;
+  try { await withPostgresAdvisoryLock("waterdrop:payment-reconciliation", () => reconcileRecordedPayments()); }
+  catch (error) { console.error("Payment reconciliation failed:", error); }
+}, { noOverlap: true });

@@ -1,11 +1,14 @@
 import { Request, Response } from "express";
+import { handleServiceError } from "../lib/error";
+import { preparePayment } from "../repository/payment";
+import { handlePaymentCallback } from "../services/payment";
 import path from "path";
 import {
   ECPAY_CHECKOUT_URL,
   ECPAY_LOGISTIC_BASE_URL,
   ECPAY_QUERY_LOGISTICS_TRADE_INFO_URL,
 } from "../constants/ecpay";
-import { getBankNameFromCode, sendJsonResponse } from "../lib/general";
+import { sendJsonResponse } from "../lib/general";
 import {
   getLogisticsStatus,
   getLogisticsStatusText,
@@ -18,19 +21,18 @@ import {
 } from "../repository/delivery";
 import {
   getMerchantTradeByMerchantTradeNo,
-  getOrderStatusById,
-  updateIdempotencyKey,
-  updateOrderStatus,
 } from "../repository/order";
 import deliveryService from "../services/delivery";
 import ecpayService from "../services/ecpay";
-import orderService from "../services/order";
 
 const TEST_ORDER_ID = "test_order_12345";
 
 class EcPayController {
   async createTestPayment(req: Request, res: Response): Promise<any> {
-    const realAccount = req.query.realAccount === "true";
+    if (process.env.NODE_ENV === "stg" || process.env.NODE_ENV === "production" || req.query.realAccount === "true") {
+      return sendJsonResponse(res, { success: false, statusCode: 403, code: "FORBIDDEN", message: "This action is not available" });
+    }
+    const realAccount = false;
 
     const base_param = {
       MerchantID: ecpayService.getTestMerchantID(realAccount),
@@ -82,19 +84,27 @@ class EcPayController {
       !tradeDesc ||
       !itemName
     )
-      return res.send("Missing required parameters");
+      return sendJsonResponse(res, { success: false, statusCode: 400, code: "VALIDATION_FAILED", message: "Missing required parameters" });
     const payload = validateToken(String(token));
     if (!payload || typeof payload === "string" || !payload.data?.id)
-      return res.send("Invalid token");
-    const status = await getOrderStatusById(String(orderId));
-    if (!status || status !== "pending")
-      return res.send("Order not found or not in pending status");
+      return sendJsonResponse(res, { success: false, statusCode: 401, code: "UNAUTHENTICATED", message: "Please sign in again" });
+    if (![process.env.MERCHANTID, process.env.HASHKEY, process.env.HASHIV, process.env.HOST].every(Boolean)) {
+      return sendJsonResponse(res, { success: false, statusCode: 503, code: "SERVICE_UNAVAILABLE", message: "Service temporarily unavailable" });
+    }
+    let attempt;
+    try {
+      attempt = await preparePayment({ orderId: String(orderId), userId: payload.data.id,
+        idempotencyKey: String(idempotencyKey), amount: Number(totalAmount), method: String(ChoosePayment) });
+    } catch (error) {
+      const result = handleServiceError(error);
+      return sendJsonResponse(res, result);
+    }
 
     const base_param =
       ChoosePayment === "Credit"
         ? {
             MerchantID: process.env.MERCHANTID,
-            MerchantTradeNo: ecpayService.generateTradeNo(),
+            MerchantTradeNo: attempt.merchantTradeNo,
             MerchantTradeDate: ecpayService.generateMerchantTradeDate(),
             PaymentType: "aio",
             ChoosePayment: "Credit",
@@ -103,7 +113,7 @@ class EcPayController {
             IgnorePayment:
               "ATM#WebATM#CVS#BARCODE#ApplePay#GooglePay#AndroidPay#BNPL#TWQR#WeiXin#LINEPay#JKOPay#ESUNWallet#PiWallet#ECPayWallet#iPASS",
             // IgnorePayment: "CVS#BARCODE#TWQR#BNPL#WeiXin",
-            TotalAmount: Math.floor(Number(totalAmount)),
+            TotalAmount: attempt.amount,
             TradeDesc: String(tradeDesc),
             ItemName: String(itemName),
             ReturnURL: `${process.env.HOST}/api/ecpay/return`,
@@ -114,7 +124,7 @@ class EcPayController {
           }
         : {
             MerchantID: process.env.MERCHANTID,
-            MerchantTradeNo: ecpayService.generateTradeNo(),
+            MerchantTradeNo: attempt.merchantTradeNo,
             MerchantTradeDate: ecpayService.generateMerchantTradeDate(),
             PaymentType: "aio",
             ChoosePayment: "ATM",
@@ -123,7 +133,7 @@ class EcPayController {
             // IgnorePayment:
             //   "Credit#WebATM#CVS#BARCODE#ApplePay#GooglePay#AndroidPay#BNPL#TWQR#WeiXin#LINEPay#JKOPay#ESUNWallet#PiWallet#ECPayWallet#iPASS",
             // IgnorePayment: "CVS#BARCODE#TWQR#BNPL#WeiXin",
-            TotalAmount: Math.floor(Number(totalAmount)),
+            TotalAmount: attempt.amount,
             TradeDesc: String(tradeDesc),
             ItemName: String(itemName),
             ReturnURL: `${process.env.HOST}/api/ecpay/return`,
@@ -135,7 +145,7 @@ class EcPayController {
             ExpireDate: 1,
           };
 
-    console.log("base_param: ", base_param);
+
 
     const formHtml = ecpayService.generateFormHtml({
       actionUrl: ECPAY_CHECKOUT_URL,
@@ -150,128 +160,32 @@ class EcPayController {
   }
 
   async handleReturn(req: Request, res: Response): Promise<any> {
-    const data = req.body;
-    if (process.env.NODE_ENV !== "test") {
-      console.log("交易結果:", data);
+    // Only the dedicated sandbox test checkout has no application order.
+    if (!["stg", "production"].includes(process.env.NODE_ENV ?? "") && req.body.CustomField1 === TEST_ORDER_ID
+      && req.body.MerchantID === ecpayService.getTestMerchantID(false)
+      && ecpayService.validateCheckMacValue(req.body, { hashKey: ecpayService.getTestHashKey(false), hashIV: ecpayService.getTestHashIV(false) })) {
+      return res.send("1|OK");
     }
-
-    if (
-      !ecpayService.validateCheckMacValue(data, {
-        hashKey: process.env.HASHKEY!,
-        hashIV: process.env.HASHIV!,
-      })
-    ) {
-      return res.status(400).send("Invalid CheckMacValue");
+    try {
+      await handlePaymentCallback(req.body);
+      return res.send("1|OK");
+    } catch (error) {
+      const result = handleServiceError(error);
+      return res.status(result.statusCode ?? 500).send("0|Payment confirmation could not be saved");
     }
-
-    const orderId = data.CustomField1;
-    const idempotencyKey = data.CustomField2;
-
-    if (orderId !== TEST_ORDER_ID) {
-      const status = data.RtnCode == 1 ? "paid" : "failed";
-
-      await updateOrderStatus({ orderId, status, metadata: data })
-        .then((result) => {
-          if (!result) throw new Error("Order not found");
-          console.log(`Successfully updated order:`, result.id);
-
-          const cvsPickupGroup = (result?.shippingInfo as any)?.cvsPickupGroup;
-          const nonCvsPickupGroup = (result?.shippingInfo as any)
-            ?.nonCvsPickupGroup;
-
-          if (status === "paid" && Array.isArray(cvsPickupGroup)) {
-            Promise.allSettled(
-              cvsPickupGroup.map((info: any) =>
-                ecpayService.createExpressServerReturn({
-                  ...info,
-                  orderId: result.id,
-                }),
-              ),
-            );
-          }
-
-          if (status === "paid" && Array.isArray(nonCvsPickupGroup)) {
-            Promise.allSettled(
-              nonCvsPickupGroup.map((info: any) => {
-                const { merchantTradeNo, products, ...rest } = info;
-                createDelivery(
-                  {
-                    ...rest,
-                    orderId: result.id,
-                    merchantTradeNo:
-                      typeof merchantTradeNo === "string"
-                        ? merchantTradeNo
-                        : ecpayService.generateTradeNo(),
-                  },
-                  products,
-                );
-              }),
-            );
-          }
-
-          if (status === "paid") {
-            orderService.sendOrderCompletedNotification({
-              userId: result.userId,
-              orderId: result.id,
-            });
-            updateIdempotencyKey({
-              idempotencyKey,
-              status: "completed",
-              responseData: result,
-            });
-          } else {
-            updateIdempotencyKey({
-              idempotencyKey,
-              status: "failed",
-              responseData: result,
-            });
-          }
-        })
-        .catch((error) => console.error("Error updating order:", error));
-    }
-
-    // 交易成功後，需要回傳 1|OK 給綠界
-    res.send("1|OK");
   }
 
   async handlePaymentInfo(req: Request, res: Response): Promise<any> {
-    const data = req.body;
-    console.log("付款相關資訊:", data);
-
-    if (
-      !ecpayService.validateCheckMacValue(data, {
-        hashKey: process.env.HASHKEY!,
-        hashIV: process.env.HASHIV!,
-      })
-    ) {
-      return res.status(400).send("Invalid CheckMacValue");
+    try {
+      await handlePaymentCallback(req.body, true);
+      return res.send("1|OK");
+    } catch (error) {
+      const result = handleServiceError(error);
+      return res.status(result.statusCode ?? 500).send("0|Payment information could not be saved");
     }
-
-    const orderId = data.CustomField1;
-
-    if (orderId !== TEST_ORDER_ID) {
-      const bankName = getBankNameFromCode(data.BankCode);
-      await updateOrderStatus({
-        orderId,
-        status: "payment-processing",
-        paymentInfo: {
-          ...data,
-          ...(bankName ? { BankName: bankName } : {}),
-        },
-      })
-        .then((result) => {
-          if (!result) throw new Error("Order not found");
-          console.log(`Successfully updated order:`, result.id);
-        })
-        .catch((error) => console.error("Error updating order:", error));
-    }
-
-    // 交易成功後，需要回傳 1|OK 給綠界
-    res.send("1|OK");
   }
 
   async handleClientReturn(req: Request, res: Response): Promise<any> {
-    console.log("clientReturn:", req.body, req.query);
     res.sendFile(
       path.resolve(process.cwd(), "src/assets/html/clientReturn.html"),
     );
@@ -297,7 +211,6 @@ class EcPayController {
 
   async handleLogisticsMapCallback(req: Request, res: Response): Promise<any> {
     const data = req.body;
-    console.log("商店結果", data);
 
     res.send(`
       <!DOCTYPE html>
@@ -327,7 +240,7 @@ class EcPayController {
     if (!result) {
       sendJsonResponse(res, { success: true, data: "OK" });
     } else {
-      sendJsonResponse(res, { success: false, message: result });
+      sendJsonResponse(res, { success: false, statusCode: 400, code: "VALIDATION_FAILED", message: result });
     }
   }
 
@@ -349,18 +262,16 @@ class EcPayController {
     } = req.query;
 
     if (!ReceiverName || !ReceiverCellPhone || !ReceiverEmail)
-      return res.send("Missing required parameters");
+      return sendJsonResponse(res, { success: false, statusCode: 400, message: "Missing required parameters" });
 
     const realAccount = req.query.realAccount === "true";
     if (realAccount) {
       if (!LogisticsSubType)
-        return res.send("LogisticsSubType is required for real account");
+        return sendJsonResponse(res, { success: false, statusCode: 400, message: "LogisticsSubType is required" });
       if (!ReceiverStoreID)
-        return res.send("ReceiverStoreID is required for real account");
+        return sendJsonResponse(res, { success: false, statusCode: 400, message: "ReceiverStoreID is required" });
       if (type !== "B2C" && !SenderCellPhone) {
-        return res.send(
-          "SenderCellPhone is required for real account when type is C2C",
-        );
+        return sendJsonResponse(res, { success: false, statusCode: 400, message: "SenderCellPhone is required for real account when type is C2C" });
       }
     }
 
@@ -395,7 +306,6 @@ class EcPayController {
           }),
       CustomField1: "CustomField1",
     };
-    console.log(base_param);
 
     const formHtml = ecpayService.generateFormHtml({
       actionUrl: ecpayService.getTestExpressUrl(realAccount),
@@ -415,7 +325,6 @@ class EcPayController {
     res: Response,
   ): Promise<any> {
     const data = req.body;
-    console.log("測試運單結果:", data);
     res.send("1|OK");
   }
 
@@ -480,14 +389,14 @@ class EcPayController {
   //     !ReceiverEmail ||
   //     !ReceiverStoreID
   //   )
-  //     return res.send("Missing required parameters");
+  //     return sendJsonResponse(res, { success: false, statusCode: 400, message: "Missing required parameters" });
   //   if (type !== "B2C" && !SenderCellPhone) {
   //     return res.send("SenderCellPhone is required when type is C2C");
   //   }
 
   //   const payload = validateToken(String(token));
   //   if (!payload || typeof payload === "string" || !payload.data?.id)
-  //     return res.send("Invalid token");
+  //     return sendJsonResponse(res, { success: false, statusCode: 401, message: "Please sign in again" });
 
   //   const merchantTradeNo = ecpayService.generateTradeNo();
 
@@ -584,7 +493,6 @@ class EcPayController {
 
   async handleExpressServerReply(req: Request, res: Response): Promise<any> {
     const data = req.body;
-    console.log("運單結果:", data);
 
     if (
       !ecpayService.validateCheckMacValue(data, {
@@ -655,7 +563,7 @@ class EcPayController {
         );
       }
     } catch (error) {
-      console.error("Logistics callback persistence failed", error);
+      handleServiceError(error);
       return res.status(500).send("0|Persistence failed");
     }
 
@@ -672,7 +580,7 @@ class EcPayController {
     } = req.query;
 
     if (!token || !LogisticsSubType || !AllPayLogisticsID)
-      return res.send("Missing required parameters");
+      return sendJsonResponse(res, { success: false, statusCode: 400, message: "Missing required parameters" });
     if (
       typeof LogisticsSubType === "string" &&
       LogisticsSubType.endsWith("C2C")
@@ -681,21 +589,15 @@ class EcPayController {
         LogisticsSubType === "UNIMARTC2C" &&
         (!CVSPaymentNo || !CVSValidationNo)
       )
-        return res.send(
-          "CVSPaymentNo and CVSValidationNo are required if LogisticsSubType is UNIMARTC2C",
-        );
+        return sendJsonResponse(res, { success: false, statusCode: 400, message: "CVSPaymentNo and CVSValidationNo are required if LogisticsSubType is UNIMARTC2C" });
       if (LogisticsSubType === "FAMIC2C" && !CVSPaymentNo)
-        return res.send(
-          "CVSPaymentNo is required if LogisticsSubType is FAMIC2C",
-        );
+        return sendJsonResponse(res, { success: false, statusCode: 400, message: "CVSPaymentNo is required if LogisticsSubType is FAMIC2C" });
       if (LogisticsSubType === "OKMARTC2C" && !CVSPaymentNo)
-        return res.send(
-          "CVSPaymentNo is required if LogisticsSubType is OKMARTC2C",
-        );
+        return sendJsonResponse(res, { success: false, statusCode: 400, message: "CVSPaymentNo is required if LogisticsSubType is OKMARTC2C" });
     }
     const payload = validateToken(String(token));
     if (!payload || typeof payload === "string" || !payload.data?.id)
-      return res.send("Invalid token");
+      return sendJsonResponse(res, { success: false, statusCode: 401, message: "Please sign in again" });
 
     const formHtml = ecpayService.generateFormHtml({
       actionUrl: ecpayService.getPrintTradeDocumentActionUrl(LogisticsSubType),
@@ -715,13 +617,13 @@ class EcPayController {
 
   async queryLogisticsTradeInfo(req: Request, res: Response): Promise<any> {
     const { token, AllPayLogisticsID, MerchantTradeNo } = req.query;
-    if (!token) return res.send("Missing required parameters");
+    if (!token) return sendJsonResponse(res, { success: false, statusCode: 400, message: "Missing required parameters" });
     if (!AllPayLogisticsID && !MerchantTradeNo)
-      return res.send("AllPayLogisticsID or MerchantTradeNo is required");
+      return sendJsonResponse(res, { success: false, statusCode: 400, message: "AllPayLogisticsID or MerchantTradeNo is required" });
 
     const payload = validateToken(String(token));
     if (!payload || typeof payload === "string" || !payload.data?.id)
-      return res.send("Invalid token");
+      return sendJsonResponse(res, { success: false, statusCode: 401, message: "Please sign in again" });
 
     const parameters: Record<string, any> = {
       MerchantID: process.env.LOGISTICS_MERCHANTID,

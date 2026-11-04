@@ -1,5 +1,7 @@
 import { NextFunction, Request, Response } from "express";
 import { z, ZodTypeAny } from "zod";
+import { usesApiErrorContract } from "../lib/requestContext";
+import { validationIssueCode } from "../lib/errorPolicy";
 import { ZodValidationError } from "../lib/error";
 
 type RequestSchemas = {
@@ -12,6 +14,7 @@ function formatZodError(error: z.ZodError) {
   return error.issues.map((issue) => ({
     field: issue.path.join("."),
     message: issue.message,
+    ...(usesApiErrorContract() ? { code: validationIssueCode(issue.code) } : {}),
   }));
 }
 
