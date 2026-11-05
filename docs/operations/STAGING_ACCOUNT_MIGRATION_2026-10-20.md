@@ -5,7 +5,7 @@ Date: 2026-10-20 (Asia/Taipei)
 ## Completed operations
 
 - Merged `development` at `fe5af21` into `stage`, preserving staging migration history. Merge commit: `444516a`; no conflicts.
-- Generated, reviewed and applied `drizzle_stg/0015_overconfident_ghost_rider.sql` using `db:generate:stg` and `db:migrate:stg`. All previously recorded staging migration hashes were present in the repository before applying it.
+- Generated, reviewed and applied `drizzle/stg/0015_overconfident_ghost_rider.sql` using `db:generate:stg` and `db:migrate:stg`. All previously recorded staging migration hashes were present in the repository before applying it.
 - Added the account onboarding, recovery, session rotation and email verification schema to staging. Existing account data was preserved.
 - Ran the existing seller-profile backfill on staging after checking its account against the profile validator. One valid seller received `profile_completed_at`; no email verification timestamp, credentials, roles or status were changed.
 - Removed the completed rollout's `account:profile:audit:local` and `account:profile:backfill:local` package shortcuts. The underlying helper remains available for future environments, including production. Updated the FE handoff commands accordingly. Migration, test, chat and notification helper commands remain available.

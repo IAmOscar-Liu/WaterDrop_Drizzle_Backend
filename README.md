@@ -100,11 +100,12 @@ Repository files in `src/repository` use Drizzle queries against this schema.
 Migration output folders are environment-specific:
 
 ```txt
-drizzle_local/
-drizzle_dev/
-drizzle_test/
-drizzle_stg/
-drizzle_prod/
+drizzle/
+  local/
+  dev/
+  test/
+  stg/
+  prod/
 ```
 
 `drizzle.config.ts` controls:

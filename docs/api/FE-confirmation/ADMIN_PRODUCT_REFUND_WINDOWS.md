@@ -92,9 +92,9 @@ Finite windows use exact elapsed hours, never calendar-day midnight. Local/devel
 
 Refund-window migration files and status:
 
-- Local: `drizzle_local/0118_product_refund_windows.sql` — applied.
-- Development: `drizzle_dev/0069_product_refund_windows.sql` — applied 2026-11-04.
-- Staging: `drizzle_stg/0017_product_refund_windows.sql` — generated, not applied in this session.
+- Local: `drizzle/local/0118_product_refund_windows.sql` — applied.
+- Development: `drizzle/dev/0069_product_refund_windows.sql` — applied 2026-11-04.
+- Staging: `drizzle/stg/0017_product_refund_windows.sql` — generated, not applied in this session.
 
 The current backend additionally requires the payment-attempt table from `0119_payment_safety.sql` (local, applied), `0070_payment_safety.sql` (development, applied 2026-11-04), or `0018_payment_safety.sql` (staging, generated). Apply the full intended migration sequence before deploying; the refund-window migration alone is not sufficient for the current source. See the [payment safety rollout](../PAYMENT_SAFETY_API_CHANGES.md).
 

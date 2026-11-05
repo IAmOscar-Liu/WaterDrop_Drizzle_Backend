@@ -164,9 +164,9 @@ Before this branch, `drizzle.config.ts`:
 The existing generated histories are also different:
 
 ```text
-drizzle_local: 106 migrations
-drizzle_dev:    60 migrations
-drizzle_stg:     6 migrations
+drizzle/local: 106 migrations
+drizzle/dev:    60 migrations
+drizzle/stg:     6 migrations
 ```
 
 The test selection/URL guard/logging problems are fixed. Different target
@@ -178,7 +178,7 @@ for every target environment have been audited.
 ### Automated test suite (disposable runner and core coverage added)
 
 `npm test` now builds the TypeScript project, creates a uniquely named database
-on the `.env.test` PostgreSQL server, applies all `drizzle_test` migrations,
+on the `.env.test` PostgreSQL server, applies all `drizzle/test` migrations,
 runs unit, real HTTP, and repository integration suites, and drops the database
 in `finally`. The
 persistent `waterdrop_coin_test` database is not modified. Critical HTTP
@@ -313,7 +313,7 @@ Update `drizzle.config.ts` to:
 
 - accept a validated `DRIZZLE_ENV` or `NODE_ENV` rather than a hardcoded value;
 - allow only `local`, `development`, `test`, `stg`, and `production`;
-- map `test` to `.env.test` and `drizzle_test/`;
+- map `test` to `.env.test` and `drizzle/test/`;
 - fail when the environment or `DATABASE_URL` is missing;
 - stop logging the full database URL;
 - print only the selected environment and migration directory.
@@ -371,7 +371,7 @@ not by waiting for wall-clock cron expressions.
 
 ### 1.5 Establish the clean test baseline
 
-Because `drizzle_test/` does not exist, create its baseline from the unchanged
+Because `drizzle/test/` does not exist, create its baseline from the unchanged
 pre-ledger `src/db/schema.ts`, then verify that it builds an empty test database
 from scratch.
 
@@ -964,7 +964,7 @@ data exists without an audited migration.
 
 1. Audit target schemas and divergent migration histories.
 2. Add guarded `test` environment and real disposable PostgreSQL database.
-3. Establish clean pre-ledger `drizzle_test` baseline.
+3. Establish clean pre-ledger `drizzle/test` baseline.
 4. Add automated test harness, safe reset, mocks, and fixtures.
 5. Add expansion schema and review generated SQL.
 6. Implement shared decimal/timezone/accounting services.

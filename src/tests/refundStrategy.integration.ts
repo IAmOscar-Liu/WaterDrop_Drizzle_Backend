@@ -44,7 +44,7 @@ async function run() {
       await tx.execute(sql`insert into order_items (id, order_id, product_id, product_variant_id, quantity, unit_price_at_sale, line_total, product_name_at_sale,
         refund_window_starts_at, original_refund_deadline_at, refund_deadline_at)
         values (${legacyItemId}, ${legacyOrder.id}, ${product.id}, ${variant.id}, 1, 100, 100, 'Legacy', ${start.toISOString()}::timestamptz, ${deadline.toISOString()}::timestamptz, ${deadline.toISOString()}::timestamptz)`);
-      const migration = readFileSync("drizzle_local/0118_product_refund_windows.sql", "utf8");
+      const migration = readFileSync("drizzle/local/0118_product_refund_windows.sql", "utf8");
       for (const statement of migration.split("--> statement-breakpoint")) {
         if (statement.trim()) await tx.execute(sql.raw(statement));
       }

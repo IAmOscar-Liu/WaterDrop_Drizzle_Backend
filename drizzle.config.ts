@@ -34,15 +34,15 @@ if (!databaseUrl) {
 const getOutPath = () => {
   switch (env) {
     case "test":
-      return "./drizzle_test";
+      return "./drizzle/test";
     case "local":
-      return "./drizzle_local";
+      return "./drizzle/local";
     case "development":
-      return "./drizzle_dev";
+      return "./drizzle/dev";
     case "stg":
-      return "./drizzle_stg";
+      return "./drizzle/stg";
     case "production":
-      return "./drizzle_prod";
+      return "./drizzle/prod";
     default:
       throw new Error(`Unknown environment: ${env}`);
   }

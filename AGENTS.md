@@ -10,7 +10,7 @@ services/    ServiceResponse wrappers and workflow orchestration
 repository/  Drizzle database access
 ```
 
-Shared utilities live in `lib/`, `middleware/`, `constants/`, and `type/`. Admin request validation lives in `src/middleware/admin/`. Static files and seed data are under `src/assets/` and `src/seed/`. Drizzle schema lives in `src/db/schema.ts`; generated migrations are stored in environment folders such as `drizzle_local/`, `drizzle_dev/`, `drizzle_stg/`, and `drizzle_prod/`.
+Shared utilities live in `lib/`, `middleware/`, `constants/`, and `type/`. Admin request validation lives in `src/middleware/admin/`. Static files and seed data are under `src/assets/` and `src/seed/`. Drizzle schema lives in `src/db/schema.ts`; generated migrations are stored in environment folders such as `drizzle/local/`, `drizzle/dev/`, `drizzle/stg/`, and `drizzle/prod/`.
 
 ## Admin API Conventions
 Admin routes are especially important for frontend integration. They live in `src/routers/admin/` and are mounted by `src/routers/admin/index.ts` under `/api/admin`.
@@ -59,7 +59,7 @@ Common patterns:
 - Use `.for("update")` when validating and then mutating related rows that could be changed concurrently.
 - For list filters, build `SQL[]` conditions and pass `conditions.length > 0 ? and(...conditions) : undefined`.
 
-`drizzle.config.ts` currently uses a hardcoded `env` value. Before generating or migrating, check that it points to the intended environment and output folder. When schema changes require migrations, use:
+`drizzle.config.ts` selects the environment from `DRIZZLE_ENV`, then `NODE_ENV`, defaulting to `local`. Before generating or migrating, check the intended environment and its output folder under `drizzle/`. When schema changes require migrations, use:
 
 ```bash
 npm run db:generate

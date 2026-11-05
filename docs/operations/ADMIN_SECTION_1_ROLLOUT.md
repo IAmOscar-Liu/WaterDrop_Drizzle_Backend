@@ -15,7 +15,7 @@ time so historical records did not appear as new notifications. Existing read
 states remain intact.
 
 Retain the generated migrations, snapshots, and journals. Staging's catch-up
-migration is `drizzle_stg/0013_aromatic_toad_men.sql`. The standard
+migration is `drizzle/stg/0013_aromatic_toad_men.sql`. The standard
 `db:migrate:<environment>` commands remain available.
 
 Use `npm test` for regression coverage. Runtime smoke checks cover sub-account

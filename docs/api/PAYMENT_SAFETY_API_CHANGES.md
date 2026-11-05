@@ -70,9 +70,9 @@ The unmanaged real-money `/api/ecpay/test?realAccount=true` path is disabled. Sa
 
 ## Migration and validation
 
-- Local: `drizzle_local/0119_payment_safety.sql` (applied).
-- Development: `drizzle_dev/0070_payment_safety.sql` (applied 2026-11-04).
-- Staging: `drizzle_stg/0018_payment_safety.sql` (generated).
+- Local: `drizzle/local/0119_payment_safety.sql` (applied).
+- Development: `drizzle/dev/0070_payment_safety.sql` (applied 2026-11-04).
+- Staging: `drizzle/stg/0018_payment_safety.sql` (generated).
 - Integration suites construct disposable databases from the current schema; no catch-up migration was generated from the stale test baseline.
 
 The new table stores one attempt per order, unique merchant trade numbers, expected amount/method/key and captured provider result. No existing order data is rewritten by the migration. Enable `COIN_LEDGER_ENABLED=true` for discounted payments and keep provider credentials/host configured before checkout. Production needs a reviewed migration based on its actual history.
