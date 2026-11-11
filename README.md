@@ -207,16 +207,12 @@ Open Drizzle Studio:
 npm run db:studio
 ```
 
-Seed products:
+One-off utilities are available directly; choose the intended environment explicitly:
 
 ```bash
-npm run db:seed-products
-```
-
-Generate DBML:
-
-```bash
-npm run generate-dbml
+NODE_ENV=local npx tsx src/seed/addProducts.ts
+NODE_ENV=local npx tsx src/scripts/generate-dmbl.ts
+NODE_ENV=stg npx tsx src/scripts/ecpay-storeList.ts
 ```
 
 ## Automated Tests

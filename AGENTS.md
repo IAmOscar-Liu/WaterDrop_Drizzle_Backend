@@ -89,8 +89,8 @@ npm run build
 npm run db:generate
 npm run db:migrate
 npm run db:studio
-npm run db:seed-products
-npm run test-script
+npm test
+npm run test:order-chatroom
 ```
 
 This project does not use Docker Compose for normal development instructions. Do not add Docker Compose guidance to docs unless the user explicitly asks.
@@ -113,7 +113,7 @@ When adding controllers, keep them thin:
 - respond with `sendJsonResponse`
 
 ## Testing Guidelines
-There is no dedicated Jest or Vitest suite in this repository. Treat `npm run build` as the minimum validation step, then run the smallest relevant script or endpoint flow for your change, for example `npm run db:test` for database connectivity or `npm run test-script` for local experiments.
+There is no dedicated Jest or Vitest suite in this repository. Treat `npm run build` as the minimum validation step, then run the smallest relevant script or endpoint flow for your change, for example `npm run test:order-chatroom` for order/chat behavior or `npm run test:refund-strategy` for refund behavior.
 
 Add new test helpers under `src/` only when they are reusable and safe with local environment variables.
 
