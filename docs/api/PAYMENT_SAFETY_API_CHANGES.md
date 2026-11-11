@@ -2,7 +2,7 @@
 
 Date: 2026-11-04
 
-Implemented in source; local and development migrations applied (verified 2026-11-04). Staging migrations are generated but have not been applied. Production migration/deployment requires its established migration baseline; this checkout does not contain one. Apply migrations before starting the updated server.
+Implemented in source; local, development and staging migrations applied (verified 2026-11-11). Production migration/deployment requires its established migration baseline; this checkout does not contain one. Apply migrations before starting the updated server.
 
 ## Problem and resulting flow
 
@@ -72,7 +72,7 @@ The unmanaged real-money `/api/ecpay/test?realAccount=true` path is disabled. Sa
 
 - Local: `drizzle/local/0119_payment_safety.sql` (applied).
 - Development: `drizzle/dev/0070_payment_safety.sql` (applied 2026-11-04).
-- Staging: `drizzle/stg/0018_payment_safety.sql` (generated).
+- Staging: `drizzle/stg/0018_payment_safety.sql` (applied 2026-11-11).
 - Integration suites construct disposable databases from the current schema; no catch-up migration was generated from the stale test baseline.
 
 The new table stores one attempt per order, unique merchant trade numbers, expected amount/method/key and captured provider result. No existing order data is rewritten by the migration. Enable `COIN_LEDGER_ENABLED=true` for discounted payments and keep provider credentials/host configured before checkout. Production needs a reviewed migration based on its actual history.

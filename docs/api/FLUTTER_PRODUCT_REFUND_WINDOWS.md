@@ -3,7 +3,7 @@
 Date: 2026-11-03
 Last reviewed: 2026-11-04
 
-Implemented in source; the local and development refund-window and payment-safety migrations are applied (verified 2026-11-04). Staging migrations are generated and still require application/deployment; production needs its established migration baseline and deployment. This update changes the refund policy and adds response fields. Existing buyer request payloads remain compatible.
+Implemented in source; local, development and staging refund-window and payment-safety migrations are applied (verified 2026-11-11); production needs its established migration baseline and deployment. This update changes the refund policy and adds response fields. Existing buyer request payloads remain compatible.
 
 ## APIs without the admin prefix
 
