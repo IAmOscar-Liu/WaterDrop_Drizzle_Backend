@@ -103,7 +103,7 @@ export async function linkOrderChatrooms(
 
 /** Persist fulfillment reminders with the first successful payment, under its order lock. */
 export async function sendOrderFulfillmentFollowups(tx: ChatTx, order: Pick<schema.Order, "id" | "userId" | "shippingInfo"> & {
-  items: Array<Pick<schema.OrderItem, "productId" | "productVariantId" | "productNameAtSale" | "variantNameAtSale"> & {
+  items: Array<Pick<schema.OrderItem, "productId" | "productVariantId" | "productNameAtSale" | "variantNameAtSale" | "quantity" | "unitPriceAtSale" | "lineTotal"> & {
     product: Pick<schema.Product, "sellerId" | "type">;
   }>;
 }) {
@@ -145,9 +145,20 @@ export async function sendOrderFulfillmentFollowups(tx: ChatTx, order: Pick<sche
     }
     const productName = item.variantNameAtSale?.trim()
       ? `${item.productNameAtSale}（${item.variantNameAtSale.trim()}）` : item.productNameAtSale;
-    const content = virtual
+    const reminder = virtual
       ? `【系統通知】訂單已付款成功。您購買的「${productName}」為虛擬商品，請透過此聊天室與賣家確認提供方式、使用／兌換資訊及交付時間；也請賣家在此回覆交付詳情。`
       : `【系統通知】訂單已付款成功。您購買的「${productName}」選擇賣家宅配，請透過此聊天室與賣家確認配送資訊、出貨時間及物流追蹤資料；也請賣家在此回覆配送詳情。`;
+    const content = [
+      reminder,
+      "",
+      `• 商品名稱：${item.productNameAtSale}`,
+      ...(item.variantNameAtSale?.trim() ? [`• 商品規格：${item.variantNameAtSale.trim()}`] : []),
+      `• 商品單價：NT$ ${item.unitPriceAtSale.toLocaleString("en-US", { maximumFractionDigits: 2 })}`,
+      `• 購買數量：${item.quantity}`,
+      `• 商品小計：NT$ ${item.lineTotal.toLocaleString("en-US", { maximumFractionDigits: 2 })}`,
+      ...(!virtual ? ["• 配送方式：宅配到府"] : []),
+      "※ 商品小計未扣除金幣折抵，亦不含運費及其他費用；實付金額請查看訂單。",
+    ].join("\n");
     const [message] = await tx.insert(schema.chatMessageTable).values({
       chatRoomId: room.id, senderType: "admin", senderIdentity: "system:order-fulfillment", content,
     }).returning();

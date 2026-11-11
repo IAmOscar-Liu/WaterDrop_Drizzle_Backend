@@ -293,7 +293,7 @@ async function run() {
     await sendChatMessage({ actor: { kind: "user", id: buyer.id }, chatRoomId: virtualRoom.id,
       senderType: "user", content: "Please confirm delivery" });
     const followupInput = {
-      orderData: { userId: buyer.id, subTotal: 400, totalAmount: 400, shippingInfo: {
+      orderData: { userId: buyer.id, subTotal: 500, totalAmount: 500, shippingInfo: {
         nonCvsPickupGroup: [
           { LogisticsType: "virtual", products: [{ productId: virtualProduct.id, variantId: followupVariants[0].id }] },
           { LogisticsType: "home_delivery", products: followupVariants.slice(1, 3).map(v => ({ productId: v.productId, variantId: v.id })) },
@@ -302,10 +302,16 @@ async function run() {
       } },
       items: followupVariants.map(v => ({ productId: v.productId, productVariantId: v.id,
         productNameAtSale: v.productId === virtualProduct.id ? virtualProduct.name : homeProduct.name,
-        variantNameAtSale: v.name, unitPriceAtSale: 100, quantity: 1 })),
+        variantNameAtSale: v.name, unitPriceAtSale: 100, quantity: v.name === "Home B" ? 2 : 1 })),
       idempotencyKey: randomUUID(),
     };
     const followupOrder = (await createOrder(followupInput))!;
+    // The reminder must describe the purchase even if the catalog changes before payment.
+    await db.update(s.productTable).set({ name: "Renamed after checkout" }).where(eq(s.productTable.id, homeProduct.id));
+    await db.update(s.productVariantTable).set({ name: "Renamed variant" }).where(eq(s.productVariantTable.id, followupVariants[1].id));
+    for (const variant of followupVariants) {
+      await db.update(s.productVariantTable).set({ price: 999 }).where(eq(s.productVariantTable.id, variant.id));
+    }
     const reminderMessages = () => db.query.chatMessageTable.findMany({ where: eq(s.chatMessageTable.senderIdentity, "system:order-fulfillment") });
     assert.equal((await reminderMessages()).length, 0);
     await updateOrderStatus({ orderId: followupOrder.id, status: "payment-processing" });
@@ -325,7 +331,28 @@ async function run() {
       assert.equal(targetRoom.accountId, targetRoom.productId === virtualProduct.id ? seller.id : otherSeller.id);
       assert.equal(reminder.senderType, "admin");
       assert.equal(reminder.isRead, false);
-      assert.ok(reminder.content!.includes(targetRoom.productId === virtualProduct.id ? "虛擬商品" : "賣家宅配"));
+      const purchased = followupInput.items.find(item => item.productVariantId === targetRoom.productVariantId)!;
+      const isVirtual = targetRoom.productId === virtualProduct.id;
+      const name = purchased.variantNameAtSale?.trim()
+        ? `${purchased.productNameAtSale}（${purchased.variantNameAtSale.trim()}）` : purchased.productNameAtSale;
+      const originalMessage = isVirtual
+        ? `【系統通知】訂單已付款成功。您購買的「${name}」為虛擬商品，請透過此聊天室與賣家確認提供方式、使用／兌換資訊及交付時間；也請賣家在此回覆交付詳情。`
+        : `【系統通知】訂單已付款成功。您購買的「${name}」選擇賣家宅配，請透過此聊天室與賣家確認配送資訊、出貨時間及物流追蹤資料；也請賣家在此回覆配送詳情。`;
+      assert.ok(reminder.content!.startsWith(originalMessage + "\n\n"), "Keep the existing follow-up wording");
+      assert.ok(reminder.content!.includes(`• 商品名稱：${purchased.productNameAtSale}`));
+      assert.ok(reminder.content!.includes(`• 商品單價：NT$ 100`), "Use the purchased price, not the edited catalog price");
+      assert.ok(!reminder.content!.includes("NT$ 999"));
+      assert.ok(reminder.content!.includes(`• 購買數量：${purchased.quantity}`));
+      assert.ok(reminder.content!.includes(`• 商品小計：NT$ ${100 * purchased.quantity}`));
+      assert.ok(reminder.content!.includes("商品小計未扣除金幣折抵，亦不含運費及其他費用"));
+      if (isVirtual) assert.ok(!reminder.content!.includes("• 配送方式："));
+      else assert.ok(reminder.content!.includes("• 配送方式：宅配到府"));
+      if (purchased.variantNameAtSale) assert.ok(reminder.content!.includes(`• 商品規格：${purchased.variantNameAtSale}`));
+      else assert.ok(!reminder.content!.includes("• 商品規格："), "Omit an unnamed variant instead of showing null");
+      assert.ok(!reminder.content!.includes("Renamed"), "Use purchase snapshots rather than live catalog labels");
+    }
+    for (const variant of followupVariants) {
+      await db.update(s.productVariantTable).set({ price: 100 }).where(eq(s.productVariantTable.id, variant.id));
     }
     const originalQuestion = await db.query.chatMessageTable.findFirst({ where: and(
       eq(s.chatMessageTable.chatRoomId, virtualRoom.id), eq(s.chatMessageTable.senderType, "user"),
