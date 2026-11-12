@@ -57,13 +57,6 @@ const router = Router();
  *         type:
  *           type: string
  *           enum: [normal, refrigeration, virtual]
- *         refundWindowDays:
- *           type: integer
- *           nullable: true
- *           minimum: 0
- *           maximum: 3650000
- *           default: 8
- *           description: Days after receipt; 0 disables refunds, null means unlimited. Omit on create for 8 days; omit on update to preserve. Applies to all variants and new purchases only; local/development use one tenth of finite durations.
  *         allowHomeDelivery:
  *           type: boolean
  *         images:
@@ -114,6 +107,13 @@ const router = Router();
  *           type: number
  *           format: double
  *           description: Current variant price.
+ *         refundWindowHours:
+ *           type: integer
+ *           nullable: true
+ *           minimum: 0
+ *           maximum: 87600000
+ *           default: 192
+ *           description: This variant's own refund policy; 0 disables requests, null is unlimited (not inheritance), positive whole hours start at trusted receipt. New variants default to 192 hours; omitted updates preserve. Snapshotted at order creation; local/development finite durations run at one tenth.
  *         images:
  *           type: array
  *           items:
@@ -434,6 +434,7 @@ router.get(
  *   post:
  *     tags: [Product]
  *     summary: Create a new product
+ *     description: Variant refundWindowHours belongs inside variants[]. Top-level refundWindowHours/refundWindowDays and nested refundWindowDays are rejected with HTTP 400 VALIDATION_FAILED.
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -490,6 +491,13 @@ router.get(
  *                       example:
  *                         color: "Black"
  *                         size: "M"
+ *                     refundWindowHours:
+ *                       type: integer
+ *                       nullable: true
+ *                       minimum: 0
+ *                       maximum: 87600000
+ *                       default: 192
+ *                       description: Variant-only policy. 0 disables, null means unlimited, positive whole hours are finite. New variants default to 192 hours; omit on existing variant update to preserve.
  *                     stock:
  *                       type: integer
  *                       example: 20
@@ -507,13 +515,6 @@ router.get(
  *                 type: string
  *                 enum: [normal, refrigeration, virtual]
  *                 default: "normal"
- *               refundWindowDays:
- *                 type: integer
- *                 nullable: true
- *                 minimum: 0
- *                 maximum: 3650000
- *                 default: 8
- *                 description: Days after receipt; 0 disables refunds, null means unlimited. Omit on create for 8 days; omit on update to preserve. Applies to all variants and new purchases only; local/development use one tenth of finite durations.
  *               allowHomeDelivery:
  *                 type: boolean
  *               images:
@@ -568,7 +569,7 @@ router.post(
  *   put:
  *     tags: [Product]
  *     summary: Update an existing product
- *     description: Setting the product to inactive removes all of its variants from every user's cart. Setting an individual variant to inactive removes only that variant from every user's cart. The status update and cart cleanup are atomic.
+ *     description: Variant refundWindowHours belongs inside variants[]. Top-level refundWindowHours/refundWindowDays and nested refundWindowDays are rejected with HTTP 400 VALIDATION_FAILED. Setting the product to inactive removes all of its variants from every user's cart. Setting an individual variant to inactive removes only that variant from every user's cart. The status update and cart cleanup are atomic.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -620,6 +621,13 @@ router.post(
  *                       nullable: true
  *                     optionValues:
  *                       type: object
+ *                     refundWindowHours:
+ *                       type: integer
+ *                       nullable: true
+ *                       minimum: 0
+ *                       maximum: 87600000
+ *                       default: 192
+ *                       description: Variant-only policy. 0 disables, null means unlimited, positive whole hours are finite. New variants default to 192 hours; omit on existing variant update to preserve.
  *                     stock:
  *                       type: integer
  *                     sortOrder:
@@ -633,13 +641,6 @@ router.post(
  *               type:
  *                 type: string
  *                 enum: [normal, refrigeration, virtual]
- *               refundWindowDays:
- *                 type: integer
- *                 nullable: true
- *                 minimum: 0
- *                 maximum: 3650000
- *                 default: 8
- *                 description: Days after receipt; 0 disables refunds, null means unlimited. Omit on create for 8 days; omit on update to preserve. Applies to all variants and new purchases only; local/development use one tenth of finite durations.
  *               allowHomeDelivery:
  *                 type: boolean
  *               images:

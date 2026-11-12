@@ -8,7 +8,7 @@ const context = {
   variantName: "Blue",
   merchantTradeNo: "ORDER-123",
   refundDeadlineAt: new Date("2026-11-04T04:10:35.220Z"),
-  refundWindowDaysAtSale: 8,
+  refundWindowHoursAtSale: 192,
   rejectionReason: "Please provide more information <script>alert(1)</script>",
 };
 const body = getRefundStatusBody(context);
@@ -17,7 +17,7 @@ assert.ok(body.includes(context.rejectionReason));
 assert.ok(body.includes("Test product（Blue）"));
 // Midnight and year rollover are formatted in Taipei, independent of host timezone.
 assert.ok(getRefundStatusBody({ ...context, refundDeadlineAt: new Date("2026-12-31T16:05:00Z") }).includes("2027-01-01 00:05"));
-const unlimited = getRefundStatusBody({ ...context, refundWindowDaysAtSale: null, refundDeadlineAt: null });
+const unlimited = getRefundStatusBody({ ...context, refundWindowHoursAtSale: null, refundDeadlineAt: null });
 assert.ok(unlimited.includes("不限期"));
 assert.ok(!unlimited.includes("2026-11-04"));
 const unknown = getRefundStatusBody({ ...context, refundDeadlineAt: null });

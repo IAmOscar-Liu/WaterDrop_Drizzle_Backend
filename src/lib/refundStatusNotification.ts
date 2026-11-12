@@ -7,7 +7,7 @@ export function getRefundStatusBody(context: {
   variantName: string | null;
   merchantTradeNo: string | null;
   refundDeadlineAt: Date | null;
-  refundWindowDaysAtSale: number | null;
+  refundWindowHoursAtSale: number | null;
   rejectionReason: string | null;
 }) {
   const productName = context.variantName?.trim()
@@ -19,9 +19,9 @@ export function getRefundStatusBody(context: {
   let body = `您的商品「${productName}」退貨申請狀態已更新為「${statusText}」。(訂單編號: ${context.merchantTradeNo ?? ""})`;
   if (context.status === "rejected") {
     if (context.rejectionReason) body += `\n拒絕原因：${context.rejectionReason}`;
-    if (context.refundWindowDaysAtSale === null) {
+    if (context.refundWindowHoursAtSale === null) {
       body += "\n此商品的退貨申請不限期；如仍有可申請數量，您可重新提出申請。";
-    } else if (context.refundDeadlineAt && context.refundWindowDaysAtSale > 0) {
+    } else if (context.refundDeadlineAt && context.refundWindowHoursAtSale > 0) {
       const timezone = "Asia/Taipei";
       const { hour, minute } = getZonedParts(context.refundDeadlineAt, timezone);
       const deadline = `${getLocalDate(context.refundDeadlineAt, timezone)} ${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
