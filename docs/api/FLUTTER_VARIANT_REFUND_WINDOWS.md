@@ -1,7 +1,7 @@
 # Flutter handoff: per-variant refund windows in hours and delivery flows
 
 Date: 2026-11-12
-Status: implemented in backend source; **local migrations applied on 2026-11-12**; development/staging migrations remain pending. This is the consolidated Flutter contract for variant policies, hour units, manual delivery and unchanged CVS polling. Coordinate backend migration/deployment and client model/cache rollout.
+Status: implemented in backend source; **local and development migrations applied on 2026-11-12**; staging migrations remain pending. This is the consolidated Flutter contract for variant policies, hour units, manual delivery and unchanged CVS polling. Coordinate backend migration/deployment and client model/cache rollout.
 
 ## Whole-hour policy contract
 
@@ -70,7 +70,7 @@ For virtual/home delivery only, delivered blocks status resets. Repeated deliver
 
 Finite policies use the purchased variant duration; 0 remains disabled and null still needs valid start/payment/quantity. In staging/production the full N-hour duration starts at completion; local/development retain the accelerated duration and existing payment fallback. Historical delivered manual records lacking evidence can be saved as delivered again by seller/admin to confirm **now**, never backdated. Until valid evidence exists, show backend `NOT_RECEIVED`/`RECEIPT_TIME_UNKNOWN` feedback rather than deriving eligibility from a status label alone. Label virtual/home start times as delivery/fulfillment confirmation, rather than CVS pickup time.
 
-These delivery-state changes need no additional migration. The variant-policy migrations below are applied locally and remain pending in development/staging.
+These delivery-state changes need no additional migration. The variant-policy migrations below are applied locally and in development; staging remains pending.
 
 ## CVS polling and status meanings
 
@@ -90,12 +90,12 @@ Help `GET /api/system/customer-support` and consent `GET /api/file/user-consent`
 
 ## Migration and rollout
 
-Local completed both steps on 2026-11-12. Development/staging remain pending and require deployment authorization. Migration sequence:
+Local and development completed both steps on 2026-11-12. Staging remains pending and requires deployment authorization. Migration sequence:
 
 | Environment | Variant step | Hour step |
 | --- | --- | --- |
 | Local (applied 2026-11-12) | `drizzle/local/0120_variant_refund_windows.sql` | `drizzle/local/0121_refund_window_hours.sql` |
-| Development | `drizzle/dev/0071_variant_refund_windows.sql` | `drizzle/dev/0072_refund_window_hours.sql` |
+| Development (applied 2026-11-12) | `drizzle/dev/0071_variant_refund_windows.sql` | `drizzle/dev/0072_refund_window_hours.sql` |
 | Staging | `drizzle/stg/0019_variant_refund_windows.sql` | `drizzle/stg/0020_refund_window_hours.sql` |
 
 The first backfills every existing variant from its former product day policy; the second renames/converts variant and order-snapshot values to hours and sets defaults to 192. It preserves 0/null, inactive variants, purchased durations and existing receipt/deadline/rejection timestamps. Only the private old product-day column remains as backfill reference; it is not the live policy.
@@ -104,10 +104,10 @@ Backend source requires both steps and a coordinated client release; old day-col
 
 ## QA
 
-Cover 0/1/12/24/168/192/720/null, exact hour/day display, unnamed simple variants, selection switching, separate cart rows, mixed policies in one order/delivery, policy edits before/after order creation, old snapshot conversion and unchanged deadlines. Verify disabled/unlimited/start/payment/quantity rules, local acceleration, refund retries/rejection/partial completion/emails, virtual/home irreversible completion and the unchanged CVS polling/pickup flow. Backend validation runs on disposable databases; local migrations are applied; configured development/staging migrations remain deferred.
+Cover 0/1/12/24/168/192/720/null, exact hour/day display, unnamed simple variants, selection switching, separate cart rows, mixed policies in one order/delivery, policy edits before/after order creation, old snapshot conversion and unchanged deadlines. Verify disabled/unlimited/start/payment/quantity rules, local acceleration, refund retries/rejection/partial completion/emails, virtual/home irreversible completion and the unchanged CVS polling/pickup flow. Backend validation runs on disposable databases; local/development migrations are applied; configured staging migrations remain deferred.
 
 ## Related notifications and verified status
 
 Paid virtual/home orders still create their existing fulfillment follow-up chat message once, with the original paragraph and purchased product/variant, unit price, quantity and subtotal. Home delivery includes 配送方式：宅配到府; virtual omits that row. Subtotal excludes coin deductions/shipping/other fees. These reminders happen at payment, do not themselves confirm delivery or start normal-environment refund windows, and keep the existing plain-text message/SSE payload shape. Delivery completion uses the status API described above. Email/notification delivery does not change eligibility timestamps.
 
-Verified 2026-11-12: build, shared error-contract checks and all 19 disposable-database suites pass. The upgrade rehearsal covers finite/zero/null policy conversion, inactive variants, 192-hour defaults and unchanged historical/extended deadlines. Local migration and post-migration checks confirm both steps are applied with no pending migrations: all 34 variant policies and 373 order-item snapshots converted correctly, defaults are 192 hours, constraints are validated, and existing receipt/deadline timestamps and all 28 refund records are preserved. Development/staging were not migrated and remain pending.
+Verified 2026-11-12: build, shared error-contract checks and all 19 disposable-database suites pass. The upgrade rehearsal covers finite/zero/null policy conversion, inactive variants, 192-hour defaults and unchanged historical/extended deadlines. Local migration and post-migration checks confirm both steps are applied with no pending migrations: all 34 variant policies and 373 order-item snapshots converted correctly, defaults are 192 hours, constraints are validated, and existing receipt/deadline timestamps and all 28 refund records are preserved. Development migration checks also confirm all 55 variant policies and 165 order-item snapshots converted correctly, with 192-hour defaults, validated constraints, preserved receipt/deadline timestamps and all 30 refund records unchanged. Local and development have no pending migrations and identical public schemas (66 tables, 690 columns, 250 constraints, 170 indexes, 31 enums and one sequence; no views, application functions, triggers or policies). Latest migration SQL hashes match their journals. Staging was not migrated and remains pending. Git merge alone does not deploy/restart the running backend; use the matching hour-based backend source with these migrated databases.

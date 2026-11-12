@@ -1,7 +1,7 @@
 # Admin FE handoff: variant refund windows in hours and delivery completion
 
 Date: 2026-11-12
-Status: implemented in backend source; **local migrations applied on 2026-11-12**; development/staging migrations remain pending. This is the authoritative consolidated contract for the variant/hour, delivery-status and CVS-polling changes. Coordinate migration, backend, admin FE and Flutter deployment.
+Status: implemented in backend source; **local and development migrations applied on 2026-11-12**; staging migrations remain pending. This is the authoritative consolidated contract for the variant/hour, delivery-status and CVS-polling changes. Coordinate migration, backend, admin FE and Flutter deployment.
 
 ## Policy editor and units
 
@@ -110,7 +110,7 @@ An older virtual/home record already labelled delivered but missing evidence can
 | 409 `DELIVERY_CONFIRMATION_NOT_SUPPORTED` | For virtual/home: provider-managed method or checkout selection mismatch; do not bypass via type edits. |
 | 409 `DELIVERY_NOT_CONFIRMABLE` | Cannot complete the current cancelled/returned/exception/unknown record. |
 
-After an uncertain PUT outcome, re-read this delivery and retry delivered if needed; never reset status or create another delivery to restart a window. Refresh order/refund detail for authoritative eligibility. There is no `/confirm-delivery` endpoint. Completion/terminal-state handling needs no additional migration; the variant-policy migrations below are applied locally and remain pending in development/staging.
+After an uncertain PUT outcome, re-read this delivery and retry delivered if needed; never reset status or create another delivery to restart a window. Refresh order/refund detail for authoritative eligibility. There is no `/confirm-delivery` endpoint. Completion/terminal-state handling needs no additional migration; the variant-policy migrations below are applied locally and in development; staging remains pending.
 
 ## Seller status choices and CVS polling
 
@@ -145,12 +145,12 @@ Ready-for-pickup therefore continues polling until pickup is confirmed; a callba
 
 ## Migration, timing and rollout
 
-Local completed both steps on 2026-11-12. Development/staging remain pending; **do not apply there until deployment is authorized**. Both steps are required, in order:
+Local and development completed both steps on 2026-11-12. Staging remains pending; **do not apply there until deployment is authorized**. Both steps are required, in order:
 
 | Environment | Variant backfill step | Hour conversion step |
 | --- | --- | --- |
 | Local (applied 2026-11-12) | `drizzle/local/0120_variant_refund_windows.sql` | `drizzle/local/0121_refund_window_hours.sql` |
-| Development | `drizzle/dev/0071_variant_refund_windows.sql` | `drizzle/dev/0072_refund_window_hours.sql` |
+| Development (applied 2026-11-12) | `drizzle/dev/0071_variant_refund_windows.sql` | `drizzle/dev/0072_refund_window_hours.sql` |
 | Staging | `drizzle/stg/0019_variant_refund_windows.sql` | `drizzle/stg/0020_refund_window_hours.sql` |
 
 The first step copies each product's former day policy into every existing variant, including inactive variants/inactive or deleted parents, preserving 0/null. The second renames variant/order-snapshot columns to hours, converts every stored day value × 24 (10-day snapshot → 240 hours), and sets future defaults to 192. It leaves receipt times, original/effective deadlines, rejection extensions and refund records unchanged. New variants do not inherit from old product defaults. The old product day column remains private backfill/rollback reference, not a live API setting. Older code cannot safely run against renamed hour columns; stop/coordinately replace old API processes during rollout. Reverting units requires a deliberate rollback, especially once non-day-multiple hour policies exist.
@@ -179,4 +179,4 @@ Use `npm run build`, `npm run test:refund-strategy` and `npm test`. Upgrade SQL 
 
 Paid virtual/home orders still create their existing fulfillment follow-up chat message once, with the original paragraph and purchased product/variant, unit price, quantity and subtotal. Home delivery includes 配送方式：宅配到府; virtual omits that row. Subtotal excludes coin deductions/shipping/other fees. These reminders happen at payment, do not themselves confirm delivery or start normal-environment refund windows, and keep the existing plain-text message/SSE payload shape. Delivery completion uses the status API described above. Email/notification delivery does not change eligibility timestamps.
 
-Verified 2026-11-12: build, shared error-contract checks and all 19 disposable-database suites pass. The upgrade rehearsal covers finite/zero/null policy conversion, inactive variants, 192-hour defaults and unchanged historical/extended deadlines. Local migration and post-migration checks confirm both steps are applied with no pending migrations: all 34 variant policies and 373 order-item snapshots converted correctly, defaults are 192 hours, constraints are validated, and existing receipt/deadline timestamps and all 28 refund records are preserved. Development/staging were not migrated and remain pending.
+Verified 2026-11-12: build, shared error-contract checks and all 19 disposable-database suites pass. The upgrade rehearsal covers finite/zero/null policy conversion, inactive variants, 192-hour defaults and unchanged historical/extended deadlines. Local migration and post-migration checks confirm both steps are applied with no pending migrations: all 34 variant policies and 373 order-item snapshots converted correctly, defaults are 192 hours, constraints are validated, and existing receipt/deadline timestamps and all 28 refund records are preserved. Development migration checks also confirm all 55 variant policies and 165 order-item snapshots converted correctly, with 192-hour defaults, validated constraints, preserved receipt/deadline timestamps and all 30 refund records unchanged. Local and development have no pending migrations and identical public schemas (66 tables, 690 columns, 250 constraints, 170 indexes, 31 enums and one sequence; no views, application functions, triggers or policies). Latest migration SQL hashes match their journals. Staging was not migrated and remains pending. Git merge alone does not deploy/restart the running backend; use the matching hour-based backend source with these migrated databases.

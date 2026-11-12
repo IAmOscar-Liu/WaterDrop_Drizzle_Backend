@@ -1,8 +1,8 @@
 # Admin FE handoff: error handling and product-specific refund windows
 
-Hour-unit update (2026-11-12): the authoritative [variant/hour handoff](ADMIN_VARIANT_REFUND_WINDOWS.md) now uses `refundWindowHours` and `refundWindowHoursAtSale` (default 192 hours). Prior day-field examples below are historical and superseded. Whole-hour API values may be shown as daily UI presets via days × 24. Both variant and hour-conversion migrations were applied locally on 2026-11-12; development/staging remain pending.
+Hour-unit update (2026-11-12): the authoritative [variant/hour handoff](ADMIN_VARIANT_REFUND_WINDOWS.md) now uses `refundWindowHours` and `refundWindowHoursAtSale` (default 192 hours). Prior day-field examples below are historical and superseded. Whole-hour API values may be shown as daily UI presets via days × 24. Both variant and hour-conversion migrations were applied locally and in development on 2026-11-12; staging remains pending.
 
-Variant update (2026-11-11): refund windows now belong to each variant. Use [the variant-policy handoff](ADMIN_VARIANT_REFUND_WINDOWS.md) for the new API, migration and rollout contract; it supersedes product-level editor/policy-source instructions below. Migration status: applied locally on 2026-11-12; development/staging remain pending. Existing purchase snapshots, eligibility, review and shared error rules remain in effect.
+Variant update (2026-11-11): refund windows now belong to each variant. Use [the variant-policy handoff](ADMIN_VARIANT_REFUND_WINDOWS.md) for the new API, migration and rollout contract; it supersedes product-level editor/policy-source instructions below. Migration status: applied locally and in development on 2026-11-12; staging remains pending. Existing purchase snapshots, eligibility, review and shared error rules remain in effect.
 
 Date: 2026-11-04
 Status: implemented in backend source. This is the consolidated FE handoff and supersedes the earlier app-only error scope. It includes the product refund-window contract from the previous handoff.
