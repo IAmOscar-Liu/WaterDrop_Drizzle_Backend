@@ -7,6 +7,8 @@ The proposal is supported. Flutter can proceed with typed failures, contextual r
 
 Scope: all `/api/*` routes, including `/api/admin` and `/api/admin/*` (case-insensitive). Admin APIs now use the same error envelope, public masking, validation fields, request references and status normalization. Shared helpers select the policy from request context; calls outside API requests retain legacy behavior. The consolidated [admin FE handoff](FE-confirmation/ADMIN_ERROR_HANDLING_AND_REFUND_WINDOWS.md) includes this contract and product-specific refund windows.
 
+Variant-policy update (2026-11-11): the error contract remains unchanged. Product policies move into variants as whole-hour refundWindowHours; order snapshots use refundWindowHoursAtSale; old nested day writes are rejected; old top-level admin writes return validation failures. See [Flutter variant-policy integration](FLUTTER_VARIANT_REFUND_WINDOWS.md) and [admin FE integration](FE-confirmation/ADMIN_VARIANT_REFUND_WINDOWS.md). The new variant-policy migration is generated, not applied.
+
 ## Decisions and implemented behavior
 
 | Proposal decision | BE response |

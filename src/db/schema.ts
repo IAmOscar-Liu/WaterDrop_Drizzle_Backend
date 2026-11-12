@@ -721,6 +721,7 @@ export const productTable = pgTable("products", {
   status: productStatusEnum("status").default("active").notNull(),
   type: productTypeEnum("type").default("normal").notNull(),
   allowHomeDelivery: boolean("allow_home_delivery").default(false).notNull(),
+  // Deprecated product-level policy retained only for migration backfill/rollback.
   refundWindowDays: integer("refund_window_days").default(8),
   metadata: jsonb("metadata"),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
@@ -749,6 +750,7 @@ export const productVariantTable = pgTable(
     name: text("name"),
     sku: text("sku"),
     price: doublePrecision("price").notNull(),
+    refundWindowHours: integer("refund_window_hours").default(192),
     images: text("images").array(),
     optionValues: jsonb("option_values").notNull().default({}),
     stock: integer("stock").notNull(),
@@ -765,6 +767,7 @@ export const productVariantTable = pgTable(
       .notNull(),
   },
   (t) => ({
+    refundWindowHoursCheck: check("product_variants_refund_window_hours_ck", sql`${t.refundWindowHours} is null or ${t.refundWindowHours} between 0 and 87600000`),
     productIdIdx: index("product_variants_product_id_idx").on(t.productId),
     productStatusIdx: index("product_variants_product_status_idx").on(
       t.productId,
@@ -1190,7 +1193,7 @@ export const orderItemTable = pgTable(
 
     quantity: integer("quantity").notNull(),
     pendingQuantity: integer("pending_quantity").notNull().default(0),
-    refundWindowDaysAtSale: integer("refund_window_days_at_sale").default(8),
+    refundWindowHoursAtSale: integer("refund_window_hours_at_sale").default(192),
     refundWindowStartsAt: timestamp("refund_window_starts_at", { withTimezone: true }),
     originalRefundDeadlineAt: timestamp("original_refund_deadline_at", { withTimezone: true }),
     refundDeadlineAt: timestamp("refund_deadline_at", { withTimezone: true }),
@@ -1217,14 +1220,14 @@ export const orderItemTable = pgTable(
       .notNull(),
   },
   (t) => ({
-    refundWindowDaysCheck: check("order_items_refund_window_days_ck", sql`${t.refundWindowDaysAtSale} is null or ${t.refundWindowDaysAtSale} between 0 and 3650000`),
+    refundWindowHoursCheck: check("order_items_refund_window_hours_ck", sql`${t.refundWindowHoursAtSale} is null or ${t.refundWindowHoursAtSale} between 0 and 87600000`),
     refundWindowCheck: check("order_items_refund_window_ck", sql`(
       ${t.refundWindowStartsAt} is null and ${t.originalRefundDeadlineAt} is null and ${t.refundDeadlineAt} is null
     ) or (
       ${t.refundWindowStartsAt} is not null and (
-        ((${t.refundWindowDaysAtSale} is null or ${t.refundWindowDaysAtSale} = 0)
+        ((${t.refundWindowHoursAtSale} is null or ${t.refundWindowHoursAtSale} = 0)
           and ${t.originalRefundDeadlineAt} is null and ${t.refundDeadlineAt} is null)
-        or (${t.refundWindowDaysAtSale} is not null and ${t.refundWindowDaysAtSale} > 0 and ${t.originalRefundDeadlineAt} is not null and ${t.refundDeadlineAt} is not null
+        or (${t.refundWindowHoursAtSale} is not null and ${t.refundWindowHoursAtSale} > 0 and ${t.originalRefundDeadlineAt} is not null and ${t.refundDeadlineAt} is not null
           and ${t.originalRefundDeadlineAt} > ${t.refundWindowStartsAt} and ${t.refundDeadlineAt} >= ${t.originalRefundDeadlineAt})
       )
     )`),

@@ -14,6 +14,7 @@ import { createOrder, getOrderById, updateOrderStatus } from "../repository/orde
 import { refundEligibility, getRefundWindowMs, getRefundExtensionMs, REFUND_WINDOW_MS, REFUND_EXTENSION_MS } from "../lib/refundEligibility";
 import { swaggerSpec } from "../lib/swagger";
 import ecpayService from "../services/ecpay";
+import { createProduct, updateProduct } from "../repository/product";
 import { sendRefundStatusChangedNotifications } from "../services/refund";
 
 async function run() {
@@ -22,6 +23,16 @@ async function run() {
   await new Promise<void>(resolve => server.once("listening", resolve));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   try {
+    const documented = swaggerSpec as any;
+    assert.equal(documented.paths["/api/admin/delivery/{deliveryId}/confirm-delivery"], undefined);
+    assert.ok(documented.paths["/api/admin/delivery/{deliveryId}"].put);
+    assert.ok(!("refundWindowHours" in documented.components.schemas.Product.properties));
+    assert.equal(documented.components.schemas.ProductVariant.properties.refundWindowHours.default, 192);
+    for (const [path, method] of [["/api/admin/product/create", "post"], ["/api/admin/product/{id}", "put"]]) {
+      const fields = documented.paths[path][method].requestBody.content["application/json"].schema.properties;
+      assert.ok(!("refundWindowHours" in fields));
+      assert.equal(fields.variants.items.properties.refundWindowHours.nullable, true);
+    }
     const [buyer, stranger] = await db.insert(s.userTable).values([1, 2].map(() => ({ email: `${randomUUID()}@example.test`, oauthProvider: "other" as const, oauthId: randomUUID(), referralCode: randomUUID() }))).returning();
     const accounts = await db.insert(s.accountTable).values((["seller", "seller", "admin", "employee"] as const).map(role => ({ role, email: `${randomUUID()}@example.test`, password: "unused", realName: "Refund test", phone: "0900000000", profileCompletedAt: new Date(), emailVerifiedAt: new Date() }))).returning();
     const [seller, foreignSeller, admin, employee] = accounts;
@@ -29,33 +40,84 @@ async function run() {
     await db.update(s.accountTable).set({ accountGroupId: group.id }).where(eq(s.accountTable.id, employee.id));
     const [product] = await db.insert(s.productTable).values({ sellerId: seller.id, name: "Refund strategy", description: "Fixture" }).returning();
     const [variant] = await db.insert(s.productVariantTable).values({ productId: product.id, price: 100, stock: 30 }).returning();
-    assert.equal(product.refundWindowDays, 8);
-    // Verify the actual upgrade SQL preserves legacy rows and changes only future defaults.
-    const rollbackMigration = new Error("Rollback migration verification");
+    assert.equal(product.refundWindowDays, 8); // Retained legacy DB column.
+    assert.equal(variant.refundWindowHours, 192);
+    assert.equal(getRefundWindowMs(1), 60 * 60 * 1000);
+    assert.equal(getRefundWindowMs(24), 24 * 60 * 60 * 1000);
+    assert.equal(getRefundWindowMs(192), REFUND_WINDOW_MS);
+    // Rehearse all pending upgrades only inside a rollback transaction on a disposable database.
+    const variantMigration = readFileSync("drizzle/local/0120_variant_refund_windows.sql", "utf8");
+    const hourMigration = readFileSync("drizzle/local/0121_refund_window_hours.sql", "utf8");
+    assert.equal(variantMigration, readFileSync("drizzle/dev/0071_variant_refund_windows.sql", "utf8"));
+    assert.equal(variantMigration, readFileSync("drizzle/stg/0019_variant_refund_windows.sql", "utf8"));
+    assert.equal(hourMigration, readFileSync("drizzle/dev/0072_refund_window_hours.sql", "utf8"));
+    assert.equal(hourMigration, readFileSync("drizzle/stg/0020_refund_window_hours.sql", "utf8"));
+    const rollbackMigration = new Error("Rollback historical unit conversion verification");
     await assert.rejects(db.transaction(async tx => {
-      await tx.execute(sql.raw("ALTER TABLE order_items DROP CONSTRAINT order_items_refund_window_ck"));
-      await tx.execute(sql.raw("ALTER TABLE order_items DROP COLUMN refund_window_days_at_sale"));
-      await tx.execute(sql.raw("ALTER TABLE products DROP COLUMN refund_window_days"));
-      await tx.execute(sql.raw("ALTER TABLE order_items ADD CONSTRAINT order_items_refund_window_ck CHECK (true)"));
+      const parents = await tx.insert(s.productTable).values([0, null, 3, 8, 50, 3650000].map(days => ({
+        sellerId: seller.id, name: `Legacy parent ${days}`, description: "Fixture", refundWindowDays: days,
+        status: days === null ? "inactive" as const : "active" as const, deletedAt: days === 50 ? new Date() : null,
+      }))).returning();
+      const variants = await tx.insert(s.productVariantTable).values(parents.flatMap(parent =>
+        (["active", "inactive"] as const).map(status => ({ productId: parent.id, price: 100, stock: 10, status })))).returning();
       const [legacyOrder] = await tx.insert(s.orderTable).values({ userId: buyer.id, subTotal: 100, totalAmount: 100 }).returning();
-      const legacyItemId = randomUUID();
       const start = new Date("2026-01-01T00:00:00Z");
       const deadline = new Date("2026-01-11T00:00:00Z");
-      await tx.execute(sql`insert into order_items (id, order_id, product_id, product_variant_id, quantity, unit_price_at_sale, line_total, product_name_at_sale,
-        refund_window_starts_at, original_refund_deadline_at, refund_deadline_at)
-        values (${legacyItemId}, ${legacyOrder.id}, ${product.id}, ${variant.id}, 1, 100, 100, 'Legacy', ${start.toISOString()}::timestamptz, ${deadline.toISOString()}::timestamptz, ${deadline.toISOString()}::timestamptz)`);
-      const migration = readFileSync("drizzle/local/0118_product_refund_windows.sql", "utf8");
-      for (const statement of migration.split("--> statement-breakpoint")) {
+      const [legacyItem] = await tx.insert(s.orderItemTable).values({ orderId: legacyOrder.id, productId: parents[0].id,
+        productVariantId: variants[0].id, productNameAtSale: "Legacy", quantity: 1, unitPriceAtSale: 100, lineTotal: 100,
+        refundWindowHoursAtSale: 240, refundWindowStartsAt: start, originalRefundDeadlineAt: deadline,
+        refundDeadlineAt: new Date("2026-01-15T00:00:00Z") }).returning();
+      // Recreate the product-policy-era shape, then apply the reviewed SQL sequence.
+      await tx.execute(sql.raw("ALTER TABLE order_items DROP CONSTRAINT order_items_refund_window_ck"));
+      await tx.execute(sql.raw("ALTER TABLE order_items DROP COLUMN refund_window_hours_at_sale"));
+      await tx.execute(sql.raw("ALTER TABLE product_variants DROP COLUMN refund_window_hours"));
+      await tx.execute(sql.raw("ALTER TABLE products DROP COLUMN refund_window_days"));
+      await tx.execute(sql.raw("ALTER TABLE order_items ADD CONSTRAINT order_items_refund_window_ck CHECK (true)"));
+      for (const statement of readFileSync("drizzle/local/0118_product_refund_windows.sql", "utf8").split("--> statement-breakpoint")) {
         if (statement.trim()) await tx.execute(sql.raw(statement));
       }
-      const legacy = (await tx.select().from(s.orderItemTable).where(eq(s.orderItemTable.id, legacyItemId)))[0];
-      assert.equal(legacy.refundWindowDaysAtSale, 10);
-      assert.deepEqual(legacy.refundDeadlineAt, deadline);
-      assert.equal((await tx.select().from(s.productTable).where(eq(s.productTable.id, product.id)))[0].refundWindowDays, 8);
-      const [newOrder] = await tx.insert(s.orderTable).values({ userId: buyer.id, subTotal: 100, totalAmount: 100 }).returning();
-      const [newPurchase] = await tx.insert(s.orderItemTable).values({ orderId: newOrder.id, productId: product.id, productVariantId: variant.id,
-        quantity: 1, unitPriceAtSale: 100, lineTotal: 100, productNameAtSale: "New" }).returning();
-      assert.equal(newPurchase.refundWindowDaysAtSale, 8);
+      for (const parent of parents) await tx.update(s.productTable).set({ refundWindowDays: parent.refundWindowDays }).where(eq(s.productTable.id, parent.id));
+      for (const statement of variantMigration.split("--> statement-breakpoint")) {
+        if (statement.trim()) await tx.execute(sql.raw(statement));
+      }
+      for (const variant of variants) {
+        const [row] = await tx.execute<{ refund_window_days: number | null; status: string }>(sql`select refund_window_days,status from product_variants where id=${variant.id}`);
+        assert.equal(row.refund_window_days, parents.find(p => p.id === variant.productId)!.refundWindowDays);
+        assert.equal(row.status, variant.status);
+      }
+      const oldPolicyRows: { id: string; days: number | null }[] = [];
+      for (const days of [0, null, 3]) {
+        const id = randomUUID();
+        const [oldPolicyOrder] = await tx.insert(s.orderTable).values({ userId: buyer.id, subTotal: 100, totalAmount: 100 }).returning();
+        await tx.execute(sql`insert into order_items (id,order_id,product_id,product_variant_id,quantity,unit_price_at_sale,line_total,
+          product_name_at_sale,refund_window_days_at_sale,refund_window_starts_at,original_refund_deadline_at,refund_deadline_at)
+          values (${id},${oldPolicyOrder.id},${parents[0].id},${variants[0].id},1,100,100,'Old snapshot',${days},${start.toISOString()}::timestamptz,
+          ${days ? deadline.toISOString() : null}::timestamptz,${days ? deadline.toISOString() : null}::timestamptz)`);
+        oldPolicyRows.push({ id, days });
+      }
+      for (const statement of hourMigration.split("--> statement-breakpoint")) {
+        if (statement.trim()) await tx.execute(sql.raw(statement));
+      }
+      for (const variant of variants) {
+        const [row] = await tx.select().from(s.productVariantTable).where(eq(s.productVariantTable.id, variant.id));
+        const days = parents.find(p => p.id === variant.productId)!.refundWindowDays;
+        assert.equal(row.refundWindowHours, days === null ? null : days * 24);
+        assert.equal(row.status, variant.status);
+      }
+      assert.deepEqual((await tx.select().from(s.orderItemTable).where(eq(s.orderItemTable.id, legacyItem.id)))[0], legacyItem,
+        "10-day snapshot becomes 240 hours while receipt, original and extended deadlines stay exact");
+      for (const old of oldPolicyRows) {
+        const [converted] = await tx.select().from(s.orderItemTable).where(eq(s.orderItemTable.id, old.id));
+        assert.equal(converted.refundWindowHoursAtSale, old.days === null ? null : old.days * 24);
+        assert.deepEqual(converted.refundWindowStartsAt, start);
+        assert.deepEqual(converted.refundDeadlineAt, old.days ? deadline : null);
+      }
+      const [futureVariant] = await tx.insert(s.productVariantTable).values({ productId: parents[0].id, price: 100, stock: 10 }).returning();
+      assert.equal(futureVariant.refundWindowHours, 192, "Future variants default to 192 hours, not the parent's legacy 0 days");
+      const [futureOrder] = await tx.insert(s.orderTable).values({ userId: buyer.id, subTotal: 100, totalAmount: 100 }).returning();
+      const [futureItem] = await tx.insert(s.orderItemTable).values({ orderId: futureOrder.id, productId: parents[0].id,
+        productVariantId: futureVariant.id, quantity: 1, unitPriceAtSale: 100, lineTotal: 100, productNameAtSale: "Future" }).returning();
+      assert.equal(futureItem.refundWindowHoursAtSale, 192);
       throw rollbackMigration;
     }), error => error === rollbackMigration);
     async function fixture(quantity = 2) {
@@ -64,8 +126,11 @@ async function run() {
       const delivery = await createDelivery({ orderId: order.id, LogisticsType: "CVS", LogisticsSubType: "UNIMARTC2C", GoodsAmount: quantity * 100, status: "delivered", RtnCode: "2073", RtnMsg: "Store arrival" }, [{ productId: product.id, variantId: variant.id }], "provider_callback");
       return { order, item, delivery };
     }
+    const requestTokens = new Map<string, string>();
     async function request(path: string, id: string, method = "GET", body?: unknown) {
-      const r = await fetch(base + path, { method, headers: { authorization: `Bearer ${await fixtureToken({ id })}`, "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+      const token = requestTokens.get(id) ?? await fixtureToken({ id });
+      requestTokens.set(id, token);
+      const r = await fetch(base + path, { method, headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
       const text = await r.text(); let data: any; try { data = JSON.parse(text); } catch { data = text; }
       return { status: r.status, data };
     }
@@ -74,39 +139,44 @@ async function run() {
       return (await db.query.orderItemTable.findFirst({ where: eq(s.orderItemTable.id, f.item.id) }))!;
     }
     // Exercise the real checkout snapshot and mixed-policy receipt path.
-    const policyProducts = await db.insert(s.productTable).values([0, 3, 7, 10, 50, null].map(days => ({
-      sellerId: seller.id, name: `Policy ${days}`, description: "Fixture", refundWindowDays: days,
+    const [policyProduct] = await db.insert(s.productTable).values({
+      sellerId: seller.id, name: "Mixed variant policies", description: "Fixture", refundWindowDays: 99,
+    }).returning();
+    const policyVariants = await db.insert(s.productVariantTable).values([0, 3, 7, 10, 50, null].map(days => ({
+      productId: policyProduct.id, name: `Policy ${days}`, price: 100, stock: 10, refundWindowHours: days,
     }))).returning();
-    const policyVariants = await db.insert(s.productVariantTable).values(policyProducts.map(p => ({ productId: p.id, price: 100, stock: 10 }))).returning();
     const policyOrder = await createOrder({
-      orderData: { userId: buyer.id, subTotal: 600, totalAmount: 600, orderStatus: "paid", completedAt: new Date() },
-      items: policyProducts.map(p => ({ productId: p.id, productVariantId: policyVariants.find(v => v.productId === p.id)!.id,
-        quantity: 2, unitPriceAtSale: 100, productNameAtSale: p.name, refundWindowDaysAtSale: 99, deliveryId: randomUUID(),
+      orderData: { userId: buyer.id, subTotal: 1200, totalAmount: 1200 },
+      items: policyVariants.map(v => ({ productId: v.productId, productVariantId: v.id,
+        quantity: 2, unitPriceAtSale: 100, productNameAtSale: policyProduct.name, refundWindowHoursAtSale: 99, deliveryId: randomUUID(),
         refundWindowStartsAt: new Date(), originalRefundDeadlineAt: new Date("2099-01-01"), refundDeadlineAt: new Date("2099-01-01") })),
       idempotencyKey: randomUUID(),
     });
     assert.ok(policyOrder);
     const beforeReceipt = await db.query.orderItemTable.findMany({ where: eq(s.orderItemTable.orderId, policyOrder.id) });
     assert.ok(beforeReceipt.every(row => row.refundWindowStartsAt === null && row.refundDeadlineAt === null && row.deliveryId === null));
-    await db.update(s.productTable).set({ refundWindowDays: 1 }).where(eq(s.productTable.sellerId, seller.id));
-    const policyDelivery = await createDelivery({ orderId: policyOrder.id, LogisticsType: "home_delivery", GoodsAmount: 600, status: "delivered" },
+    // Changes before payment must not replace the policy captured at order creation.
+    await db.update(s.productVariantTable).set({ refundWindowHours: 1 }).where(eq(s.productVariantTable.productId, policyProduct.id));
+    await db.update(s.productTable).set({ refundWindowDays: 2 }).where(eq(s.productTable.id, policyProduct.id));
+    await updateOrderStatus({ orderId: policyOrder.id, status: "paid" });
+    const policyDelivery = await createDelivery({ orderId: policyOrder.id, LogisticsType: "home_delivery", GoodsAmount: 1200, status: "delivered" },
       policyVariants.map(v => ({ productId: v.productId, variantId: v.id })), "provider_callback");
     const policyItems = (await getOrderById(policyOrder.id))!.items;
-    for (const p of policyProducts) {
-      const row = policyItems.find(i => i.productId === p.id)!;
-      assert.equal(row.refundWindowDaysAtSale, p.refundWindowDays); // Client input/live product changes cannot overwrite it.
+    for (const v of policyVariants) {
+      const row = policyItems.find(i => i.productVariantId === v.id)!;
+      assert.equal(row.refundWindowHoursAtSale, v.refundWindowHours);
       assert.ok(row.refundWindowStartsAt);
-      if (p.refundWindowDays === 0 || p.refundWindowDays === null) assert.equal(row.refundDeadlineAt, null);
-      else assert.equal(row.refundDeadlineAt!.getTime() - row.refundWindowStartsAt!.getTime(), getRefundWindowMs(p.refundWindowDays));
-      assert.equal(row.canRefund, p.refundWindowDays !== 0);
+      if (v.refundWindowHours === 0 || v.refundWindowHours === null) assert.equal(row.refundDeadlineAt, null);
+      else assert.equal(row.refundDeadlineAt!.getTime() - row.refundWindowStartsAt!.getTime(), getRefundWindowMs(v.refundWindowHours));
+      assert.equal(row.canRefund, v.refundWindowHours !== 0);
     }
-    assert.equal(refundEligibility("paid", { ...policyItems.find(i => i.refundWindowDaysAtSale === null)!, refundWindowStartsAt: null }, [], new Date(), "delivered").refundBlockReason, "RECEIPT_TIME_UNKNOWN");
-    const disabled = policyItems.find(i => i.refundWindowDaysAtSale === 0)!;
+    assert.equal(refundEligibility("paid", { ...policyItems.find(i => i.refundWindowHoursAtSale === null)!, refundWindowStartsAt: null }, [], new Date(), "delivered").refundBlockReason, "RECEIPT_TIME_UNKNOWN");
+    const disabled = policyItems.find(i => i.refundWindowHoursAtSale === 0)!;
     const disabledRequest = await request("/api/refund", buyer.id, "POST", { orderItemId: disabled.id, quantity: 1 });
     assert.equal(disabledRequest.status, 409);
     assert.equal(disabledRequest.data.code, "REFUNDS_DISABLED");
     assert.equal(disabled.refundWindowStatus, "disabled");
-    const unlimited = policyItems.find(i => i.refundWindowDaysAtSale === null)!;
+    const unlimited = policyItems.find(i => i.refundWindowHoursAtSale === null)!;
     assert.equal(refundEligibility("paid", unlimited, [], new Date("2099-01-01")).canRefund, true);
     const unlimitedInput = { orderItemId: unlimited.id, quantity: 1, reason: "Unlimited", actor: { kind: "user" as const, id: buyer.id } };
     const unlimitedRefund = await createRefundWithChatContext(unlimitedInput);
@@ -131,7 +201,7 @@ async function run() {
     console.error = (...args: unknown[]) => { loggedFailures.push(args); };
     try {
       await sendRefundStatusChangedNotifications({ ...unlimitedRejection.notificationContext,
-        refundWindowDaysAtSale: 8, refundDeadlineAt: new Date("2026-11-04T04:10:35Z"),
+        refundWindowHoursAtSale: 8, refundDeadlineAt: new Date("2026-11-04T04:10:35Z"),
       }, {
         sendEmail: async input => { statusEmails.push(input); return { success: true }; },
         createNotification: async () => { throw new Error("Simulated app notification failure"); },
@@ -150,21 +220,90 @@ async function run() {
     assert.ok(!statusEmails[2].html.includes("重新提出"));
 
     assert.equal(unlimitedRejection.notificationContext?.refundDeadlineAt, null);
-    assert.equal(unlimitedRejection.notificationContext?.refundWindowDaysAtSale, null);
+    assert.equal(unlimitedRejection.notificationContext?.refundWindowHoursAtSale, null);
     await updateRefundItemStatus(unlimitedRefund.refundItem.id, { status: "rejected", rejectionReason: "Review" }, seller.id);
     await createRefundWithChatContext(unlimitedInput);
     assert.equal((await getDeliveryById(policyDelivery.id))!.items.find(i => i.id === unlimited.id)!.refundDeadlineAt, null);
-    // Product writes preserve explicit null and zero, and reject invalid values.
+    // Variant writes preserve explicit null/zero and reject retired root writes.
     for (const days of [null, 0, 7]) {
-      const result = await request(`/api/admin/product/${product.id}`, seller.id, "PUT", { refundWindowDays: days });
+      const result = await request(`/api/admin/product/${product.id}`, seller.id, "PUT", { variants: [{ id: variant.id, refundWindowHours: days }] });
       assert.equal(result.status, 200, JSON.stringify(result));
-      assert.equal(result.data.data.refundWindowDays, days);
+      assert.equal(result.data.data.variants.find((v: any) => v.id === variant.id).refundWindowHours, days);
+      assert.ok(!("refundWindowHours" in result.data.data));
+      const oldRoot = await request(`/api/admin/product/${product.id}`, seller.id, "PUT", { refundWindowHours: days });
+      assert.equal(oldRoot.status, 400);
+      assert.equal(oldRoot.data.code, "VALIDATION_FAILED");
+      assert.equal(oldRoot.data.fieldErrors[0].field, "refundWindowHours");
     }
-    for (const days of [-1, 1.5, "7", false, 3650001]) {
-      assert.equal((await request(`/api/admin/product/${product.id}`, seller.id, "PUT", { refundWindowDays: days })).status, 400);
+    for (const days of [-1, 1.5, "7", false, 87600001]) {
+      const result = await request(`/api/admin/product/${product.id}`, seller.id, "PUT", { variants: [{ id: variant.id, refundWindowHours: days }] });
+      assert.equal(result.status, 400);
+      assert.equal(result.data.fieldErrors[0].field, "variants.0.refundWindowHours");
     }
-    const omitted = await request(`/api/admin/product/${product.id}`, seller.id, "PUT", { description: "Updated" });
-    assert.equal(omitted.data.data.refundWindowDays, 7);
+    const retiredVariantDays = await request(`/api/admin/product/${product.id}`, seller.id, "PUT", {
+      variants: [{ id: variant.id, refundWindowDays: 7 }],
+    });
+    assert.equal(retiredVariantDays.status, 400);
+    assert.equal(retiredVariantDays.data.fieldErrors[0].field, "variants.0.refundWindowDays");
+    assert.equal((await request(`/api/admin/product/${product.id}`, seller.id, "PUT", { refundWindowDays: 7 })).status, 400);
+    const omitted = await request(`/api/admin/product/${product.id}`, seller.id, "PUT", { variants: [{ id: variant.id, stock: 30 }] });
+    assert.equal(omitted.data.data.variants[0].refundWindowHours, 7);
+    const createBody = { sellerId: seller.id, name: "Variant policy API", description: "Fixture",
+      variants: [{ price: 100, stock: 10, refundWindowHours: null }] };
+    const createdProduct = await request("/api/admin/product/create", seller.id, "POST", createBody);
+    assert.equal(createdProduct.status, 200, JSON.stringify(createdProduct));
+    assert.equal(createdProduct.data.data.variants[0].refundWindowHours, null);
+    assert.ok(!("refundWindowHours" in createdProduct.data.data));
+    await assert.rejects(createProduct({ sellerId: seller.id, name: "Legacy caller", description: "Fixture", refundWindowDays: null }),
+      (error: any) => error.statusCode === 400 && error.code === "VALIDATION_FAILED");
+    await assert.rejects(updateProduct(product.id, { refundWindowDays: 0 }),
+      (error: any) => error.statusCode === 400 && error.code === "VALIDATION_FAILED");
+    const deletedPolicyProduct = await request(`/api/admin/product/${createdProduct.data.data.id}`, seller.id, "DELETE");
+    assert.equal(deletedPolicyProduct.status, 200);
+    assert.ok(!("refundWindowHours" in deletedPolicyProduct.data.data));
+    const retiredCreate = await request("/api/admin/product/create", seller.id, "POST", { ...createBody, refundWindowHours: 8 });
+    assert.equal(retiredCreate.status, 400);
+    const newDefault = await request("/api/admin/product/create", seller.id, "POST", { ...createBody, variants: [{ price: 100, stock: 10 }] });
+    assert.equal(newDefault.status, 200);
+    assert.equal(newDefault.data.data.variants[0].refundWindowHours, 192);
+    // Adding a variant to a legacy unlimited product still defaults to 192 hours, never inherits.
+    await db.update(s.productTable).set({ refundWindowDays: null }).where(eq(s.productTable.id, policyProduct.id));
+    const newVariant = await request(`/api/admin/product/${policyProduct.id}`, seller.id, "PUT", { variants: [
+      { name: "Added later", price: 100, stock: 10, optionValues: {} },
+    ] });
+    assert.equal(newVariant.status, 200, JSON.stringify(newVariant));
+    assert.equal(newVariant.data.data.variants.find((v: any) => v.name === "Added later").refundWindowHours, 192);
+    const restoredPolicy = await request(`/api/admin/product/${policyProduct.id}`, seller.id, "PUT", {
+      variants: policyVariants.map(v => ({ id: v.id, refundWindowHours: v.refundWindowHours })),
+    });
+    assert.equal(restoredPolicy.status, 200);
+    const siblingEdit = await request(`/api/admin/product/${policyProduct.id}`, seller.id, "PUT", {
+      variants: [{ id: policyVariants[0].id, refundWindowHours: 30 }],
+    });
+    assert.equal(siblingEdit.status, 200);
+    assert.equal(siblingEdit.data.data.variants.find((v: any) => v.id === policyVariants[5].id).refundWindowHours, null);
+    assert.equal((await getOrderById(policyOrder.id))!.items.find(i => i.productVariantId === policyVariants[0].id)!.refundWindowHoursAtSale, 0);
+    await request(`/api/admin/product/${policyProduct.id}`, seller.id, "PUT", { variants: [{ id: policyVariants[0].id, refundWindowHours: 0 }] });
+    const appProduct = await request(`/api/product/${policyProduct.id}`, buyer.id);
+    assert.ok(!("refundWindowHours" in appProduct.data.data));
+    assert.ok(appProduct.data.data.variants.every((v: any) => "refundWindowHours" in v));
+    const listProduct = await request("/api/admin/product/list", seller.id);
+    assert.ok(listProduct.data.data.products.every((p: any) => !("refundWindowHours" in p) && p.variants.every((v: any) => "refundWindowHours" in v)));
+    for (const selected of [policyVariants[0], policyVariants[5]]) {
+      const cartWrite = await request("/api/cart/item", buyer.id, "POST", {
+        productId: selected.productId, productVariantId: selected.id, quantity: 1,
+      });
+      assert.equal(cartWrite.status, 200, JSON.stringify(cartWrite));
+    }
+    const cart = await request("/api/cart/list", buyer.id);
+    assert.equal(cart.status, 200);
+    const cartItems = cart.data.data;
+    for (const selected of [policyVariants[0], policyVariants[5]]) {
+      const cartItem = cartItems.find((i: any) => i.productVariantId === selected.id);
+      assert.equal(cartItem.variant.refundWindowHours, selected.refundWindowHours);
+      assert.ok(!("refundWindowHours" in cartItem.product));
+    }
+    await db.update(s.productVariantTable).set({ refundWindowHours: 192 }).where(eq(s.productVariantTable.id, variant.id));
     const f = await fixture();
     assert.equal(f.delivery.receivedAt, null);
     assert.equal(f.delivery.status, "ready_for_pickup");
@@ -283,7 +422,7 @@ async function run() {
     assert.deepEqual((await db.query.orderItemTable.findFirst({ where: eq(s.orderItemTable.id, callback.item.id) }))!.refundDeadlineAt, callbackItem.refundDeadlineAt);
     assert.equal((await sendCallback("unknown-trade", "2067")).status, 500);
 
-    // Manual delivery status edits cannot manufacture receipt evidence; historical delivered logs remain unknown.
+    // Existing CVS status edits cannot manufacture receipt evidence; historical delivered logs remain unknown.
     const unknown = await fixture(1);
     await updateDeliveryWithNotificationContext(unknown.delivery.id, { status: "delivered", RtnCode: "2067" }, seller.id);
     await updateDeliveryWithNotificationContext(unknown.delivery.id, { status: "delivered", RtnCode: "2067" }, undefined, "provider_poll");
@@ -299,6 +438,149 @@ async function run() {
     const fresh = await fixture(1);
     await createDelivery({ orderId: fresh.order.id, LogisticsType: "home_delivery", GoodsAmount: 100, status: "delivered" }, [{ productId: product.id, variantId: variant.id }], "provider_callback");
     assert.ok((await db.query.orderItemTable.findFirst({ where: eq(s.orderItemTable.id, fresh.item.id) }))!.refundDeadlineAt);
+    // Manual delivery confirmation is real receipt evidence, including in stg/prod (never payment fallback).
+    async function manualFixture(kind: "virtual" | "home_delivery" | "CVS" = "virtual") {
+      const [manualProduct] = await db.insert(s.productTable).values({ sellerId: seller.id,
+        name: `Manual ${kind}`, description: "Fixture", type: kind === "virtual" ? "virtual" : "normal" }).returning();
+      const variants = await db.insert(s.productVariantTable).values([0, 3, null].map(days => ({
+        productId: manualProduct.id, name: `Policy ${days}`, refundWindowHours: days, price: 100, stock: 10,
+      }))).returning();
+      const selection = { LogisticsType: kind, products: variants.map(v => ({ productId: v.productId, variantId: v.id })) };
+      const [order] = await db.insert(s.orderTable).values({ userId: buyer.id, orderStatus: "paid", completedAt: new Date(),
+        subTotal: 600, totalAmount: 600, shippingInfo: kind === "CVS" ? { cvsPickupGroup: [selection] } : { nonCvsPickupGroup: [selection] } }).returning();
+      const items = await db.insert(s.orderItemTable).values(variants.map(v => ({ orderId: order.id, productId: v.productId,
+        productVariantId: v.id, productNameAtSale: manualProduct.name, quantity: 2, unitPriceAtSale: 100, lineTotal: 200,
+        refundWindowHoursAtSale: v.refundWindowHours }))).returning();
+      const delivery = await createDelivery({ orderId: order.id, LogisticsType: kind, status: "pending", GoodsAmount: 600 }, selection.products);
+      return { order, items, delivery };
+    }
+    for (const id of [seller.id, foreignSeller.id, admin.id, employee.id, buyer.id]) requestTokens.set(id, await fixtureToken({ id }));
+    const beforeManualEnvironment = process.env.NODE_ENV;
+    try {
+      for (const environment of ["stg", "production"]) {
+        process.env.NODE_ENV = environment;
+        for (const kind of ["virtual", "home_delivery"] as const) {
+          const manual = await manualFixture(kind);
+          const confirmPath = `/api/admin/delivery/${manual.delivery.id}`;
+          const beforeDelivery = (await getDeliveryById(manual.delivery.id))!;
+          assert.equal(beforeDelivery.receivedAt, null);
+          assert.equal(beforeDelivery.items.find(i => i.refundWindowHoursAtSale === 3)!.refundBlockReason, "NOT_RECEIVED");
+          assert.equal((await request(confirmPath, employee.id, "PUT", { status: "delivered" })).status, 403);
+          assert.equal((await request(confirmPath, foreignSeller.id, "PUT", { status: "delivered" })).status, 404);
+          assert.ok([401, 403].includes((await request(confirmPath, buyer.id, "PUT", { status: "delivered" })).status));
+          const decisions = await Promise.all([1, 2].map(() => request(confirmPath, seller.id, "PUT", { status: "delivered" })));
+          assert.ok(decisions.every(r => r.status === 200), JSON.stringify(decisions));
+          const confirmed = decisions[0].data.data;
+          assert.equal(confirmed.status, "delivered");
+          assert.ok(confirmed.receivedAt);
+          assert.equal(confirmed.receiptEvidence.source, "seller_confirmation");
+          assert.equal(confirmed.receiptEvidence.actorAccountId, seller.id);
+          assert.equal(confirmed.receiptEvidence.actorRole, "seller");
+          assert.equal(confirmed.receiptEvidence.estimated, false);
+          for (const status of ["pending", "shipped", "ready_for_pickup", "cancelled", "returned"]) {
+            const downgrade = await request(confirmPath, seller.id, "PUT", { status });
+            assert.equal(downgrade.status, 409);
+            assert.equal(downgrade.data.code, "DELIVERY_TERMINAL");
+          }
+          const changeType = await request(confirmPath, admin.id, "PUT", { LogisticsType: kind === "virtual" ? "home_delivery" : "virtual" });
+          assert.equal(changeType.status, 409); assert.equal(changeType.data.code, "DELIVERY_TERMINAL");
+          const forgedReceipt = await request(confirmPath, seller.id, "PUT", { status: "delivered", receivedAt: "2020-01-01",
+            receiptEvidence: { source: "admin_confirmation" } });
+          assert.equal(forgedReceipt.status, 200);
+          assert.equal(forgedReceipt.data.data.receivedAt, confirmed.receivedAt);
+          assert.deepEqual(forgedReceipt.data.data.receiptEvidence, confirmed.receiptEvidence);
+          const start = new Date(confirmed.receivedAt).getTime();
+          for (const purchased of confirmed.items) {
+            assert.equal(purchased.refundWindowSource, "receipt");
+            assert.equal(purchased.refundReceiptChecksBypassed, false);
+            assert.equal(new Date(purchased.refundWindowStartsAt).getTime(), start);
+            if (purchased.refundWindowHoursAtSale === 3) {
+              assert.equal(new Date(purchased.refundDeadlineAt).getTime() - start, 3 * 60 * 60 * 1000);
+              assert.equal(purchased.canRefund, true);
+            } else if (purchased.refundWindowHoursAtSale === null) {
+              assert.equal(purchased.refundDeadlineAt, null);
+              assert.equal(purchased.canRefund, true);
+            } else {
+              assert.equal(purchased.refundBlockReason, "REFUNDS_DISABLED");
+              assert.equal(purchased.canRefund, false);
+            }
+          }
+          const auditRows = await db.query.adminActivityEventTable.findMany({ where: eq(s.adminActivityEventTable.entityId, manual.delivery.id) });
+          assert.equal(auditRows.filter(row => row.eventType === "delivery.confirmed").length, 1, "Concurrent confirms audit once");
+          const logCount = (await db.query.deliveryLogTable.findMany({ where: eq(s.deliveryLogTable.deliveryId, manual.delivery.id) })).length;
+          const finite = confirmed.items.find((i: any) => i.refundWindowHoursAtSale === 3);
+          const accepted = await request("/api/refund", buyer.id, "POST", { orderItemId: finite.id, quantity: 1 });
+          assert.equal(accepted.status, 200, JSON.stringify(accepted));
+          const rejected = await request(`/api/admin/refund/${accepted.data.data.id}/status`, seller.id, "PATCH", { status: "rejected", rejectionReason: "Test extension" });
+          assert.equal(rejected.status, 200);
+          const extended = await getDeliveryById(manual.delivery.id);
+          const repeatedConfirmation = await request(confirmPath, admin.id, "PUT", { status: "delivered", metadata: { comment: "Editable metadata" } });
+          assert.equal(repeatedConfirmation.status, 200);
+          assert.deepEqual(repeatedConfirmation.data.data.receiptEvidence, confirmed.receiptEvidence);
+          assert.deepEqual(repeatedConfirmation.data.data.items.map((i: any) => i.refundDeadlineAt), extended!.items.map(i => i.refundDeadlineAt?.toISOString() ?? null));
+          assert.equal((await db.query.deliveryLogTable.findMany({ where: eq(s.deliveryLogTable.deliveryId, manual.delivery.id) })).length, logCount);
+        }
+      }
+      // CVS keeps its prior update/poll semantics; only its original receipt clock remains immutable.
+      const pickedUp = await manualFixture("CVS");
+      await updateDeliveryWithNotificationContext(pickedUp.delivery.id, { status: "delivered", RtnCode: "2067", LogisticsSubType: "UNIMARTC2C" }, undefined, "provider_callback");
+      const pickedUpAt = (await getDeliveryById(pickedUp.delivery.id))!.receivedAt;
+      const existingCvsUpdate = await request(`/api/admin/delivery/${pickedUp.delivery.id}`, seller.id, "PUT", { status: "shipped" });
+      assert.equal(existingCvsUpdate.status, 200, "New manual-delivery terminal guard must not alter CVS status edits");
+      await updateDeliveryWithNotificationContext(pickedUp.delivery.id, { status: "delivered", RtnCode: "2073", RtnMsg: "Store arrival" }, undefined, "provider_callback");
+      const cvsArrival = (await getDeliveryById(pickedUp.delivery.id))!;
+      assert.equal(cvsArrival.status, "ready_for_pickup");
+      assert.deepEqual(cvsArrival.receivedAt, pickedUpAt, "Existing CVS receipt timestamps are still never reset");
+      await updateDeliveryWithNotificationContext(pickedUp.delivery.id, { status: "delivered", RtnCode: "2067", RtnMsg: "Picked up" }, undefined, "provider_poll");
+      assert.equal((await getDeliveryById(pickedUp.delivery.id))!.status, "delivered");
+      assert.deepEqual((await getDeliveryById(pickedUp.delivery.id))!.receivedAt, pickedUpAt);
+      const legacyManual = await manualFixture("virtual");
+      await db.update(s.deliveryTable).set({ status: "delivered" }).where(eq(s.deliveryTable.id, legacyManual.delivery.id));
+      const legacyComplete = await request(`/api/admin/delivery/${legacyManual.delivery.id}`, seller.id, "PUT", { status: "delivered" });
+      assert.equal(legacyComplete.status, 200); assert.ok(legacyComplete.data.data.receivedAt);
+      const adminManual = await manualFixture("home_delivery");
+      const adminPath = `/api/admin/delivery/${adminManual.delivery.id}`;
+      const adminConfirmed = await request(adminPath, admin.id, "PUT", { status: "delivered" });
+      assert.equal(adminConfirmed.status, 200);
+      assert.equal(adminConfirmed.data.data.receiptEvidence.source, "admin_confirmation");
+      assert.equal(adminConfirmed.data.data.receiptEvidence.actorAccountId, admin.id);
+      const unpaid = await manualFixture();
+      await db.update(s.orderTable).set({ orderStatus: "payment-processing" }).where(eq(s.orderTable.id, unpaid.order.id));
+      const notPaid = await request(`/api/admin/delivery/${unpaid.delivery.id}`, seller.id, "PUT", { status: "delivered" });
+      assert.equal(notPaid.status, 409); assert.equal(notPaid.data.code, "ORDER_NOT_PAID");
+      const cvs = await manualFixture("CVS");
+      const cvsPath = `/api/admin/delivery/${cvs.delivery.id}`;
+      const cvsManual = await request(cvsPath, seller.id, "PUT", { status: "delivered" });
+      assert.equal(cvsManual.status, 200, "Existing CVS status API stays unchanged");
+      assert.equal(cvsManual.data.data.receivedAt, null, "A CVS status edit still cannot manufacture trusted pickup evidence");
+      await updateDeliveryWithNotificationContext(cvs.delivery.id, { LogisticsType: "virtual" });
+      assert.equal((await request(cvsPath, seller.id, "PUT", { status: "delivered" })).data.code, "DELIVERY_CONFIRMATION_NOT_SUPPORTED", "Changing type cannot bypass CVS pickup");
+      const cancelled = await manualFixture();
+      await updateDeliveryWithNotificationContext(cancelled.delivery.id, { status: "cancelled" });
+      assert.equal((await request(`/api/admin/delivery/${cancelled.delivery.id}`, seller.id, "PUT", { status: "delivered" })).data.code, "DELIVERY_NOT_CONFIRMABLE");
+      const noSnapshot = await manualFixture();
+      await db.update(s.orderTable).set({ shippingInfo: null }).where(eq(s.orderTable.id, noSnapshot.order.id));
+      assert.equal((await request(`/api/admin/delivery/${noSnapshot.delivery.id}`, admin.id, "PUT", { status: "delivered" })).data.code, "DELIVERY_CONFIRMATION_NOT_SUPPORTED");
+      const rollback = await manualFixture();
+      const rollbackPath = `/api/admin/delivery/${rollback.delivery.id}`;
+      await client.unsafe("CREATE FUNCTION fail_manual_confirmation() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.event_type = 'delivery.confirmed' THEN RAISE EXCEPTION 'test manual delivery rollback'; END IF; RETURN NEW; END $$");
+      await client.unsafe("CREATE TRIGGER fail_manual_confirmation BEFORE INSERT ON admin_activity_events FOR EACH ROW EXECUTE FUNCTION fail_manual_confirmation()");
+      try {
+        assert.equal((await request(rollbackPath, admin.id, "PUT", { status: "delivered" })).status, 500);
+      } finally {
+        await client.unsafe("DROP TRIGGER fail_manual_confirmation ON admin_activity_events");
+        await client.unsafe("DROP FUNCTION fail_manual_confirmation()");
+      }
+      const rolledBack = (await getDeliveryById(rollback.delivery.id))!;
+      assert.equal(rolledBack.status, "pending");
+      assert.equal(rolledBack.receivedAt, null);
+      assert.ok(rolledBack.items.every(i => i.refundWindowStartsAt === null));
+      assert.equal(rolledBack.logs.length, 0);
+      assert.equal((await request(rollbackPath, admin.id, "PUT", { status: "delivered" })).status, 200);
+    } finally {
+      if (beforeManualEnvironment === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = beforeManualEnvironment;
+    }
     // Only explicit local/development environments relax receipt checks; DB remains disposable.
     const originalEnvironment = process.env.NODE_ENV;
     try {
@@ -306,18 +588,18 @@ async function run() {
         process.env.NODE_ENV = environment;
         assert.equal(getRefundWindowMs(), REFUND_WINDOW_MS / 10);
         assert.equal(getRefundExtensionMs(), 12 * 60 * 60 * 1000);
-        for (const days of [0, 3, 7, 8, 50, null]) {
-          const testItem = { ...f.item, deliveryId: null, refundWindowDaysAtSale: days };
+        for (const days of [0, 1, 12, 24, 192, 720, null]) {
+          const testItem = { ...f.item, deliveryId: null, refundWindowHoursAtSale: days };
           const paidAt = new Date();
           const effective = refundEligibility("paid", testItem, [], paidAt, undefined, paidAt);
           assert.equal(effective.canRefund, days !== 0);
           if (days !== null && days > 0) {
-            assert.equal(effective.refundDeadlineAt!.getTime() - paidAt.getTime(), days * 86400000 / 10);
+            assert.equal(effective.refundDeadlineAt!.getTime() - paidAt.getTime(), days * 3600000 / 10);
           } else assert.equal(effective.refundDeadlineAt, null);
         }
         const unlimitedTesting = await fixture(2);
         await db.update(s.orderTable).set({ completedAt: new Date(Date.now() - 60000) }).where(eq(s.orderTable.id, unlimitedTesting.order.id));
-        await db.update(s.orderItemTable).set({ refundWindowDaysAtSale: null, deliveryId: null }).where(eq(s.orderItemTable.id, unlimitedTesting.item.id));
+        await db.update(s.orderItemTable).set({ refundWindowHoursAtSale: null, deliveryId: null }).where(eq(s.orderItemTable.id, unlimitedTesting.item.id));
         const unlimitedTestRefund = await createRefundWithChatContext({ ...unlimitedInput, orderItemId: unlimitedTesting.item.id });
         const unlimitedTestRejection = await updateRefundItemStatus(unlimitedTestRefund.refundItem.id, { status: "rejected", rejectionReason: "Testing" }, seller.id);
         assert.equal(unlimitedTestRejection.refundItem.rejectionDeadlineAfter, null);

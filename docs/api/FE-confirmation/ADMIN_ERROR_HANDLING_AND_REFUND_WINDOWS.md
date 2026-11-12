@@ -1,5 +1,9 @@
 # Admin FE handoff: error handling and product-specific refund windows
 
+Hour-unit update (2026-11-12): the authoritative [variant/hour handoff](ADMIN_VARIANT_REFUND_WINDOWS.md) now uses `refundWindowHours` and `refundWindowHoursAtSale` (default 192 hours). Prior day-field examples below are historical and superseded. Whole-hour API values may be shown as daily UI presets via days × 24. Both variant and hour-conversion migrations were applied locally on 2026-11-12; development/staging remain pending.
+
+Variant update (2026-11-11): refund windows now belong to each variant. Use [the variant-policy handoff](ADMIN_VARIANT_REFUND_WINDOWS.md) for the new API, migration and rollout contract; it supersedes product-level editor/policy-source instructions below. Migration status: applied locally on 2026-11-12; development/staging remain pending. Existing purchase snapshots, eligibility, review and shared error rules remain in effect.
+
 Date: 2026-11-04
 Status: implemented in backend source. This is the consolidated FE handoff and supersedes the earlier app-only error scope. It includes the product refund-window contract from the previous handoff.
 
@@ -152,7 +156,7 @@ The existing `PATCH /api/admin/refund/:refundItemId/status` endpoint and permiss
 
 For an agreed partial refund, use the existing quantity adjustment and buyer-agreement attestation, then complete the agreed quantity. Render the final `quantity` alongside `originalRequest.quantity` (for example, 1 completed of 2 requested). The record is `completed`; the other unit is released without a separate `rejected` row or rejection extension. There is no new partial-rejection status or request-splitting endpoint. Explicitly rejecting an entire request remains a separate action and requires `rejectionReason`.
 
-Receipt coverage is also unchanged: an admin delivery-status edit or a delivery-follow-up chat message is not trusted receipt evidence. Virtual items currently have no automatic receipt-window initialization, and manual/seller-managed home delivery needs trusted receipt evidence before normal-environment refunds become eligible. Even unlimited policies must have a valid start; FE should show `NOT_RECEIVED` / `RECEIPT_TIME_UNKNOWN` and escalate for backend reconciliation rather than invent a deadline or timestamp. A successful local/development test via payment fallback does not demonstrate production receipt support.
+Receipt update (2026-11-12): CVS still requires trusted provider pickup evidence. Virtual products and seller-managed home delivery now use the existing seller/admin `PUT /api/admin/delivery/:deliveryId` with `status:delivered`; see [the variant handoff](ADMIN_VARIANT_REFUND_WINDOWS.md). Setting delivered starts the virtual/home window; chat or shipment alone does not. Completed virtual/home delivery cannot be reset. CVS processing remains unchanged. Even unlimited policies require a valid start; missing/unsupported checkout associations must be reconciled instead of inventing timestamps.
 
 ## Environment and rollout
 

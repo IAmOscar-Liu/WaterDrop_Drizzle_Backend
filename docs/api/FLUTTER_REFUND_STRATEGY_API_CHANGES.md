@@ -1,5 +1,9 @@
 # Flutter — buyer refund requests and deadlines
 
+Hour-unit update (2026-11-12): the authoritative [variant/hour handoff](FLUTTER_VARIANT_REFUND_WINDOWS.md) now uses `refundWindowHours` and `refundWindowHoursAtSale` (default 192 hours). Prior day-field examples below are historical and superseded. Whole-hour API values may be shown as daily UI presets via days × 24. Both variant and hour-conversion migrations were applied locally on 2026-11-12; development/staging remain pending.
+
+Variant update (2026-11-11): refund windows now belong to each variant. Use [the variant-policy handoff](FLUTTER_VARIANT_REFUND_WINDOWS.md) for the new API, migration and rollout contract; it supersedes product-level editor/policy-source instructions below. Migration status: applied locally on 2026-11-12; development/staging remain pending. Existing purchase snapshots, eligibility, review and shared error rules remain in effect.
+
 Date: 2026-11-03
 
 Product policy update: [FLUTTER_PRODUCT_REFUND_WINDOWS.md](FLUTTER_PRODUCT_REFUND_WINDOWS.md). This supersedes fixed 10-day examples in earlier integrations.
@@ -161,7 +165,7 @@ Business errors retain the JSON error envelope and add `code` for the listed 409
 
 Local migration `0117_watery_oracle` and development migration `0068_bitter_mandarin` are applied and verified. Staging is not migrated by this change. Flutter must deploy the stricter body and new status handling with the backend rollout. The local/development testing exception above is enabled by `NODE_ENV`; the paid-order requirement remains enforced.
 
-Receipt time is the first trusted backend observation from a logistics callback/poll, marked as estimated rather than the carrier's exact event time. Repeated/out-of-order updates never reset it. Known CVS pickup codes are supported. Seller-edited delivery status alone, virtual items and unsupported/manual receipt flows do not establish a window. Historical timestamps are not fabricated from deployment time; outside the local/development exception, unknown cases require backend reconciliation. Automatic logistics polling remains disabled locally/in development, as before.
+Receipt time is the first trusted backend observation from a logistics callback/poll, marked as estimated rather than the carrier's exact event time. Repeated/out-of-order updates never reset it. Known CVS pickup codes are supported. Update 2026-11-12: seller/admin setting virtual/home delivery to delivered through the existing PUT API starts its window and cannot be reset; CVS still requires provider pickup; see [the variant handoff](FLUTTER_VARIANT_REFUND_WINDOWS.md). Unsupported/missing checkout associations still need reconciliation. Historical timestamps are not fabricated from deployment time; outside the local/development exception, unknown cases require backend reconciliation. Automatic logistics polling remains disabled locally/in development, as before.
 
 Coin restoration, original coin expiration and cash-remainder calculations remain unchanged. The refund deadline extension does not extend coin validity or add a new automatic cash payout API. See the [admin handoff](FE-confirmation/ADMIN_REFUND_STRATEGY_API_CHANGES.md) for review actions and operations.
 

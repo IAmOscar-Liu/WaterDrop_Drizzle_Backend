@@ -316,6 +316,7 @@ export async function getChatRoomById(chatRoomId: string, actor: ChatroomActor) 
   const room = await db.query.chatRoomTable.findFirst({
     with: {
       product: {
+        columns: { refundWindowDays: false },
         extras: (products) => ({
           price: minimumVariantPrice(products.id).as("price"),
         }),

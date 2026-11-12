@@ -1,5 +1,9 @@
 # 地平線 — refund review and deadline changes
 
+Hour-unit update (2026-11-12): the authoritative [variant/hour handoff](ADMIN_VARIANT_REFUND_WINDOWS.md) now uses `refundWindowHours` and `refundWindowHoursAtSale` (default 192 hours). Prior day-field examples below are historical and superseded. Whole-hour API values may be shown as daily UI presets via days × 24. Both variant and hour-conversion migrations were applied locally on 2026-11-12; development/staging remain pending.
+
+Variant update (2026-11-11): refund windows now belong to each variant. Use [the variant-policy handoff](ADMIN_VARIANT_REFUND_WINDOWS.md) for the new API, migration and rollout contract; it supersedes product-level editor/policy-source instructions below. Migration status: applied locally on 2026-11-12; development/staging remain pending. Existing purchase snapshots, eligibility, review and shared error rules remain in effect.
+
 Date: 2026-11-03
 
 Product policy update: [ADMIN_PRODUCT_REFUND_WINDOWS.md](ADMIN_PRODUCT_REFUND_WINDOWS.md). This supersedes fixed 10-day examples in earlier integrations.
@@ -155,7 +159,7 @@ Business and validation failures now use the shared safe error envelope with sta
 
 Trusted receipt is captured transactionally from signed logistics callbacks or provider polling. Supported CVS buyer-pickup codes are UNIMARTC2C `2067`, FAMIC2C `3022`, HILIFEC2C `2067`/`3022`, OKMARTC2C `3022`. Store-arrival codes normalize to `ready_for_pickup`, never start the clock, and remain eligible for polling. Older rows that recorded known store-arrival codes as delivered are also eligible for polling. Existing local/development automatic logistics polling remains disabled; use the integration tests for simulated pickup locally.
 
-The timestamp is the first backend observation, marked `receiptEvidence.estimated:true`, because the integration does not supply a verified carrier event timestamp. Delayed callbacks/polls can therefore grant a later deadline. Repeated or older events cannot restart a known window or undo an extension. This release does not add carrier integrations: trusted home-delivery receipt can initialize the window when supplied through an integration, but ordinary seller status edits do not. Virtual items and unsupported/manual receipt flows have no automatic receipt window or new manual reconciliation endpoint.
+The timestamp is the first backend observation, marked `receiptEvidence.estimated:true`, because the integration does not supply a verified carrier event timestamp. Delayed callbacks/polls can therefore grant a later deadline. Repeated or older events cannot restart a known window or undo an extension. This release does not add carrier integrations: trusted home-delivery receipt can initialize the window when supplied through an integration, while this original release did not trust seller status edits. Superseding update 2026-11-12: virtual and seller-managed home delivery support seller/admin status updates to delivered; see [the variant handoff](ADMIN_VARIANT_REFUND_WINDOWS.md). PUT delivered now confirms virtual/home delivery and is terminal; unsupported/missing checkout associations require reconciliation.
 
 Unknown historical receipt times are **not** filled with deployment time or mutable `updatedAt`. Prior delivered logs do not have enough provenance for automatic backfill. Existing requests remain reviewable/completable/cancellable. Outside the local/development exception, new requests and deadline-extending rejections require a known window; unknown cases need separately verified receipt reconciliation by backend operations. Do not relabel a rejection as cancellation to bypass this requirement.
 

@@ -1,5 +1,9 @@
 # Flutter handoff: product-specific refund windows
 
+Hour-unit update (2026-11-12): the authoritative [variant/hour handoff](FLUTTER_VARIANT_REFUND_WINDOWS.md) now uses `refundWindowHours` and `refundWindowHoursAtSale` (default 192 hours). Prior day-field examples below are historical and superseded. Whole-hour API values may be shown as daily UI presets via days × 24. Both variant and hour-conversion migrations were applied locally on 2026-11-12; development/staging remain pending.
+
+Variant update (2026-11-11): refund windows now belong to each variant. Use [the variant-policy handoff](FLUTTER_VARIANT_REFUND_WINDOWS.md) for the new API, migration and rollout contract; it supersedes product-level editor/policy-source instructions below. Migration status: applied locally on 2026-11-12; development/staging remain pending. Existing purchase snapshots, eligibility, review and shared error rules remain in effect.
+
 Date: 2026-11-03
 Last reviewed: 2026-11-04
 
@@ -114,7 +118,7 @@ Finite rejection retains the existing `max(currentDeadline, rejectionTime + 5 da
 
 For an agreed partial completion, the existing refund record becomes `completed` with the final `quantity`; `originalRequest.quantity` preserves the original request. For example, an original request for 2 units completed for 1 should display as a partial refund, not as a newly introduced `partially_rejected` status. The other unit is released for a possible new request, without a separate rejection record or deadline extension. An explicit `rejected` request is different and can extend the effective item deadline.
 
-Receipt coverage in staging/production remains limited to trusted backend observations. Merely changing a delivery to `delivered` through an admin form, exchanging delivery information in chat, or buying a virtual product does not establish receipt evidence. The current virtual-product flow does not automatically open a receipt window; seller-managed/manual home delivery also needs trusted receipt evidence. A `null` policy removes the expiry only after a valid start, so it does not bypass `NOT_RECEIVED` or `RECEIPT_TIME_UNKNOWN`. Local/development payment fallback can make these flows testable without establishing production receipt support. Display the returned block reason and route unresolved receipt cases to support.
+Receipt update (2026-11-12): CVS uses trusted provider pickup; virtual products and seller-managed home delivery now require seller/admin setting status to delivered through the existing API. Setting virtual/home delivered now establishes receipt and is irreversible for these two methods only; chat, shipment and payment alone do not. CVS processing remains unchanged. The first confirmation starts the purchased window and remains stable on retries. A null/unlimited policy still requires that start and available quantity. See [the variant-policy handoff](FLUTTER_VARIANT_REFUND_WINDOWS.md).
 
 Help center `GET /api/system/customer-support` and consent `GET /api/file/user-consent` keep their existing JSON IDs, content routing and `complete-reading` callback. Their content describes product-specific policies, the 8-day default, snapshots at order creation (including before payment), disabled/unlimited prerequisites, receipt/payment confirmation and status emails. Local/development content consistently uses accelerated finite windows and a 12-hour rejection extension; other environments use normal elapsed durations and a 120-hour extension. Existing FAQ IDs and response structure remain; additional FAQs cover policy changes, payment/receipt eligibility and status notifications.
 
