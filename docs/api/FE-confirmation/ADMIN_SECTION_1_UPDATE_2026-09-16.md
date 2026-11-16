@@ -25,8 +25,8 @@ below are under `/api/admin` and require an admin-side bearer token.
 | Delete employee | `DELETE /account/:id` | Soft delete; seller owner or platform admin. |
 | Rename category | `PUT /product/categories/:id` | Platform admin; names are case-insensitively unique. |
 | Delete category | `DELETE /product/categories/:id` | Detaches the category from associated products, preserves those products, and returns `detachedProductCount`. |
-| Soft-delete product | `DELETE /product/:id` | Owner/admin; deactivates variants and pauses non-archived ads. |
-| Permanently delete product | `DELETE /product/:id/permanent` | Platform admin; never-used products only. Blocker counts are included in the `409` message. |
+| Soft-delete product | `DELETE /product/:id` | Platform admin only (updated 2026-11-16); deactivates variants and pauses non-archived ads. No restore endpoint. |
+| Permanent product deletion (retired 2026-11-16) | `DELETE /product/:id/permanent` | Route and Swagger entry removed; the old path returns `404`, including for platform admins. Remove the permanent-delete UI. Deactivation and soft deletion remain supported. |
 | Adjust ad budget | `PUT /advertisement/budget/:id` | Supports `increase`. `decrease` returns `409 operation_not_supported`. `set` has been removed and returns `400`. |
 | Wallet summary | `GET /account-wallet/me/summary` | Wallet cash-flow summary, not sales revenue. |
 | Admin wallet summary | `GET /account-wallet/:accountId/summary` | Platform admin only. |
@@ -99,3 +99,7 @@ Wallet summary fields are decimal strings:
   current database does not reliably record those facts.
 - Recent activity does not fabricate historical state transitions before the
   new activity-event table was introduced.
+
+### Product deletion policy update — 2026-11-16
+
+`DELETE /api/admin/product/:id` is now platform-admin-only; owning sellers and employees receive 403. Hide the delete action for sellers and use `PUT /api/admin/product/:id` with `status: "inactive"` for reversible deactivation. Soft deletion retains rows, pauses non-archived ads, and removes cart/collection references. There is no restore API, and ordinary product updates reject soft-deleted products. The permanent deletion route and its Swagger entry have been removed; requests to the old path return 404.

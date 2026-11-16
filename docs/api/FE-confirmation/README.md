@@ -26,6 +26,8 @@ at `docs/plans/ADMIN_SECTION_3_WITHDRAWAL_PLAN.md`.
 
 ## Admin web FE — recommended reading order
 
+Latest product deletion fix (2026-11-16): [商品刪除 API 修正通知](ADMIN_PRODUCT_DELETION_API_CHANGES.md) — permanent deletion route removed; soft deletion restricted to platform admins. Pending deployment.
+
 1. [Original confirmation checklist](ADMIN_FE_CONFIRMATION_CHECKLIST.md) —
    status of Sections 1–3 and replacements for old route names.
 2. [Section 1 API update](ADMIN_SECTION_1_UPDATE_2026-09-16.md) — subaccounts,

@@ -16,7 +16,6 @@ import {
   updateCategory,
   deleteCategory,
   softDeleteProduct,
-  permanentlyDeleteProduct,
 } from "../repository/product";
 import { ServiceResponse } from "../type/general";
 
@@ -40,17 +39,6 @@ class ProductService {
   async softDeleteProduct(id: string, actorAccountId: string) {
     try {
       return { success: true as const, data: await softDeleteProduct(id, actorAccountId) };
-    } catch (error) {
-      return handleServiceError(error);
-    }
-  }
-
-  async permanentlyDeleteProduct(id: string, actorAccountId: string) {
-    try {
-      return {
-        success: true as const,
-        data: await permanentlyDeleteProduct(id, actorAccountId),
-      };
     } catch (error) {
       return handleServiceError(error);
     }
