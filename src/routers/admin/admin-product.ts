@@ -693,8 +693,8 @@ router.put(
  * /api/admin/product/{id}:
  *   delete:
  *     tags: [Product]
- *     summary: Soft-delete a product
- *     description: The owning seller or platform admin may deactivate the product and all variants. The product is removed from every user's cart and collection in the same transaction. Non-archived ads are paused and business history is preserved. Employees cannot delete products.
+ *     summary: Soft-delete a product (platform admin only)
+ *     description: Only a platform admin may soft-delete a product and deactivate all variants. The product is removed from every user's cart and collection in the same transaction. Non-archived ads are paused and business history is preserved. Sellers and employees cannot soft-delete. Sellers may deactivate their products through PUT with status inactive. There is no restore endpoint; soft-deleted products cannot be updated.
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: path
@@ -703,38 +703,14 @@ router.put(
  *         schema: { type: string, format: uuid }
  *     responses:
  *       '200': { description: Product soft-deleted; repeated calls are idempotent. }
- *       '403': { description: Caller is not the owner/platform admin. }
+ *       '403': { description: Platform administrator access required. }
  */
 router.delete(
   "/:id",
   isAuth,
-  validateZod({ params: adminValidation.product.idParams }),
-  ProductController.softDeleteProduct,
-);
-
-/**
- * @swagger
- * /api/admin/product/{id}/permanent:
- *   delete:
- *     tags: [Product]
- *     summary: Permanently delete a never-used product (platform admin only)
- *     description: Rejected with blocker counts when orders, advertisements, carts, collections, or chatrooms reference the product.
- *     security: [{ bearerAuth: [] }]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: string, format: uuid }
- *     responses:
- *       '200': { description: Product permanently deleted. }
- *       '409': { description: Product has business references. }
- */
-router.delete(
-  "/:id/permanent",
-  isAuth,
   isAdmin,
   validateZod({ params: adminValidation.product.idParams }),
-  ProductController.permanentlyDeleteProduct,
+  ProductController.softDeleteProduct,
 );
 
 /**

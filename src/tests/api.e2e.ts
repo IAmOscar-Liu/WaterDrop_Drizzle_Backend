@@ -24,6 +24,7 @@ import { preparePayment } from "../repository/payment";
 
 type ApiEnvelope = {
   success: boolean;
+  code?: string;
   statusCode?: number;
   message?: unknown;
   data?: any;
@@ -687,20 +688,35 @@ async function run() {
       { method: "DELETE", token: employeeToken },
     );
     assert.equal(employeeProductDelete.status, 403);
+    const sellerProductDelete = await request(
+      `/api/admin/product/${disposableProduct.id}`,
+      { method: "DELETE", token: sellerToken },
+    );
+    assert.equal(sellerProductDelete.status, 403);
+    const productAfterDeniedDelete = await db.query.productTable.findFirst({
+      where: eq(schema.productTable.id, disposableProduct.id),
+    });
+    assert.equal(productAfterDeniedDelete?.deletedAt, null);
+    assert.equal(productAfterDeniedDelete?.status, "active");
     const softDeletedProduct = expectSuccess(
       await request(`/api/admin/product/${disposableProduct.id}`, {
-        method: "DELETE",
-        token: sellerToken,
-      }),
-    );
-    assert.equal(softDeletedProduct.status, "inactive");
-    assert.ok(softDeletedProduct.deletedAt);
-    expectSuccess(
-      await request(`/api/admin/product/${disposableProduct.id}/permanent`, {
         method: "DELETE",
         token: adminToken,
       }),
     );
+    assert.equal(softDeletedProduct.status, "inactive");
+    assert.ok(softDeletedProduct.deletedAt);
+    const permanentDeletion = await fetch(`${baseUrl}/api/admin/product/${disposableProduct.id}/permanent`, {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    assert.equal(permanentDeletion.status, 404);
+    const retainedProduct = await db.query.productTable.findFirst({
+      where: eq(schema.productTable.id, disposableProduct.id),
+      with: { variants: true },
+    });
+    assert.ok(retainedProduct?.deletedAt);
+    assert.equal(retainedProduct.variants.length, 1);
 
     expectSuccess(await request("/api/test"));
     const unauthenticatedProfile = await request("/api/auth/profile");
@@ -786,11 +802,11 @@ async function run() {
         }),
       );
     }
-    const referencedProductPermanentDelete = await request(
-      `/api/admin/product/${products[0].id}/permanent`,
-      { method: "DELETE", token: adminToken },
+    const referencedProductPermanentDelete = await fetch(
+      `${baseUrl}/api/admin/product/${products[0].id}/permanent`,
+      { method: "DELETE", headers: { authorization: `Bearer ${adminToken}` } },
     );
-    assert.equal(referencedProductPermanentDelete.status, 409);
+    assert.equal(referencedProductPermanentDelete.status, 404);
 
     const sellerWallet = expectSuccess(
       await request("/api/admin/account-wallet/me", { token: sellerToken }),
@@ -1921,7 +1937,7 @@ async function run() {
     expectSuccess(
       await request(`/api/admin/product/${variantCartProduct.id}`, {
         method: "DELETE",
-        token: sellerToken,
+        token: adminToken,
       }),
     );
     const cartAfterProductSoftDelete = expectSuccess(
@@ -2196,7 +2212,7 @@ async function run() {
       method: "PUT", token: sellerToken, body: { status: "archived" },
     }));
     const deletedWithAdHistory = expectSuccess(await request(`/api/admin/product/${products[0].id}`, {
-      method: "DELETE", token: sellerToken,
+      method: "DELETE", token: adminToken,
     }));
     assert.equal(deletedWithAdHistory.advertisement, null);
     const retainedAds = await db.select({ id: schema.advertisementTable.id }).from(schema.advertisementTable)

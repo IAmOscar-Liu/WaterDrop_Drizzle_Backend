@@ -12,7 +12,7 @@
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
 | 新增／刪除子帳號   | `POST /account/sub-account`；`DELETE /account/:id`                                                                         | 子帳號建立、刪除及賣家歸屬；若改用 parent／employee 流程，請提供替代方式    |
 | 修改／刪除商品分類 | `PUT /product/categories/:id`；`DELETE /product/categories/:id`                                                            | 分類更名、刪除；刪除時自動從關聯商品移除該分類，商品本身保留                    |
-| 刪除商品           | `DELETE /product/:id`；`DELETE /product/:id/permanent`                                                                     | 軟刪除／永久刪除及關聯資料限制                                              |
+| 刪除商品           | `DELETE /product/:id`                                                                     | 軟刪除僅平台管理員可操作、保留資料且無恢復 API；賣家使用 inactive 下架；永久刪除路由已移除，舊路徑回傳 404                                              |
 | 調整單支廣告預算   | `PUT /advertisement/budget/:id`                                                                                              | `{ operation, amount }`，增加／減少／設定預算，同步處理賣家錢包撥入或退回 |
 | 廣告收入與錢包查詢 | `GET /ad-revenue/account`；`GET /ad-revenue/transactions`；`GET /ad-revenue/summary`                                     | 帳戶餘額、收入摘要、交易紀錄與分頁；管理員指定賣家查詢                      |
 | 錢包加值／預算調整 | `POST /ad-revenue/charge`；`PUT /ad-revenue/budget`                                                                        | 提供正式加值與調整方式；以後端確認入帳為準，不直接照搬舊端增加餘額的做法    |
