@@ -58,6 +58,7 @@ function withVariantAtSaleDisplay<T extends OrderItemWithProductVariant>(item: T
     ? (() => {
         const {
           variant: _productVariant,
+          refundWindowDays: _legacyProductPolicy,
           ...productRest
         } = product as typeof product & { variant?: unknown };
         return productRest;
@@ -238,7 +239,7 @@ export async function createOrder({
         items.map((item) => ({
           ...item,
           // Refund policy and receipt evidence are always server-owned.
-          refundWindowDaysAtSale: productMap.get(item.productId)!.refundWindowDays,
+          refundWindowHoursAtSale: variantMap.get(item.productVariantId!)!.refundWindowHours,
           refundWindowStartsAt: null,
           originalRefundDeadlineAt: null,
           refundDeadlineAt: null,

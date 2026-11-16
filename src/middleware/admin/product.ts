@@ -12,12 +12,15 @@ import {
 
 const productStatus = z.enum(["active", "inactive"]);
 const productType = z.enum(["normal", "refrigeration", "virtual"]);
+const refundWindowHours = z.number().int().min(0).max(87600000).nullable().optional();
 const variantName = z.string().trim().min(1).optional().nullable();
 
 const productVariantCreateBody = z.object({
   name: variantName,
   sku: z.string().optional().nullable(),
   price: nonNegativeNumber,
+  refundWindowHours,
+  refundWindowDays: z.never().optional(),
   images: z.array(z.string()).optional().nullable(),
   optionValues: jsonObject.default({}),
   stock: z.coerce.number().int().min(0),
@@ -32,6 +35,8 @@ const productVariantUpdateBody = z
     name: variantName,
     sku: z.string().optional().nullable(),
     price: nonNegativeNumber.optional(),
+    refundWindowHours,
+    refundWindowDays: z.never().optional(),
     images: z.array(z.string()).optional().nullable(),
     optionValues: jsonObject.optional(),
     stock: z.coerce.number().int().min(0).optional(),
@@ -55,7 +60,9 @@ const productWriteBody = z.object({
   avatar: z.string().optional().nullable(),
   type: productType.optional(),
   allowHomeDelivery: z.coerce.boolean().optional(),
-  refundWindowDays: z.number().int().min(0).max(3650000).nullable().optional(),
+  // Refund policy is variant-only and expressed in whole hours. Reject both root fields.
+  refundWindowHours: z.never().optional(),
+  refundWindowDays: z.never().optional(),
   images: z.array(z.string()).optional().nullable(),
   categoryIds: z.array(uuid).optional(),
   status: productStatus.optional(),

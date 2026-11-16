@@ -41,8 +41,9 @@ export function withProductVariantAggregates<
       ? Math.min(...variantsForPrice.map((variant) => variant.price))
       : null;
 
+  const { refundWindowDays: _legacyProductPolicy, ...productFields } = product;
   return {
-    ...product,
+    ...productFields,
     price,
     availableStock: stock - reserve,
     variants: product.variants?.map((variant) => ({

@@ -67,17 +67,17 @@ const router = Router();
  *                         type: string
  *                         nullable: true
  *                         description: Current first image of the live variant; not a historical snapshot.
- *                       refundWindowDaysAtSale:
+ *                       refundWindowHoursAtSale:
  *                         type: integer
  *                         nullable: true
- *                         description: Purchased policy; 0 disables refunds, null means unlimited after receipt. Legacy items retain 10 days; new purchases default to 8.
+ *                         description: Variant policy snapshotted at order creation; 0 disables refunds, null means unlimited after receipt. Legacy 10-day snapshots convert to 240 hours; new variants default to 192 hours.
  *                       refundItems:
  *                         type: array
  *                         items:
  *                           $ref: '#/components/schemas/RefundItem'
  *                       refundReceiptChecksBypassed:
  *                         type: boolean
- *                         description: True only in local/development; delivery/pickup checks are relaxed, but deadline, payment and quantity checks remain. Finite local/development windows use one tenth of the purchased duration (8 days becomes 19 hours 12 minutes), with 12-hour rejection extensions. Without a receipt window, start at payment confirmation. Previously stored deadlines/extensions are preserved.
+ *                         description: True only in local/development; delivery/pickup checks are relaxed, but deadline, payment and quantity checks remain. Finite local/development windows use one tenth of the purchased hour duration (192 hours becomes 19 hours 12 minutes), with 12-hour rejection extensions. Without a receipt window, start at payment confirmation. Previously stored deadlines/extensions are preserved.
  *                       refundWindowSource:
  *                         type: string
  *                         nullable: true
@@ -332,6 +332,7 @@ router.get(
  *   put:
  *     tags: [Delivery]
  *     summary: Update an order's delivery information
+ *     description: For virtual and seller-managed home delivery, updates require an active owning seller or platform admin. Setting status to delivered confirms fulfillment and automatically starts purchased refund windows for paid orders matching the original checkout selection. Completed virtual/home status and logistics identity cannot be reset (409 DELIVERY_TERMINAL); repeated delivered updates preserve timestamps and extensions. CVS callbacks, polling, status updates and pickup processing retain their existing behavior; the new terminal guard does not apply to CVS. No separate confirmation endpoint exists. Receipt timestamps and evidence are server-owned.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -390,8 +391,9 @@ router.get(
  *                   storeName: "建盛門市"
  *                   storeAddress: "新竹市東區建中一路52號1樓"
  *     responses:
+ *       '409': { description: 'DELIVERY_TERMINAL, ORDER_NOT_PAID, DELIVERY_ITEMS_REQUIRED, DELIVERY_CONFIRMATION_NOT_SUPPORTED or DELIVERY_NOT_CONFIRMABLE.' }
  *       '200':
- *         description: The updated delivery record.
+ *         description: Updated delivery with computed refund eligibility. Delivered virtual/home records include immutable first receivedAt and seller/admin receipt evidence.
  *         content:
  *           application/json:
  *             schema:

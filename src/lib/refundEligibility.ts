@@ -1,12 +1,12 @@
 import { isLocalOrDevelopment } from "./env";
 import type { Delivery, OrderItem, RefundItem } from "../db/schema";
 
-export const DEFAULT_REFUND_WINDOW_DAYS = 8;
-export const REFUND_WINDOW_MS = DEFAULT_REFUND_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+export const DEFAULT_REFUND_WINDOW_HOURS = 192;
+export const REFUND_WINDOW_MS = DEFAULT_REFUND_WINDOW_HOURS * 60 * 60 * 1000;
 export const REFUND_EXTENSION_MS = 120 * 60 * 60 * 1000;
 // Only explicit local/development environments use accelerated testing durations.
-export function getRefundWindowMs(days = DEFAULT_REFUND_WINDOW_DAYS) {
-  const duration = days * 24 * 60 * 60 * 1000;
+export function getRefundWindowMs(hours = DEFAULT_REFUND_WINDOW_HOURS) {
+  const duration = hours * 60 * 60 * 1000;
   return isLocalOrDevelopment() ? duration / 10 : duration;
 }
 
@@ -50,7 +50,7 @@ export function isConfirmedReceipt(delivery: ReceiptDelivery) {
 }
 
 export type RefundWindowItem = Pick<OrderItem,
-  "deliveryId" | "quantity" | "refundWindowDaysAtSale" | "refundWindowStartsAt" | "originalRefundDeadlineAt" | "refundDeadlineAt"
+  "deliveryId" | "quantity" | "refundWindowHoursAtSale" | "refundWindowStartsAt" | "originalRefundDeadlineAt" | "refundDeadlineAt"
 >;
 
 type RefundWindowDecision = Pick<RefundItem, "status"> & Partial<Pick<RefundItem, "rejectionDeadlineAfter">>;
@@ -69,8 +69,8 @@ export function resolveRefundWindow(
     };
   }
   if (isLocalOrDevelopment() && paymentConfirmedAt) {
-    const originalDeadline = item.refundWindowDaysAtSale === null || item.refundWindowDaysAtSale === 0
-      ? null : new Date(paymentConfirmedAt.getTime() + getRefundWindowMs(item.refundWindowDaysAtSale));
+    const originalDeadline = item.refundWindowHoursAtSale === null || item.refundWindowHoursAtSale === 0
+      ? null : new Date(paymentConfirmedAt.getTime() + getRefundWindowMs(item.refundWindowHoursAtSale));
     // Test-only windows are derived, never written as real receipt evidence. Rejections
     // persist their extension on the existing decision rows, under the same order lock.
     const deadline = originalDeadline === null ? null : refunds.reduce((latest, refund) =>
@@ -104,8 +104,8 @@ export function refundEligibility(
   ));
   const refundReceiptChecksBypassed = isLocalOrDevelopment();
   const window = resolveRefundWindow(item, refunds, paymentConfirmedAt);
-  const unlimited = item.refundWindowDaysAtSale === null;
-  const disabled = item.refundWindowDaysAtSale === 0;
+  const unlimited = item.refundWindowHoursAtSale === null;
+  const disabled = item.refundWindowHoursAtSale === 0;
   const hasWindow = !!(window.refundWindowStartsAt && (unlimited || window.refundDeadlineAt));
   const windowStatus = disabled ? "disabled" : !hasWindow
     ? (refundReceiptChecksBypassed || deliveryStatus === "delivered" ? "unknown" : "not_started")

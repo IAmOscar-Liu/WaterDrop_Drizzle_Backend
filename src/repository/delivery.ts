@@ -1,4 +1,4 @@
-import { captureReceipt, lockRefundOrder, ReceiptSource } from "./refundWindow";
+import { captureReceipt, lockRefundOrder, ReceiptSource, AccountReceiptConfirmation } from "./refundWindow";
 import { refundEligibility, isAwaitingPickup } from "../lib/refundEligibility";
 import {
   and,
@@ -30,7 +30,7 @@ import {
 } from "./utils/query";
 import { minimumVariantPrice } from "./utils/product";
 import { recordAdminActivityWithTx } from "./adminActivity";
-import { resolveAdminSellerScope } from "./adminScope";
+import { requireNonEmployee, resolveAdminSellerScope } from "./adminScope";
 import { publishDeliveryChatrooms } from "./orderChatroom";
 
 type DeliveryItemWithProductVariant = schema.OrderItem & {
@@ -53,6 +53,7 @@ function withVariantAtSaleDisplay<T extends DeliveryItemWithProductVariant>(
     ? (() => {
         const {
           variant: _productVariant,
+          refundWindowDays: _legacyProductPolicy,
           ...productRest
         } = product as typeof product & { variant?: unknown };
         return productRest;
@@ -164,6 +165,15 @@ export async function updateDeliveryWithNotificationContext(
 
     if (!existingDelivery) return null;
 
+    const manualDelivery = ["virtual", "home_delivery"].includes(existingDelivery.LogisticsType);
+    const actor = manualDelivery && actorAccountId ? await requireNonEmployee(actorAccountId) : undefined;
+
+    const items = actor ? await tx.select({ item: schema.orderItemTable, sellerId: schema.productTable.sellerId })
+      .from(schema.orderItemTable).innerJoin(schema.productTable, eq(schema.productTable.id, schema.orderItemTable.productId))
+      .where(eq(schema.orderItemTable.deliveryId, deliveryId)).orderBy(schema.orderItemTable.id).for("update") : [];
+    if (actor?.role === "seller" && (!items.length || items.some(row => row.sellerId !== actor.id))) {
+      throw new CustomError("Delivery not found", 404);
+    }
     const latestLog = await tx.query.deliveryLogTable.findFirst({
       where: eq(schema.deliveryLogTable.deliveryId, deliveryId),
       orderBy: (logs, { desc }) => [desc(logs.createdAt)],
@@ -172,15 +182,55 @@ export async function updateDeliveryWithNotificationContext(
     if (receiptSource && updates.status === "delivered" && isAwaitingPickup({ ...existingDelivery, ...updates })) {
       updates = { ...updates, status: "ready_for_pickup" };
     }
+    const terminal = manualDelivery && (Boolean(existingDelivery.receivedAt) || existingDelivery.status === "delivered");
+    const candidate = { ...existingDelivery, ...updates };
+    const changesIdentity = (["LogisticsType", "LogisticsSubType", "AllPayLogisticsID"] as const)
+      .some(field => updates[field] !== undefined && updates[field] !== existingDelivery[field]);
+    const regressesReceipt = (updates.status !== undefined && updates.status !== "delivered") || changesIdentity;
+    if (terminal && regressesReceipt) {
+      if (!receiptSource) throw new CustomError("Completed virtual or home delivery cannot be reset", 409, "DELIVERY_TERMINAL");
+      // Preserve completed manual fulfillment if an integration reports an older status.
+      const { status: _status, RtnCode: _code, RtnMsg: _message, LogisticsType: _type,
+        LogisticsSubType: _subtype, AllPayLogisticsID: _providerId, ...nonStatusUpdates } = updates;
+      updates = nonStatusUpdates;
+    }
+    let confirmation: AccountReceiptConfirmation | undefined;
+    if (actor && !receiptSource && updates.status === "delivered" && !existingDelivery.receivedAt) {
+      if (candidate.LogisticsType !== existingDelivery.LogisticsType || candidate.AllPayLogisticsID) {
+        throw new CustomError("Delivery does not match the seller-managed method", 409, "DELIVERY_CONFIRMATION_NOT_SUPPORTED");
+      } else {
+        if (!items.length || items.some(row => row.item.orderId !== existingDelivery.orderId)) {
+          throw new CustomError("Delivery item associations require reconciliation", 409, "DELIVERY_ITEMS_REQUIRED");
+        }
+        const [order] = await tx.select().from(schema.orderTable).where(eq(schema.orderTable.id, existingDelivery.orderId)).for("update");
+        if (!order || order.orderStatus !== "paid") throw new CustomError("Order must be paid before delivery", 409, "ORDER_NOT_PAID");
+        const shipping = order.shippingInfo as { nonCvsPickupGroup?: Array<{ LogisticsType?: string; type?: string;
+          products?: Array<{ productId: string; variantId: string }> }> } | null;
+        const groups = Array.isArray(shipping?.nonCvsPickupGroup) ? shipping.nonCvsPickupGroup : [];
+        const matchesCheckout = items.every(({ item }) => groups.some(group => {
+          const method = group?.LogisticsType ?? group?.type;
+          return (method === "HOME" ? "home_delivery" : method) === existingDelivery.LogisticsType
+            && Array.isArray(group?.products) && group.products.some(product =>
+              product?.productId === item.productId && product.variantId === item.productVariantId);
+        }));
+        if (!matchesCheckout) throw new CustomError("Delivery does not match checkout selection", 409, "DELIVERY_CONFIRMATION_NOT_SUPPORTED");
+        if (!["pending", "shipped", "delivered"].includes(existingDelivery.status)) {
+          throw new CustomError("Delivery cannot be completed from its current state", 409, "DELIVERY_NOT_CONFIRMABLE");
+        }
+        confirmation = { source: actor.role === "admin" ? "admin_confirmation" : "seller_confirmation",
+          actorAccountId: actor.id, actorRole: actor.role === "admin" ? "admin" : "seller" };
+      }
+    }
     let [updatedDelivery] = await tx
       .update(schema.deliveryTable)
       .set({ ...updates, receivedAt: existingDelivery.receivedAt, receiptEvidence: existingDelivery.receiptEvidence, updatedAt: new Date() })
       .where(eq(schema.deliveryTable.id, deliveryId))
       .returning();
 
-    updatedDelivery = await captureReceipt(tx, updatedDelivery, receiptSource, existingDelivery);
+    updatedDelivery = await captureReceipt(tx, updatedDelivery, confirmation ?? receiptSource, existingDelivery);
+    const receiptConfirmed = Boolean(confirmation && !existingDelivery.receivedAt && updatedDelivery.receivedAt);
 
-    const shouldLog =
+    const shouldLog = receiptConfirmed ||
       (updates.status !== undefined && updates.status !== latestLog?.status) ||
       (updates.RtnCode !== undefined &&
         updates.RtnCode !== latestLog?.RtnCode) ||
@@ -228,12 +278,19 @@ export async function updateDeliveryWithNotificationContext(
       );
     }
 
+    if (receiptConfirmed) {
+      for (const sellerId of new Set(items.map(row => row.sellerId))) {
+        await recordAdminActivityWithTx(tx, { actorAccountId: actor!.id, sellerId, eventType: "delivery.confirmed",
+          entityType: "delivery", entityId: deliveryId, metadata: { previousStatus: existingDelivery.status, status: "delivered",
+            receivedAt: updatedDelivery.receivedAt?.toISOString(), receiptEvidence: updatedDelivery.receiptEvidence } });
+      }
+    }
     const chatFields = ["merchantTradeNo", "LogisticsType", "LogisticsSubType", "status", "RtnCode", "RtnMsg"] as const;
-    if (chatFields.some((field) => existingDelivery[field] !== updatedDelivery[field])) {
+    if (receiptConfirmed || chatFields.some((field) => existingDelivery[field] !== updatedDelivery[field])) {
       await publishDeliveryChatrooms(tx, updatedDelivery);
     }
 
-    return { updatedDelivery, latestLog, shouldLog };
+    return { updatedDelivery, latestLog, shouldLog, previousStatus: manualDelivery ? existingDelivery.status : latestLog?.status };
   });
 
   if (!result) return null;
@@ -243,7 +300,7 @@ export async function updateDeliveryWithNotificationContext(
     delivery: newDeliveryDetails,
     notificationContext: result.shouldLog
       ? {
-          lastStatus: result.latestLog?.status,
+          lastStatus: result.previousStatus,
           update: {
             status: updates.status,
             RtnCode: updates.RtnCode,

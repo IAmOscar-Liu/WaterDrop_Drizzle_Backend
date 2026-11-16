@@ -37,6 +37,7 @@ export type ProductVariantWriteInput = {
   name?: string | null;
   sku?: string | null;
   price?: number;
+  refundWindowHours?: number | null;
   images?: string[] | null;
   optionValues?: Record<string, unknown>;
   stock?: number;
@@ -73,6 +74,7 @@ function buildCreateVariantValues(
     name: variant.name ?? null,
     sku: variant.sku ?? null,
     price: variant.price,
+    refundWindowHours: variant.refundWindowHours === undefined ? 192 : variant.refundWindowHours,
     images: variant.images ?? null,
     optionValues: variant.optionValues ?? {},
     stock: variant.stock,
@@ -352,7 +354,9 @@ export async function softDeleteProduct(
       where: eq(schema.productTable.id, productId),
       with: { variants: true },
     });
-    return deletedProduct ? (await withCurrentAdvertisements([deletedProduct], tx, true))[0] : deletedProduct;
+    if (!deletedProduct) return deletedProduct;
+    const { refundWindowDays: _legacyProductPolicy, ...publicProduct } = deletedProduct;
+    return (await withCurrentAdvertisements([publicProduct], tx, true))[0];
   });
 }
 
@@ -467,6 +471,9 @@ export async function createProduct(
   variants?: ProductVariantWriteInput[],
   requesterId?: string,
 ) {
+  if (Object.prototype.hasOwnProperty.call(productData, "refundWindowDays") || Object.prototype.hasOwnProperty.call(productData, "refundWindowHours")) {
+    throw new CustomError("Set refundWindowHours on each variant instead", 400, "VALIDATION_FAILED");
+  }
   if (requesterId) {
     const actor = await getActiveAdminAccount(requesterId);
     if (actor.role === "employee") {
@@ -561,6 +568,9 @@ export async function updateProduct(
   variants?: ProductVariantWriteInput[],
   requesterId?: string,
 ) {
+  if (Object.prototype.hasOwnProperty.call(productData, "refundWindowDays") || Object.prototype.hasOwnProperty.call(productData, "refundWindowHours")) {
+    throw new CustomError("Set refundWindowHours on each variant instead", 400, "VALIDATION_FAILED");
+  }
   const actor = requesterId ? await getActiveAdminAccount(requesterId) : undefined;
   if (actor?.role === "employee") {
     throw new CustomError("Employees cannot update products", 403);
@@ -671,6 +681,7 @@ export async function updateProduct(
               ...(variant.name !== undefined ? { name: variant.name } : {}),
               ...(variant.sku !== undefined ? { sku: variant.sku } : {}),
               ...(variant.price !== undefined ? { price: variant.price } : {}),
+              ...(variant.refundWindowHours !== undefined ? { refundWindowHours: variant.refundWindowHours } : {}),
               ...(variant.images !== undefined ? { images: variant.images } : {}),
               ...(variant.optionValues !== undefined
                 ? { optionValues: variant.optionValues }

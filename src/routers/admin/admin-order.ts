@@ -61,10 +61,10 @@ const router = Router();
  *         lineTotal:
  *           type: number
  *           format: double
- *         refundWindowDaysAtSale:
+ *         refundWindowHoursAtSale:
  *           type: integer
  *           nullable: true
- *           description: Purchased policy; 0 disables refunds, null means unlimited after receipt. Legacy items retain 10 days; new purchases default to 8.
+ *           description: Selected variant policy snapshotted at order creation, before payment; 0 disables requests and null is unlimited after receipt. Existing order snapshots are never migrated or overwritten by later policy edits. New variants default to 192 hours.
  *         refundWindowStartsAt:
  *           type: string
  *           format: date-time
@@ -74,12 +74,12 @@ const router = Router();
  *           type: string
  *           format: date-time
  *           nullable: true
- *           description: Window start plus the purchased policy duration (default 8 days), divided by 10 in local/development. Null for disabled or unlimited policies. Stored historical deadlines are preserved; computed details may use the payment fallback.
+ *           description: Window start plus the purchased policy duration in hours (default 192), divided by 10 in local/development. Null for disabled or unlimited policies. Stored historical deadlines are preserved; computed details may use the payment fallback.
  *         refundDeadlineAt:
  *           type: string
  *           format: date-time
  *           nullable: true
- *           description: Null for disabled or unlimited policies, or unknown receipt. Use canRefund and refundWindowDaysAtSale to distinguish. Effective deadline for new requests; explicit rejection may extend it. A timely existing request stays reviewable after this time.
+ *           description: Null for disabled or unlimited policies, or unknown receipt. Use canRefund and refundWindowHoursAtSale to distinguish. Effective deadline for new requests; explicit rejection may extend it. A timely existing request stays reviewable after this time.
  *         createdAt:
  *           type: string
  *           format: date-time
@@ -102,20 +102,26 @@ const router = Router();
  *           type: string
  *           format: date-time
  *           nullable: true
- *           description: Trusted first receipt observation. Historical/unsupported receipt sources remain null.
+ *           readOnly: true
+ *           description: First trusted receipt or explicit seller/admin manual-delivery confirmation time. Server owned; repeats never reset it. Historical/unsupported sources remain null until explicitly confirmed.
  *         receiptEvidence:
  *           type: object
  *           nullable: true
+ *           readOnly: true
+ *           description: Provider evidence or explicit fulfillment attestation; actor, role, confirmation time are stored on manual confirmations. Never client writable.
  *           properties:
  *             source:
  *               type: string
- *               enum: [provider_callback, provider_poll]
+ *               enum: [provider_callback, provider_poll, seller_confirmation, admin_confirmation]
+ *             actorAccountId: { type: string, format: uuid }
+ *             actorRole: { type: string, enum: [seller, admin] }
+ *             confirmedAt: { type: string, format: date-time }
  *             observedAt:
  *               type: string
  *               format: date-time
  *             estimated:
  *               type: boolean
- *               description: True for backend observation time rather than carrier event time.
+ *               description: True for estimated provider observation time; false for the server timestamp of explicit seller/admin confirmation.
  *             logisticsType:
  *               type: string
  *             logisticsSubType:
@@ -394,7 +400,7 @@ const router = Router();
  *                                     $ref: '#/components/schemas/RefundLog'
  *                       refundReceiptChecksBypassed:
  *                         type: boolean
- *                         description: True only in local/development; delivery/pickup checks are relaxed, but deadline, payment and quantity checks remain. Finite local/development windows use one tenth of the purchased duration (8 days becomes 19 hours 12 minutes), with 12-hour rejection extensions. Without a receipt window, start at payment confirmation. Previously stored deadlines/extensions are preserved.
+ *                         description: True only in local/development; delivery/pickup checks are relaxed, but deadline, payment and quantity checks remain. Finite local/development windows use one tenth of the purchased hour duration (192 hours becomes 19 hours 12 minutes), with 12-hour rejection extensions. Without a receipt window, start at payment confirmation. Previously stored deadlines/extensions are preserved.
  *                       refundWindowSource:
  *                         type: string
  *                         nullable: true

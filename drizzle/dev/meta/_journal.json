@@ -498,6 +498,20 @@
       "when": 1793777046915,
       "tag": "0070_payment_safety",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1794387340782,
+      "tag": "0071_variant_refund_windows",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1794451271167,
+      "tag": "0072_refund_window_hours",
+      "breakpoints": true
     }
   ]
 }

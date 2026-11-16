@@ -1,3 +1,4 @@
+import { logDiagnosticError } from "../lib/requestContext";
 import type { ReceiptSource } from "../repository/refundWindow";
 import {
   HOME_DELIVERY_FEE,
@@ -79,10 +80,12 @@ class DeliveryService {
       const delivery = result?.delivery ?? null;
       if (delivery) {
         if (result?.notificationContext) {
-          await sendDeliveryNotification({
-            ...result.notificationContext,
-            delivery,
-          });
+          const notification = sendDeliveryNotification({ ...result.notificationContext, delivery });
+          if (["virtual", "home_delivery"].includes(delivery.LogisticsType)) {
+            await notification.catch(error => logDiagnosticError("Delivery status notification failed", error));
+          } else {
+            await notification;
+          }
         }
         return { success: true, data: delivery };
       } else {

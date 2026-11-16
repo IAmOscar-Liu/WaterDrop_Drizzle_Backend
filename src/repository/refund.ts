@@ -114,7 +114,7 @@ export type RefundStatusChangedNotificationContext =
   RefundNotificationContext & {
     previousStatus: schema.RefundItem["status"];
     refundDeadlineAt: Date | null;
-    refundWindowDaysAtSale: number | null;
+    refundWindowHoursAtSale: number | null;
     rejectionReason: string | null;
     reason: string;
     note: string | null;
@@ -151,6 +151,7 @@ function formatRefundRow(
   bankNameByCode = getBankNameByCodeMap(),
 ) {
   const bankCode = row.user.bankCode?.trim().padStart(3, "0");
+  const { refundWindowDays: _legacyProductPolicy, ...product } = row.product;
   const {
     variantNameAtSale,
     variantSkuAtSale,
@@ -169,7 +170,7 @@ function formatRefundRow(
         price: orderItem.unitPriceAtSale,
       },
       variantImage: row.variantImage,
-      product: row.product,
+      product,
       delivery: row.delivery,
       order: {
         ...row.order,
@@ -896,7 +897,7 @@ export async function updateRefundItemStatus(
       const context = await getLockedOrderContext();
       const window = await getEffectiveWindow();
       const previousDeadline = window.refundDeadlineAt;
-      const unlimited = context.orderItem.refundWindowDaysAtSale === null;
+      const unlimited = context.orderItem.refundWindowHoursAtSale === null;
       if (!previousDeadline && !(unlimited && window.refundWindowStartsAt)) {
         throw new CustomError("A known refund window is required before rejection can extend it", 409,
           isLocalOrDevelopment() ? "PAYMENT_TIME_UNKNOWN" : "RECEIPT_TIME_UNKNOWN");
@@ -919,8 +920,8 @@ export async function updateRefundItemStatus(
       const context = await getLockedOrderContext();
       const window = await getEffectiveWindow();
       const now = await refundClock(tx);
-      if (context.orderItem.refundWindowDaysAtSale === 0 || !window.refundWindowStartsAt || now < window.refundWindowStartsAt
-        || (context.orderItem.refundWindowDaysAtSale !== null && (!window.refundDeadlineAt || now >= window.refundDeadlineAt))) {
+      if (context.orderItem.refundWindowHoursAtSale === 0 || !window.refundWindowStartsAt || now < window.refundWindowStartsAt
+        || (context.orderItem.refundWindowHoursAtSale !== null && (!window.refundDeadlineAt || now >= window.refundDeadlineAt))) {
         throw new CustomError("Cannot increase quantity outside the request window", 409, "REFUND_WINDOW_EXPIRED");
       }
     }
@@ -1347,7 +1348,7 @@ export async function updateRefundItemStatus(
         status: updatedRefundItem.status,
         refundDeadlineAt: updatedRefundItem.status === "rejected"
           ? updatedRefundItem.rejectionDeadlineAfter : context.orderItem.refundDeadlineAt,
-        refundWindowDaysAtSale: context.orderItem.refundWindowDaysAtSale,
+        refundWindowHoursAtSale: context.orderItem.refundWindowHoursAtSale,
         rejectionReason: updatedRefundItem.rejectionReason,
         reason: updatedRefundItem.reason,
         note: updatedRefundItem.note,
