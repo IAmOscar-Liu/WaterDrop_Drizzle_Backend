@@ -1,3 +1,4 @@
+import { batchFundAds, batchAdStatus, getAutoRefill, setAutoRefill, attemptAutoRefill } from "../repository/adAutomation";
 import { previewAdvertisementWithdrawal, withdrawAdvertisementBudget } from "../repository/advertisementWithdrawal";
 import * as schema from "../db/schema";
 import { handleServiceError } from "../lib/error";
@@ -27,6 +28,22 @@ import {
 } from "../repository/advertisementReport";
 
 class AdvertisementService {
+  async batchFunding(actorId: string, input: Parameters<typeof batchFundAds>[1]) {
+    try { return { success: true as const, data: await batchFundAds(actorId, input) }; } catch (error) { return handleServiceError(error); }
+  }
+  async batchStatus(actorId: string, input: Parameters<typeof batchAdStatus>[1]) {
+    try { return { success: true as const, data: await batchAdStatus(actorId, input) }; } catch (error) { return handleServiceError(error); }
+  }
+  async autoRefill(actorId: string, id: string) {
+    try { return { success: true as const, data: await getAutoRefill(actorId, id) }; } catch (error) { return handleServiceError(error); }
+  }
+  async configureAutoRefill(actorId: string, id: string, input: Parameters<typeof setAutoRefill>[2]) {
+    try {
+      await setAutoRefill(actorId, id, input);
+      if (input.enabled) await attemptAutoRefill(id).catch(error => console.error("Settings auto-refill failed", { id, error }));
+      return { success: true as const, data: await getAutoRefill(actorId, id) };
+    } catch (error) { return handleServiceError(error); }
+  }
   async withdrawalPreview(advertisementId: string, requesterId: string) {
     try { return { success: true as const, data: await previewAdvertisementWithdrawal(advertisementId, requesterId) }; }
     catch (error) { return handleServiceError(error); }

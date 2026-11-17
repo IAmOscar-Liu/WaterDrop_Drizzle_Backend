@@ -26,6 +26,9 @@ const withdrawalBase = {
 };
 
 export const advertisementValidation = {
+  batchFundingBody: z.object({ items: z.array(z.object({ advertisementId: uuid, amount: positiveCurrencyAmount }).strict()).min(1).max(100), idempotencyKey: z.string().min(8).max(120) }).strict().refine(v => new Set(v.items.map(i => i.advertisementId)).size === v.items.length, "Duplicate advertisements"),
+  batchStatusBody: z.object({ advertisementIds: z.array(uuid).min(1).max(100), status: z.enum(["active", "paused"]) }).strict().refine(v => new Set(v.advertisementIds).size === v.advertisementIds.length, "Duplicate advertisements"),
+  autoRefillBody: z.object({ enabled: z.boolean(), amount: positiveCurrencyAmount.optional() }).strict(),
   withdrawalBody: z.discriminatedUnion("mode", [
     z.object({ ...withdrawalBase, mode: z.literal("all") }).strict(),
     z.object({ ...withdrawalBase, mode: z.literal("amount"), amount: decimalMoney.refine((v) => Number(v) > 0) }).strict(),

@@ -24,6 +24,8 @@ fees, bank verification, historical balances, and payout execution still need
 business decisions. Its engineering proposal remains outside this FE package
 at `docs/plans/ADMIN_SECTION_3_WITHDRAWAL_PLAN.md`.
 
+Latest seller finance implementation (2026-11-17): [賣家收益、存提申請與廣告自動補款](SELLER_EARNINGS_AND_AD_AUTOMATION.md) — separate revenue wallet, request review, batch ads and event-driven refill; not deployed. This supersedes the historical Section 3 pending status below for this branch.
+
 ## Admin web FE — recommended reading order
 
 Latest product deletion fix (2026-11-16): [商品刪除 API 修正通知](ADMIN_PRODUCT_DELETION_API_CHANGES.md) — permanent deletion route removed; soft deletion restricted to platform admins. Pending deployment.

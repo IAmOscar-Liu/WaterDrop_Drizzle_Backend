@@ -855,6 +855,20 @@
       "when": 1794451229504,
       "tag": "0121_refund_window_hours",
       "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1794902676753,
+      "tag": "0122_fixed_stingray",
+      "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1794903456495,
+      "tag": "0123_fluffy_spyke",
+      "breakpoints": true
     }
   ]
 }

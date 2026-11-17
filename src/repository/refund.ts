@@ -1,3 +1,5 @@
+import { shippingSummary, updateShippingClaim } from "./shippingReimbursement";
+import { postRefundRevenue } from "./sellerEarnings";
 import { isLocalOrDevelopment } from "../lib/env";
 import { isDeepStrictEqual } from "node:util";
 import { createHash } from "node:crypto";
@@ -496,7 +498,7 @@ export async function getRefundList({
   const bankNameByCode = getBankNameByCodeMap();
 
   return {
-    refunds: rows.map((row) => formatRefundRow(row, bankNameByCode)),
+    refunds: await Promise.all(rows.map(async row => ({ ...formatRefundRow(row, bankNameByCode), shippingReimbursement: await shippingSummary(row.orderItem.id, row.refundItem.id) }))),
     total,
     page: pagination.page,
     limit: pagination.limit,
@@ -516,7 +518,7 @@ export async function getRefundById(refundItemId: string, accountId: string) {
     where: eq(schema.refundLogTable.refundItemId, refundItemId),
     orderBy: (logs, { desc }) => [desc(logs.createdAt)],
   });
-  return { ...formatRefundRow(row), logs };
+  return { ...formatRefundRow(row), logs, shippingReimbursement: await shippingSummary(row.orderItem.id, row.refundItem.id) };
 }
 
 export type CreateRefundInput = {
@@ -769,6 +771,8 @@ export async function updateRefundItemStatus(
     note?: string | null;
     message?: string;
     extraRefundAmount?: number;
+    reimburseOriginalShipping?: boolean;
+    otherExtraRefundAmount?: number;
     metadata?: schema.RefundItem["metadata"];
   },
   actorAccountId: string,
@@ -802,18 +806,20 @@ export async function updateRefundItemStatus(
     }
 
     if (["completed", "cancelled", "rejected"].includes(refundItem.status)) {
+      const shippingBreakdown = await tx.query.refundShippingBreakdownTable.findFirst({ where: eq(schema.refundShippingBreakdownTable.refundId, refundItemId) });
+      const comparable = { ...refundItem, reimburseOriginalShipping: Number(shippingBreakdown?.shippingAmount ?? 0) > 0, otherExtraRefundAmount: Number(shippingBreakdown?.otherAmount ?? 0) };
       const same = Object.entries(updates).every(([key, value]) => value === undefined ||
-        (key === "agreement" ? false : key === "message" ? false : isDeepStrictEqual((refundItem as any)[key], value)));
+        (key === "agreement" ? false : key === "message" ? false : isDeepStrictEqual((comparable as any)[key], value)));
       // Replaying a decision may include its original log message/agreement; compare against the latest audit below.
       const last = await tx.query.refundLogTable.findFirst({ where: eq(schema.refundLogTable.refundItemId, refundItemId), orderBy: (l, { desc }) => [desc(l.createdAt), desc(l.id)] });
       const replay = Object.entries(updates).every(([key, value]) => value === undefined ||
-        (key === "message" ? value === last?.message : key === "agreement" ? isDeepStrictEqual(value, (last?.audit as any)?.agreement) : isDeepStrictEqual((refundItem as any)[key], value)));
+        (key === "message" ? value === last?.message : key === "agreement" ? isDeepStrictEqual(value, (last?.audit as any)?.agreement) : isDeepStrictEqual((comparable as any)[key], value)));
       if (!same && !replay) throw new CustomError("Terminal refunds cannot be changed", 409, "REFUND_TERMINAL");
       return { refundItem, notificationContext: undefined };
     }
     if (updates.rejectionReason !== undefined && updates.status !== "rejected") throw new CustomError("rejectionReason requires rejected status", 400);
     if (updates.status === "rejected" && !updates.rejectionReason?.trim()) throw new CustomError("Rejection reason required", 400);
-    if (updates.status === "rejected" && (updates.quantity !== undefined || updates.refundAmount !== undefined || updates.extraRefundAmount !== undefined || updates.agreement !== undefined)) {
+    if (updates.status === "rejected" && (updates.quantity !== undefined || updates.refundAmount !== undefined || updates.extraRefundAmount !== undefined || updates.reimburseOriginalShipping !== undefined || updates.otherExtraRefundAmount !== undefined || updates.agreement !== undefined)) {
       throw new CustomError("Reject without changing financial fields", 400);
     }
     const quantityChanged = updates.quantity !== undefined && updates.quantity !== refundItem.quantity;
@@ -821,6 +827,8 @@ export async function updateRefundItemStatus(
     if ((quantityChanged || baseAmountChanged) && (!updates.agreement?.confirmed || !updates.agreement.note.trim())) {
       throw new CustomError("Record the buyer agreement before changing quantity or base refund amount", 409, "REFUND_AGREEMENT_REQUIRED");
     }
+    await updateShippingClaim(tx, refundItem, updates);
+
     const statusChanged =
       updates.status !== undefined && refundItem.status !== updates.status;
     const financialChanged =
@@ -1321,6 +1329,8 @@ export async function updateRefundItemStatus(
         .where(eq(schema.refundItemTable.id, refundItemId))
         .returning();
     }
+
+    if (statusChanged && updates.status === "completed") await postRefundRevenue(tx, updatedRefundItem);
 
     if (shouldLog) {
       await tx.insert(schema.refundLogTable).values({

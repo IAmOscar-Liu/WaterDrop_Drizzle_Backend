@@ -729,7 +729,7 @@ export async function depositAdBalance({
   amount: string;
   idempotencyKey: string;
   metadata?: Record<string, any>;
-}) {
+}, transaction?: DbTransaction) {
   if (process.env.ACCOUNT_WALLET_AD_FUNDING_ENABLED !== "true") {
     throw new CustomError(
       "Account-wallet advertisement funding is temporarily disabled.",
@@ -747,7 +747,7 @@ export async function depositAdBalance({
   }
   const numericAmount = Number(amountInMinorUnits) / 100;
 
-  return await db.transaction(async (tx) => {
+  const run = async (tx: DbTransaction) => {
     await lockWalletIdempotencyKeyWithTx(tx, idempotencyKey);
 
     const [advertisement] = await tx
@@ -894,7 +894,7 @@ export async function depositAdBalance({
         409,
       );
     }
-    if (moneyToMinorUnits(walletBefore.walletBalance) < amountInMinorUnits) {
+    if (moneyToMinorUnits(walletBefore.walletBalance) - moneyToMinorUnits(walletBefore.lockedBalance) < amountInMinorUnits) {
       throw new CustomError("Insufficient seller wallet balance.", 409);
     }
 
@@ -1000,7 +1000,8 @@ export async function depositAdBalance({
       advertisementTransaction,
       idempotentReplay: false,
     };
-  });
+  };
+  return transaction ? run(transaction) : db.transaction(run);
 }
 
 export async function adjustAdBudget({
@@ -1126,7 +1127,7 @@ export async function spendAdBalanceWithTx(
             netSettledSpentAmount: sql`${schema.advertisementStatsTable.netSettledSpentAmount} + ${amount}`,
           }
         : {}),
-      status: sql`case when ${schema.advertisementStatsTable.status} = 'archived' then ${schema.advertisementStatsTable.status} when ${schema.advertisementStatsTable.balance} - ${amount} < 100 then 'depleted' else ${schema.advertisementStatsTable.status} end`,
+      status: sql`case when ${schema.advertisementStatsTable.status} in ('archived', 'paused') then ${schema.advertisementStatsTable.status} when ${schema.advertisementStatsTable.balance} - ${amount} < 100 then 'depleted' else ${schema.advertisementStatsTable.status} end`,
     })
     .where(eq(schema.advertisementStatsTable.advertisementId, advertisementId))
     .returning();
@@ -1153,6 +1154,7 @@ export async function spendAdBalanceWithTx(
         .returning({ id: schema.advertisementTransactionTable.id })
     : [];
 
+  if (updatedStats.balance < 100) await tx.insert(schema.adRefillEventTable).values({ advertisementId }).onConflictDoNothing();
   return { ...updatedStats, advertisementTransactionId: transaction?.id };
 }
 
