@@ -2,7 +2,7 @@
 
 截至日期：2026 年 11 月 17 日。本文彙整第一版最終業務規則，供團隊確認與交接。
 
-目前已完成分支實作及 local 遷移，尚未部署至共享環境。買家 App 操作與 API 合約維持不變。參數與串接細節見 [FE 文件](../api/FE-confirmation/SELLER_EARNINGS_AND_AD_AUTOMATION.md)。
+目前已合併至 development，完成 local 與 dev 資料庫遷移及結構核對；dev 服務尚待部署新版本。買家 App 操作與 API 合約維持不變。參數與串接細節見 [FE 文件](../api/FE-confirmation/SELLER_EARNINGS_AND_AD_AUTOMATION.md)。
 
 ## 一、兩個錢包與收益顯示
 

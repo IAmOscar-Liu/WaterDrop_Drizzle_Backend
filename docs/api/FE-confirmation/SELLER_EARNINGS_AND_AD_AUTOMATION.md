@@ -1,6 +1,6 @@
 # FE／AI 實作規格：賣家收益、存提申請與廣告管理
 
-日期：2026-11-17。狀態：本分支已實作並完成 local 遷移，尚未部署／套用共享環境遷移。
+日期：2026-11-17。狀態：已合併至 development，local 與 dev 資料庫遷移完成且結構一致；尚未推送本次提交或部署／重啟 dev 服務。
 
 團隊業務摘要及完整新增 API 一覽見 [11/17 定案摘要與附錄](../../plans/SELLER_EARNINGS_MEETING_AGENDA_ZH_TW.md)。本文保留 FE 串接所需的參數、欄位及操作細節。
 
@@ -154,7 +154,7 @@ Summary 主要欄位：
 - 新收益記帳由 `SELLER_EARNINGS_LAUNCH_AT` 控制，值為含時區的 ISO 時間。未設定不自動建立銷售收益。部署時明確選定啟用時間，不設定過去時間來代替歷史匯入。
 - 只記錄該時間起確認付款的訂單；舊銷售不匯入，沒有對應新銷售入帳的退款不扣新收益錢包。
 - 每天 Asia/Taipei 03:00 開放滿保留期的剩餘收益，啟動時補處理已到期項目。正式／stg 為 336 小時；明確 local／development 為 33 小時 36 分鐘。實際匯款仍需管理員處理。
-- local 已依序套用 `drizzle/local/0122_fixed_stingray.sql` 與 `0123_fluffy_spyke.sql`；`.env.local` 收益起算時間為 `2026-11-17T00:00:00+08:00`，不自動回補已處理的歷史交易。未對 dev／stg／production 套用遷移；其他環境應先以各自 migration history 產生及檢查遷移，再執行對應 migrate 指令，不跨環境複製 snapshot。
+- local 已依序套用 `drizzle/local/0122_fixed_stingray.sql` 與 `0123_fluffy_spyke.sql`；`.env.local` 收益起算時間為 `2026-11-17T00:00:00+08:00`，不自動回補已處理的歷史交易。dev 已套用 `drizzle/dev/0073_peaceful_green_goblin.sql`，`.env.development` 起算時間為 `2026-11-17T17:30:27.930+08:00`；本機環境檔不會隨 Git 推送，實際 dev 服務須同步設定並載入新版本。stg／production 尚未遷移，應以各自 migration history 產生及檢查遷移，不跨環境複製 snapshot。
 - 新表必須先部署，才啟動新版本。退款／廣告流程也會使用新表，即使未啟用自動收益仍不能略過遷移。
 - Flutter 路徑、請求及既有回應不新增必要欄位；新資料放於獨立表及 admin API，避免共用 relation 將內部欄位送到 App。
 - `NO_CRON=true` 停用排程及啟動時補處理；API 事件觸發補款仍可執行。測試使用獨立拋棄式資料庫，不操作共享環境資料。
@@ -245,3 +245,9 @@ Summary 主要欄位：
 - [ ] 舊直接入金入口移除，新錢包交易類型有顯示文字；實際測試環境已部署對應後端及資料表。
 
 如 FE AI 同時能讀取後端專案，可交叉核對 `src/routers/admin/admin-seller-earnings.ts`、`src/middleware/admin/sellerEarnings.ts`、`src/routers/admin/admin-advertisement.ts` 與 `src/routers/admin/admin-refund.ts`；Swagger 位於 `/api-docs`。本文已提供獨立交付需要的規則，不要求 FE 複製後端資料庫或記帳程式。
+
+## 2026-11-17 dev 遷移驗證
+
+已將收益功能合併至 development，套用 dev 遷移後，以 PostgreSQL 系統目錄比對 local 與 dev：兩者皆為 76 張 public 資料表，欄位型別／預設值／可空性、主外鍵與檢查限制、索引、列舉值及其順序、檢視表、非內建觸發器與資料存取政策均一致。比較已排除 PostgreSQL 版本對 NOT NULL 的目錄表示差異，並以實際列舉順序取代內部排序數值。兩邊均無待套用的已登錄遷移。
+
+本次同步僅針對應用資料庫結構，未複製 local 訂單、帳戶、餘額或測試資料至 dev；各環境遷移歷史保留獨立。

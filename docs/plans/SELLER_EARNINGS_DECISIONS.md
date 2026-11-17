@@ -3,7 +3,7 @@
 Date: 2026-11-13 (Asia/Taipei)
 Last updated: 2026-11-17 (Asia/Taipei)
 
-Status as of 2026-11-17: implemented on feat/revenue-stat; local migrations applied and local earnings verified. No shared-environment migration or deployment has been performed.
+Status as of 2026-11-17: implemented and merged into development; local and dev migrations applied, local earnings verified, and application schema parity confirmed. The dev service has not been deployed/restarted in this task; stg and production remain unchanged.
 
 For the consolidated final business rules and the 11 new API routes, use the [11/17 decision summary and API appendix](SELLER_EARNINGS_MEETING_AGENDA_ZH_TW.md). For implemented request/response contracts, use the [FE integration document](../api/FE-confirmation/SELLER_EARNINGS_AND_AD_AUTOMATION.md). This document retains detailed discussion and investigation notes; historical “planned” or “not implemented” statements describe the earlier review, not current implementation status. Where older proposals differ, the consolidated summary and implemented FE contract take precedence.
 
@@ -327,7 +327,7 @@ Implemented route: `POST /api/admin/seller-earnings/:sellerId/adjustments`. Requ
 - Record these movements separately from sales, refunds, and withdrawals. They change wallet net funds, not historical product coin/cash sales totals, and incur no 10% commission. Expose them as separate adjustments in period reporting using the posting date.
 - Manual return-shipping charge: admin calculates the total and explicitly posts a decrease. Refund completion must not independently debit that same shipping amount. A correction can use an explicit increase instead of rewriting the old movement.
 - Confirmed adjustment allocation: admin explicitly enters coin/cash components. Increases clear debt first and release the remainder immediately, without a sales holding period or commission. Decreases consume the specified currency’s released funds, then its pending funds, followed by the agreed cross-currency offsets and debt rules. Cancel affected pending withdrawal requests when their composition can no longer be supported; preserve reservations for external payments already in progress. These independent accounting increases/decreases remain authorized; the request-review reduction-only rule does not prohibit them.
-- No buyer Flutter request/response changes. This admin API is implemented; local migrations are applied, while shared environments remain unchanged.
+- No buyer Flutter request/response changes. This admin API is implemented; local and dev migrations are applied, while stg and production remain unchanged.
 
 ### Existing direct-credit endpoint transition
 
