@@ -129,6 +129,25 @@ export async function preparePayment(input: {
   });
 }
 
+/** Persist verified ATM account issuance and remove checkout items only once. */
+export async function recordAtmPaymentInfo(attemptId: string, data: Record<string, string>) {
+  return db.transaction(async tx => {
+    const ref = await tx.query.orderPaymentAttemptTable.findFirst({ where: eq(schema.orderPaymentAttemptTable.id, attemptId) });
+    if (!ref) throw new CustomError("Payment attempt not found", 404);
+    const order = await lockOrder(tx, ref.orderId);
+    const [attempt] = await tx.select().from(schema.orderPaymentAttemptTable).where(eq(schema.orderPaymentAttemptTable.id, attemptId)).for("update");
+    if (attempt.state !== "prepared" || order.orderStatus !== "payment-processing") return;
+    if (attempt.method !== "ATM" || data.RtnCode !== "2") throw new CustomError("Invalid ATM account issuance notification", 400);
+    if ((order.paymentInfo as Record<string, unknown> | null)?.RtnCode === "2") return;
+    const items = await tx.select({ variantId: schema.orderItemTable.productVariantId }).from(schema.orderItemTable).where(eq(schema.orderItemTable.orderId, order.id));
+    if (items.length) await tx.delete(schema.cartItemTable).where(and(
+      eq(schema.cartItemTable.userId, order.userId),
+      inArray(schema.cartItemTable.productVariantId, items.map(item => item.variantId)),
+    ));
+    await tx.update(schema.orderTable).set({ paymentInfo: data }).where(eq(schema.orderTable.id, order.id));
+  });
+}
+
 /** Called only after the service verifies the provider signature. Capture before settlement. */
 export async function recordPaymentResult(data: Record<string, string>) {
   return db.transaction(async tx => {
