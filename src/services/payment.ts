@@ -5,7 +5,7 @@ import db from "../lib/initDB";
 import { CustomError } from "../lib/error";
 import { getBankNameFromCode } from "../lib/general";
 import { createDelivery } from "../repository/delivery";
-import { recordPaymentResult, settlePayment, recordAtmPaymentInfo } from "../repository/payment";
+import { recordPaymentResult, settlePayment, recordAtmPaymentInfo, reconcileUnpaidAtm } from "../repository/payment";
 import ecpayService from "./ecpay";
 import orderService from "./order";
 
@@ -94,6 +94,9 @@ export async function reconcileRecordedPayments() {
         checked++;
         await completePayment(recorded.id);
         settled++;
+      } else if (attempt.method === "ATM") {
+        if (await reconcileUnpaidAtm(attempt.id, data)) settled++;
+        checked++;
       }
     } catch (error) { logDiagnosticError("Payment status query requires retry", error, { paymentAttemptId: attempt.id }); }
     await db.update(schema.orderPaymentAttemptTable).set({ updatedAt: new Date() })

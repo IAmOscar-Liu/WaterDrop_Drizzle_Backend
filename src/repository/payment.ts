@@ -1,3 +1,4 @@
+import { atmPaymentDeadline } from "../lib/orderExpiry";
 import { randomBytes } from "node:crypto";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import * as schema from "../db/schema";
@@ -216,5 +217,41 @@ export async function settlePayment(attemptId: string) {
     await tx.update(schema.idempotencyKeyTable).set({ status: status === "paid" ? "completed" : "failed", responseData: result })
       .where(eq(schema.idempotencyKeyTable.key, attempt.idempotencyKey));
     return { order: result, replayed: false };
+  });
+}
+
+/** Called only with a signed, trade-bound provider query response. */
+export async function reconcileUnpaidAtm(attemptId: string, data: Record<string, string>, now = new Date()) {
+  return db.transaction(async tx => {
+    const ref = await tx.query.orderPaymentAttemptTable.findFirst({ where: eq(schema.orderPaymentAttemptTable.id, attemptId) });
+    if (!ref) throw new CustomError("Payment attempt not found", 404);
+    const order = await lockOrder(tx, ref.orderId);
+    const [attempt] = await tx.select().from(schema.orderPaymentAttemptTable).where(eq(schema.orderPaymentAttemptTable.id, attemptId)).for("update");
+    if (attempt.method !== "ATM" || attempt.state !== "prepared" || order.orderStatus !== "payment-processing") return false;
+    if (data.MerchantID !== process.env.MERCHANTID || data.MerchantTradeNo !== attempt.merchantTradeNo
+      || !/^\d+$/.test(data.TradeAmt ?? "") || Number(data.TradeAmt) !== attempt.amount
+      || data.SimulatePaid === "1") throw new CustomError("ATM query does not match checkout", 409);
+    if (data.TradeStatus !== "0") return false;
+    const info = order.paymentInfo as Record<string, unknown> | null;
+    const deadline = info?.RtnCode === "2" ? atmPaymentDeadline(info.ExpireDate) : null;
+    if (!deadline || now.getTime() < deadline.getTime()) return false;
+    const firstCheck = new Date(attempt.providerData?.atmUnpaidCheckedAt ?? "");
+    const priorDeadline = attempt.providerData?.atmExpiryDeadline;
+    if (!Number.isFinite(firstCheck.getTime()) || firstCheck < deadline || priorDeadline !== deadline.toISOString()) {
+      await tx.update(schema.orderPaymentAttemptTable).set({ providerData: {
+        ...data, atmUnpaidCheckedAt: now.toISOString(), atmExpiryDeadline: deadline.toISOString(),
+      } }).where(eq(schema.orderPaymentAttemptTable.id, attempt.id));
+      return false;
+    }
+    if (now.getTime() - firstCheck.getTime() < 10 * 60_000) return false;
+    // The same order/attempt locks serialize this release against success callbacks.
+    const result = await updateOrderStatusWithTx(tx, { orderId: order.id, status: "expired" }, undefined, attempt.id);
+    await tx.update(schema.orderPaymentAttemptTable).set({ state: "settled", providerData: {
+      ...data, atmUnpaidCheckedAt: firstCheck.toISOString(), atmExpiryDeadline: deadline.toISOString(),
+      atmExpiredAt: now.toISOString(), reconciliationSource: "expired_atm_unpaid_queries",
+    } }).where(eq(schema.orderPaymentAttemptTable.id, attempt.id));
+    await tx.update(schema.idempotencyKeyTable).set({ status: "failed", responseData: result })
+      .where(eq(schema.idempotencyKeyTable.key, attempt.idempotencyKey));
+    return true;
   });
 }
