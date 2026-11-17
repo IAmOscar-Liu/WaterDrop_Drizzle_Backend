@@ -91,7 +91,9 @@
     "_test:refund-strategy": "NODE_ENV=test NO_CRON=true tsx src/tests/refundStrategy.integration.ts",
     "test:payment-safety": "NODE_ENV=test tsx src/tests/runTestSuite.ts payment-safety",
     "_test:payment-safety": "NODE_ENV=test NO_CRON=true tsx src/tests/paymentSafety.integration.ts",
-    "test:error-handling": "tsx src/tests/errorHandling.integration.ts"
+    "test:error-handling": "tsx src/tests/errorHandling.integration.ts",
+    "test:seller-earnings": "NODE_ENV=test tsx src/tests/runTestSuite.ts seller-earnings",
+    "_test:seller-earnings": "NODE_ENV=test NO_CRON=true tsx src/tests/sellerEarnings.integration.ts"
   },
   "keywords": [],
   "author": "",

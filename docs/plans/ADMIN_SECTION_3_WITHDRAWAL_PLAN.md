@@ -5,6 +5,8 @@ Source: `docs/api/FE-confirmation/ADMIN_FE_CONFIRMATION_CHECKLIST.md`, Section 3
 
 Status: proposed; no runtime implementation has started.
 
+Discussion update (2026-11-13): see [seller earnings decisions](SELLER_EARNINGS_DECISIONS.md) for the agreed buyer surcharge, separate 10% seller commission, and delivery-cost ownership. That record supersedes conflicting fee proposals here. Remaining wallet architecture, release timing, history, and payout proposals below are not yet approved; this September source audit is historical.
+
 ## Conclusion
 
 Section 3 is not implemented. The project has a seller account wallet, but it

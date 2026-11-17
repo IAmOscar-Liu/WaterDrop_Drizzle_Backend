@@ -42,6 +42,8 @@ export const refundValidation = {
       note: z.string().optional().nullable(),
       message: nonEmptyString.optional(),
       extraRefundAmount: nonNegativeNumber.optional(),
+      reimburseOriginalShipping: z.boolean().optional(),
+      otherExtraRefundAmount: nonNegativeNumber.refine(v => Number.isSafeInteger(Math.round(v * 100)) && Number(v.toFixed(2)) === v, "At most two decimals").optional(),
       metadata: jsonObject.optional().nullable(),
     }).strict(),
   ),

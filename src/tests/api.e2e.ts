@@ -542,48 +542,21 @@ async function run() {
     );
     assert.equal(feeSettings.homeDeliveryRefrig, 100);
 
-    const sellerCredit = expectSuccess(
-      await request(`/api/admin/account-wallet/${seller.id}/credit`, {
-        method: "POST",
-        token: adminToken,
-        body: {
-          amount: "500.00",
-          idempotencyKey: `api-wallet-credit-${suffix}`,
-          reason: "Disposable API funding fixture",
-        },
-      }),
-    );
-    assert.equal(sellerCredit.wallet.walletBalance, "500.00");
-    assert.equal(sellerCredit.transaction.type, "admin_credit");
-    assert.equal(sellerCredit.transaction.balanceBefore, "0.00");
-    assert.equal(sellerCredit.transaction.balanceAfter, "500.00");
-
-    const replayedSellerCredit = expectSuccess(
-      await request(`/api/admin/account-wallet/${seller.id}/credit`, {
-        method: "POST",
-        token: adminToken,
-        body: {
-          amount: 500,
-          idempotencyKey: `api-wallet-credit-${suffix}`,
-          reason: "This metadata does not change the financial payload",
-        },
-      }),
-    );
-    assert.equal(replayedSellerCredit.idempotentReplay, true);
-    assert.equal(replayedSellerCredit.wallet.walletBalance, "500.00");
-
-    const conflictingCredit = await request(
-      `/api/admin/account-wallet/${seller.id}/credit`,
-      {
-        method: "POST",
-        token: adminToken,
-        body: {
-          amount: "501.00",
-          idempotencyKey: `api-wallet-credit-${suffix}`,
-        },
-      },
-    );
-    assert.equal(conflictingCredit.status, 409);
+    const retiredCredit = await request(`/api/admin/account-wallet/${seller.id}/credit`, {
+      method: "POST", token: adminToken, body: { amount: "500", idempotencyKey: `retired-${suffix}` },
+    });
+    assert.equal(retiredCredit.status, 410);
+    const depositRequest = expectSuccess(await request("/api/admin/seller-earnings/requests", {
+      method: "POST", token: sellerToken, body: { wallet: "advertising", direction: "deposit", cash: "500", coins: "0", idempotencyKey: `deposit-${suffix}` },
+    }));
+    const sellerCredit = expectSuccess(await request(`/api/admin/seller-earnings/requests/${depositRequest.id}`, {
+      method: "PATCH", token: adminToken, body: { action: "completed", reason: "Bank receipt confirmed" },
+    }));
+    assert.equal(sellerCredit.status, "completed");
+    const replayedSellerCredit = expectSuccess(await request(`/api/admin/seller-earnings/requests/${depositRequest.id}`, {
+      method: "PATCH", token: adminToken, body: { action: "completed", reason: "Bank receipt confirmed" },
+    }));
+    assert.equal(replayedSellerCredit.id, sellerCredit.id);
     const forbiddenSellerCredit = await request(
       `/api/admin/account-wallet/${seller.id}/credit`,
       {
@@ -607,7 +580,7 @@ async function run() {
         },
       },
     );
-    assert.equal(nonSellerCredit.status, 409);
+    assert.equal(nonSellerCredit.status, 410);
 
     const products = await db
       .insert(schema.productTable)
@@ -835,7 +808,8 @@ async function run() {
       }),
     );
     assert.equal(walletSummary.openingBalance, "0.00");
-    assert.equal(walletSummary.adminCredits, "500.00");
+    assert.equal(walletSummary.adminCredits, "0.00");
+    assert.equal(walletSummary.sellerDeposits, "500.00");
     assert.equal(walletSummary.advertisementFundingDebits, "-400.00");
     assert.equal(walletSummary.closingBalance, "100.00");
 

@@ -9,6 +9,8 @@ import {
 } from "./common";
 
 const transactionType = z.enum([
+  "seller_deposit",
+  "seller_withdrawal",
   "legacy_opening_balance",
   "admin_credit",
   "advertisement_funding_debit",

@@ -6,6 +6,10 @@ import validateZod from "../../middleware/validateZod";
 import { adminValidation } from "../../middleware/admin";
 
 const router = Router();
+router.post("/batch/budget", isAuth, validateZod({ body: adminValidation.advertisement.batchFundingBody }), AdvertisementController.batchFunding);
+router.patch("/batch/status", isAuth, validateZod({ body: adminValidation.advertisement.batchStatusBody }), AdvertisementController.batchStatus);
+router.get("/:id/auto-refill", isAuth, validateZod({ params: adminValidation.advertisement.idParams }), AdvertisementController.autoRefill);
+router.put("/:id/auto-refill", isAuth, validateZod({ params: adminValidation.advertisement.idParams, body: adminValidation.advertisement.autoRefillBody }), AdvertisementController.configureAutoRefill);
 router.get("/:id/budget-withdrawal-preview", isAuth, validateZod({ params: adminValidation.advertisement.idParams }), AdvertisementController.withdrawalPreview);
 router.post("/:id/budget-withdrawal", isAuth, validateZod({ params: adminValidation.advertisement.idParams, body: adminValidation.advertisement.withdrawalBody }), AdvertisementController.withdrawBudget);
 
@@ -585,6 +589,9 @@ router.get(
  *                       items:
  *                         type: object
  *                         properties:
+ *                           totalFundedAmount: { type: string, example: "1000.00", description: Lifetime wallet_funding plus legacy deposit; excludes transfers and returns }
+ *                           periodFundedAmount: { type: string, example: "500.00", description: Same funding types within inclusive startAt/endAt }
+ *                           periodViewSpend: { type: string, example: "150.00", description: View charges within inclusive startAt/endAt }
  *                           budgetWithdrawnAmount: { type: string, example: "300.00", description: Lifetime positive TWD withdrawal total }
  *                           periodBudgetWithdrawnAmount: { type: string, example: "100.00", description: Positive TWD withdrawal total within startAt/endAt }
  *                     page: { type: integer }
@@ -1658,4 +1665,376 @@ export default router;
  *           BALANCE_CHANGED, ZERO_BALANCE, INSUFFICIENT_AD_BALANCE, ADVERTISEMENT_NOT_FINANCIALLY_CLOSED,
  *           IDEMPOTENCY_CONFLICT or WITHDRAWAL_BLOCKED. Failure envelope includes success=false, statusCode,
  *           message and code.
+ */
+
+/**
+ * @swagger
+ * {
+ *   "/api/admin/advertisement/batch/budget": {
+ *     "post": {
+ *       "tags": [
+ *         "Advertisement"
+ *       ],
+ *       "summary": "Batch increase ad budgets",
+ *       "description": "Owner or admin; no employees. 1–100 distinct ads from one seller. All-or-nothing funding; one amount per item (repeat the same amount for uniform funding). Uses available advertising wallet only, excludes withdrawal reservations. Archived/closed ads rejected. Idempotency is scoped to actor and full sorted batch.",
+ *       "security": [
+ *         {
+ *           "bearerAuth": []
+ *         }
+ *       ],
+ *       "parameters": [],
+ *       "responses": {
+ *         "200": {
+ *           "description": "Successful operation",
+ *           "content": {
+ *             "application/json": {
+ *               "schema": {
+ *                 "type": "object",
+ *                 "properties": {
+ *                   "success": {
+ *                     "type": "boolean"
+ *                   },
+ *                   "data": {
+ *                     "type": "array",
+ *                     "items": {
+ *                       "type": "object",
+ *                       "description": "Existing ad budget response including walletTransaction and advertisementTransaction"
+ *                     }
+ *                   }
+ *                 }
+ *               }
+ *             }
+ *           }
+ *         },
+ *         "400": {
+ *           "description": "Invalid input or attempt to increase reviewed amounts"
+ *         },
+ *         "403": {
+ *           "description": "Seller scope or role denied"
+ *         },
+ *         "409": {
+ *           "description": "Insufficient available funds, debt, terminal state or idempotency conflict"
+ *         }
+ *       },
+ *       "requestBody": {
+ *         "required": true,
+ *         "content": {
+ *           "application/json": {
+ *             "schema": {
+ *               "type": "object",
+ *               "properties": {
+ *                 "items": {
+ *                   "type": "array",
+ *                   "minItems": 1,
+ *                   "maxItems": 100,
+ *                   "items": {
+ *                     "type": "object",
+ *                     "properties": {
+ *                       "advertisementId": {
+ *                         "type": "string",
+ *                         "format": "uuid"
+ *                       },
+ *                       "amount": {
+ *                         "type": "string",
+ *                         "pattern": "^(0|[1-9]\\d{0,11})(\\.\\d{1,2})?$",
+ *                         "example": "500.00"
+ *                       }
+ *                     },
+ *                     "required": [
+ *                       "advertisementId",
+ *                       "amount"
+ *                     ]
+ *                   }
+ *                 },
+ *                 "idempotencyKey": {
+ *                   "type": "string",
+ *                   "minLength": 8,
+ *                   "maxLength": 120
+ *                 }
+ *               },
+ *               "required": [
+ *                 "items",
+ *                 "idempotencyKey"
+ *               ]
+ *             }
+ *           }
+ *         }
+ *       }
+ *     }
+ *   },
+ *   "/api/admin/advertisement/batch/status": {
+ *     "patch": {
+ *       "tags": [
+ *         "Advertisement"
+ *       ],
+ *       "summary": "Batch activate or pause ads",
+ *       "description": "1–100 distinct ads. Per-item results; owner/admin only. Existing activation prerequisites apply; archived ads cannot be reactivated.",
+ *       "security": [
+ *         {
+ *           "bearerAuth": []
+ *         }
+ *       ],
+ *       "parameters": [],
+ *       "responses": {
+ *         "200": {
+ *           "description": "Successful operation",
+ *           "content": {
+ *             "application/json": {
+ *               "schema": {
+ *                 "type": "object",
+ *                 "properties": {
+ *                   "success": {
+ *                     "type": "boolean"
+ *                   },
+ *                   "data": {
+ *                     "type": "array",
+ *                     "items": {
+ *                       "type": "object",
+ *                       "properties": {
+ *                         "advertisementId": {
+ *                           "type": "string",
+ *                           "format": "uuid"
+ *                         },
+ *                         "success": {
+ *                           "type": "boolean"
+ *                         },
+ *                         "data": {
+ *                           "type": "object"
+ *                         },
+ *                         "statusCode": {
+ *                           "type": "integer"
+ *                         },
+ *                         "message": {
+ *                           "type": "string"
+ *                         }
+ *                       }
+ *                     }
+ *                   }
+ *                 }
+ *               }
+ *             }
+ *           }
+ *         },
+ *         "400": {
+ *           "description": "Invalid input or attempt to increase reviewed amounts"
+ *         },
+ *         "403": {
+ *           "description": "Seller scope or role denied"
+ *         },
+ *         "409": {
+ *           "description": "Insufficient available funds, debt, terminal state or idempotency conflict"
+ *         }
+ *       },
+ *       "requestBody": {
+ *         "required": true,
+ *         "content": {
+ *           "application/json": {
+ *             "schema": {
+ *               "type": "object",
+ *               "properties": {
+ *                 "advertisementIds": {
+ *                   "type": "array",
+ *                   "items": {
+ *                     "type": "string",
+ *                     "format": "uuid"
+ *                   },
+ *                   "minItems": 1,
+ *                   "maxItems": 100
+ *                 },
+ *                 "status": {
+ *                   "type": "string",
+ *                   "enum": [
+ *                     "active",
+ *                     "paused"
+ *                   ]
+ *                 }
+ *               },
+ *               "required": [
+ *                 "advertisementIds",
+ *                 "status"
+ *               ]
+ *             }
+ *           }
+ *         }
+ *       }
+ *     }
+ *   },
+ *   "/api/admin/advertisement/{id}/auto-refill": {
+ *     "get": {
+ *       "tags": [
+ *         "Advertisement"
+ *       ],
+ *       "summary": "Read ad automatic-refill settings",
+ *       "description": "Owner/admin only. Default disabled and amount 500.00.",
+ *       "security": [
+ *         {
+ *           "bearerAuth": []
+ *         }
+ *       ],
+ *       "parameters": [
+ *         {
+ *           "name": "id",
+ *           "in": "path",
+ *           "required": true,
+ *           "schema": {
+ *             "type": "string",
+ *             "format": "uuid"
+ *           }
+ *         }
+ *       ],
+ *       "responses": {
+ *         "200": {
+ *           "description": "Successful operation",
+ *           "content": {
+ *             "application/json": {
+ *               "schema": {
+ *                 "type": "object",
+ *                 "properties": {
+ *                   "success": {
+ *                     "type": "boolean"
+ *                   },
+ *                   "data": {
+ *                     "type": "object",
+ *                     "properties": {
+ *                       "advertisementId": {
+ *                         "type": "string",
+ *                         "format": "uuid"
+ *                       },
+ *                       "enabled": {
+ *                         "type": "boolean",
+ *                         "default": false
+ *                       },
+ *                       "amount": {
+ *                         "type": "string",
+ *                         "pattern": "^(0|[1-9]\\d{0,11})(\\.\\d{1,2})?$",
+ *                         "example": "500.00"
+ *                       },
+ *                       "waitingSince": {
+ *                         "type": "string",
+ *                         "format": "date-time",
+ *                         "nullable": true
+ *                       },
+ *                       "lastReason": {
+ *                         "type": "string",
+ *                         "nullable": true
+ *                       }
+ *                     }
+ *                   }
+ *                 }
+ *               }
+ *             }
+ *           }
+ *         },
+ *         "400": {
+ *           "description": "Invalid input or attempt to increase reviewed amounts"
+ *         },
+ *         "403": {
+ *           "description": "Seller scope or role denied"
+ *         },
+ *         "409": {
+ *           "description": "Insufficient available funds, debt, terminal state or idempotency conflict"
+ *         }
+ *       }
+ *     },
+ *     "put": {
+ *       "tags": [
+ *         "Advertisement"
+ *       ],
+ *       "summary": "Configure fixed-amount automatic refill",
+ *       "description": "Owner/admin only. Minimum NT$100; default NT$500 for a new setting. Omitted amount preserves existing amount. Fixed trigger balance < 100; exactly 100 does not trigger. No daily cap. Eligible active/depleted ads only, active product and seller. Full spendable wallet amount required; never use revenue or reserved funds. Events: view debit, completed wallet deposit, enabling/changing settings. No minute cron. Paused/archived/closed ads excluded.",
+ *       "security": [
+ *         {
+ *           "bearerAuth": []
+ *         }
+ *       ],
+ *       "parameters": [
+ *         {
+ *           "name": "id",
+ *           "in": "path",
+ *           "required": true,
+ *           "schema": {
+ *             "type": "string",
+ *             "format": "uuid"
+ *           }
+ *         }
+ *       ],
+ *       "responses": {
+ *         "200": {
+ *           "description": "Successful operation",
+ *           "content": {
+ *             "application/json": {
+ *               "schema": {
+ *                 "type": "object",
+ *                 "properties": {
+ *                   "success": {
+ *                     "type": "boolean"
+ *                   },
+ *                   "data": {
+ *                     "type": "object",
+ *                     "properties": {
+ *                       "advertisementId": {
+ *                         "type": "string",
+ *                         "format": "uuid"
+ *                       },
+ *                       "enabled": {
+ *                         "type": "boolean",
+ *                         "default": false
+ *                       },
+ *                       "amount": {
+ *                         "type": "string",
+ *                         "pattern": "^(0|[1-9]\\d{0,11})(\\.\\d{1,2})?$",
+ *                         "example": "500.00"
+ *                       },
+ *                       "waitingSince": {
+ *                         "type": "string",
+ *                         "format": "date-time",
+ *                         "nullable": true
+ *                       },
+ *                       "lastReason": {
+ *                         "type": "string",
+ *                         "nullable": true
+ *                       }
+ *                     }
+ *                   }
+ *                 }
+ *               }
+ *             }
+ *           }
+ *         },
+ *         "400": {
+ *           "description": "Invalid input or attempt to increase reviewed amounts"
+ *         },
+ *         "403": {
+ *           "description": "Seller scope or role denied"
+ *         },
+ *         "409": {
+ *           "description": "Insufficient available funds, debt, terminal state or idempotency conflict"
+ *         }
+ *       },
+ *       "requestBody": {
+ *         "required": true,
+ *         "content": {
+ *           "application/json": {
+ *             "schema": {
+ *               "type": "object",
+ *               "properties": {
+ *                 "enabled": {
+ *                   "type": "boolean"
+ *                 },
+ *                 "amount": {
+ *                   "type": "string",
+ *                   "pattern": "^(0|[1-9]\\d{0,11})(\\.\\d{1,2})?$",
+ *                   "example": "500.00"
+ *                 }
+ *               },
+ *               "required": [
+ *                 "enabled"
+ *               ]
+ *             }
+ *           }
+ *         }
+ *       }
+ *     }
+ *   }
+ * }
  */

@@ -1,3 +1,4 @@
+import { postPaidOrderRevenue } from "./sellerEarnings";
 import { refundEligibility } from "../lib/refundEligibility";
 import { paymentProcessingExpiryCutoff } from "../lib/orderExpiry";
 import {
@@ -732,6 +733,8 @@ export async function updateOrderStatusWithTx(tx: OrderTx, {
           : {}),
       })
       .where(eq(schema.orderTable.id, orderId));
+
+    if (status === "paid") await postPaidOrderRevenue(tx, orderId);
 
     if (status === "paid" && !order.completedAt) {
       await sendOrderFulfillmentFollowups(tx, order);

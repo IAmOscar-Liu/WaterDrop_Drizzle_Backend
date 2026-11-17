@@ -258,7 +258,8 @@ async function run() {
       (error: any) => error.statusCode === 400 && error.code === "VALIDATION_FAILED");
     await assert.rejects(updateProduct(product.id, { refundWindowDays: 0 }),
       (error: any) => error.statusCode === 400 && error.code === "VALIDATION_FAILED");
-    const deletedPolicyProduct = await request(`/api/admin/product/${createdProduct.data.data.id}`, seller.id, "DELETE");
+    assert.equal((await request(`/api/admin/product/${createdProduct.data.data.id}`, seller.id, "DELETE")).status, 403);
+    const deletedPolicyProduct = await request(`/api/admin/product/${createdProduct.data.data.id}`, admin.id, "DELETE");
     assert.equal(deletedPolicyProduct.status, 200);
     assert.ok(!("refundWindowHours" in deletedPolicyProduct.data.data));
     const retiredCreate = await request("/api/admin/product/create", seller.id, "POST", { ...createBody, refundWindowHours: 8 });

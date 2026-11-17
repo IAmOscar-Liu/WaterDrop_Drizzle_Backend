@@ -10,6 +10,7 @@
 
 ## Plans
 
+- [Seller earnings discussion and fee decisions (2026-11-13)](plans/SELLER_EARNINGS_DECISIONS.md)
 - [Coin ledger and seller return](plans/COIN_LEDGER_SELLER_RETURN_PLAN.md)
 - [DB repository tidy](plans/DB_REPOSITORY_TIDY_PLAN.md)
 - [Group join cycle prevention](plans/GROUP_JOIN_CYCLE_PLAN.md)

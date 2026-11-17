@@ -113,10 +113,24 @@ export async function listAdvertisementMetrics(input: AdvertisementMetricsInput)
     inArray(schema.advertisementTransactionTable.advertisementId, ids),
     eq(schema.advertisementTransactionTable.type, "budget_withdrawal"),
   )).groupBy(schema.advertisementTransactionTable.advertisementId) : [];
+  const funding = ids.length ? await db.select({
+    advertisementId: schema.advertisementTransactionTable.advertisementId,
+    total: sql<string>`coalesce(sum(${schema.advertisementTransactionTable.amount}::numeric),0)::numeric(18,2)::text`,
+    period: sql<string>`coalesce(sum(case when
+      (${input.startAt?.toISOString() ?? null}::timestamptz is null or ${schema.advertisementTransactionTable.createdAt} >= ${input.startAt?.toISOString() ?? null}::timestamptz)
+      and (${input.endAt?.toISOString() ?? null}::timestamptz is null or ${schema.advertisementTransactionTable.createdAt} <= ${input.endAt?.toISOString() ?? null}::timestamptz)
+      then ${schema.advertisementTransactionTable.amount}::numeric else 0 end),0)::numeric(18,2)::text`,
+  }).from(schema.advertisementTransactionTable).where(and(
+    inArray(schema.advertisementTransactionTable.advertisementId, ids),
+    inArray(schema.advertisementTransactionTable.type, ["wallet_funding", "deposit"]),
+  )).groupBy(schema.advertisementTransactionTable.advertisementId) : [];
+  const fundingMap = new Map(funding.map(row => [row.advertisementId, row]));
   const withdrawalMap = new Map(withdrawals.map((row) => [row.advertisementId, row]));
   return {
     advertisements: advertisements.map((row) => ({
       ...row,
+      totalFundedAmount: fundingMap.get(row.advertisement.id)?.total ?? "0.00",
+      periodFundedAmount: fundingMap.get(row.advertisement.id)?.period ?? "0.00",
       completedViewCount: aggregateMap.get(row.advertisement.id)?.completedViewCount ?? 0,
       periodViewSpend: aggregateMap.get(row.advertisement.id)?.periodViewSpend ?? "0.00",
       periodFundedCoinAmount:
