@@ -44,6 +44,7 @@ export const advertisementValidation = {
     sellerId: uuid.optional(),
     status: advertisementStatus.optional(),
     productStatus: z.enum(["active", "inactive"]).optional(),
+    search: z.string().trim().max(200).optional(),
   }),
   idParams,
   createBody: z.object({

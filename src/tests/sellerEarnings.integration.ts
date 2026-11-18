@@ -209,6 +209,24 @@ async function main(){
   assert.ok(activeProducts.advertisements.every(ad=>ad.product!.status==="active"));
   assert.equal((await listAdminAdvertisements({requesterId:other.id,productStatus:"inactive"})).total,0);
   assert.ok(spec.paths["/api/admin/advertisement/list"].get.parameters.some((p:any)=>p.name==="productStatus"));
+  assert.equal(advertisementValidation.listQuery.safeParse({search:"a".repeat(201)}).success,false);
+  assert.equal(advertisementValidation.listQuery.safeParse({search:["one","two"]}).success,false);
+  assert.equal(advertisementValidation.listQuery.parse({search:"  filter  "}).search,"filter");
+  const searchPage = await listAdminAdvertisements({requesterId:seller.id,search:"  INACTIVE FILTER  ",status:"active",productStatus:"inactive",limit:1});
+  assert.equal(searchPage.total,2);
+  assert.equal(searchPage.totalPages,2);
+  assert.equal(searchPage.advertisements.length,1);
+  const searchNext = await listAdminAdvertisements({requesterId:seller.id,search:"inactive filter",status:"active",productStatus:"inactive",limit:1,page:2});
+  assert.notEqual(searchPage.advertisements[0].id,searchNext.advertisements[0].id);
+  const titleSearch = await listAdminAdvertisements({requesterId:admin.id,sellerId:seller.id,search:"FILTER-3"});
+  assert.equal(titleSearch.total,1);
+  assert.equal(titleSearch.advertisements[0].id,filterAds[2].id);
+  assert.equal((await listAdminAdvertisements({requesterId:other.id,search:"filter"})).total,0);
+  assert.equal((await listAdminAdvertisements({requesterId:seller.id,search:"no-such-ad-name"})).total,0);
+  assert.equal((await listAdminAdvertisements({requesterId:seller.id,search:"   ",productStatus:"inactive"})).total,3);
+  await db.update(s.advertisementTable).set({title:"literal 50%_offer"}).where(eq(s.advertisementTable.id,filterAds[0].id));
+  assert.equal((await listAdminAdvertisements({requesterId:seller.id,search:"%_"})).total,1,"SQL wildcard characters are literal");
+  assert.ok(spec.paths["/api/admin/advertisement/list"].get.parameters.some((p:any)=>p.name==="search"));
   console.log("Seller earnings, wallet requests and advertising automation tests passed");
 }
 main().then(()=>client.end()).catch(async error=>{console.error(error);await client.end();process.exitCode=1;});

@@ -1,4 +1,4 @@
-import { SQL, and, count, eq, gte, inArray, lte, not, sql } from "drizzle-orm";
+import { SQL, and, count, eq, gte, ilike, inArray, lte, not, or, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
 import * as schema from "../db/schema";
@@ -397,6 +397,7 @@ export interface ListAdminAdvertisementsParams extends PaginationParams {
   sellerId?: string;
   status?: schema.AdvertisementStats["status"];
   productStatus?: schema.Product["status"];
+  search?: string;
 }
 
 /**
@@ -411,14 +412,21 @@ export async function listAdminAdvertisements({
   sellerId,
   status,
   productStatus,
+  search,
 }: ListAdminAdvertisementsParams) {
   const pagination = getPagination(page, limit);
 
   const scope = await resolveAdminSellerScope(requesterId, sellerId);
+  const keyword = search?.trim();
+  const searchPattern = keyword ? `%${keyword.replace(/[\\%_]/g, "\\$&")}%` : undefined;
   const whereClause = compactConditions([
     scope.sellerId ? eq(schema.productTable.sellerId, scope.sellerId) : undefined,
     status ? eq(schema.advertisementStatsTable.status, status) : undefined,
     productStatus ? eq(schema.productTable.status, productStatus) : undefined,
+    searchPattern ? or(
+      ilike(schema.advertisementTable.title, searchPattern),
+      ilike(schema.productTable.name, searchPattern),
+    ) : undefined,
   ]);
 
   const [totalResult, results] = await Promise.all([

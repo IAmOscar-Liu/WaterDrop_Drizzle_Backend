@@ -294,3 +294,9 @@ GET /api/admin/advertisement/list?status=active&productStatus=inactive&page=1&li
 ```
 
 此例查詢投放設定啟用、但商品已下架的廣告；商品下架時不會實際投放。軟刪除商品不會被排除，依資料庫的 `product.status` 篩選，FE 可額外用 `product.deletedAt` 標示已刪除。已封存廣告同樣可依商品狀態篩選，並用 `financiallyClosedAt` 區分結清中與已結清。
+
+列表亦支援選填 `search`（去除頭尾空白後最多 200 字元），不分英文大小寫，以包含關鍵字比對「廣告標題或商品名稱」。空字串／全空白等同不篩選；`%`、`_` 為一般文字，不是萬用字元。搜尋與 `status`、`productStatus`、`sellerId` 同時套用，分頁總數亦一致。FE 請 URL encode 關鍵字並在修改搜尋時重設 `page=1`。
+
+```http
+GET /api/admin/advertisement/list?search=Netflix&status=active&productStatus=inactive&page=1&limit=20
+```

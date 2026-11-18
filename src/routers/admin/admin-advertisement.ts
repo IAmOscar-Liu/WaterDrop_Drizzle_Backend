@@ -554,6 +554,11 @@ router.post("/:id/budget-withdrawal", isAuth, validateZod({ params: adminValidat
  *           type: string
  *           enum: [active, inactive]
  *         description: Filter by the associated product status, combined with ad status using AND. Omit for all product statuses; all is not supported. Soft-deleted products are not excluded and retain their stored product status. Pagination totals apply both filters.
+ *       - in: query
+ *         name: search
+ *         required: false
+ *         schema: { type: string, maxLength: 200 }
+ *         description: Case-insensitive literal substring search across advertisement title or product name. Trimmed; blank means no search filter. Percent and underscore are literal characters. Combines with all other filters and pagination totals.
  *     responses:
  *       '400':
  *         description: Invalid status or pagination query.
