@@ -396,6 +396,7 @@ export interface ListAdminAdvertisementsParams extends PaginationParams {
   requesterId: string;
   sellerId?: string;
   status?: schema.AdvertisementStats["status"];
+  productStatus?: schema.Product["status"];
 }
 
 /**
@@ -409,6 +410,7 @@ export async function listAdminAdvertisements({
   requesterId,
   sellerId,
   status,
+  productStatus,
 }: ListAdminAdvertisementsParams) {
   const pagination = getPagination(page, limit);
 
@@ -416,6 +418,7 @@ export async function listAdminAdvertisements({
   const whereClause = compactConditions([
     scope.sellerId ? eq(schema.productTable.sellerId, scope.sellerId) : undefined,
     status ? eq(schema.advertisementStatsTable.status, status) : undefined,
+    productStatus ? eq(schema.productTable.status, productStatus) : undefined,
   ]);
 
   const [totalResult, results] = await Promise.all([

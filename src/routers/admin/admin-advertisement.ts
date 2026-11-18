@@ -547,6 +547,13 @@ router.post("/:id/budget-withdrawal", isAuth, validateZod({ params: adminValidat
  *           type: string
  *           enum: [active, paused, depleted, archived]
  *         description: Filter by one exact status. Omit for all statuses; status=all is not supported.
+ *       - in: query
+ *         name: productStatus
+ *         required: false
+ *         schema:
+ *           type: string
+ *           enum: [active, inactive]
+ *         description: Filter by the associated product status, combined with ad status using AND. Omit for all product statuses; all is not supported. Soft-deleted products are not excluded and retain their stored product status. Pagination totals apply both filters.
  *     responses:
  *       '400':
  *         description: Invalid status or pagination query.

@@ -43,6 +43,7 @@ export const advertisementValidation = {
   listQuery: paginationQuery.extend({
     sellerId: uuid.optional(),
     status: advertisementStatus.optional(),
+    productStatus: z.enum(["active", "inactive"]).optional(),
   }),
   idParams,
   createBody: z.object({

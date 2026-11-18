@@ -282,3 +282,15 @@ FE 在廣告列表多選操作增加「設定自動補款」，顯示開關、�
 此值只代表設定，不代表廣告目前符合補款資格或已成功扣款；暫停的廣告仍可能設定為 true。需要每次補款金額或等待原因時，仍查詢 `GET /api/admin/advertisement/:id/auto-refill`。修改設定後刷新列表與詳情。原分頁、權限與其他欄位不變，不影響 Flutter API，無需資料庫遷移。
 
 上述列表與單筆詳情亦包含頂層 `autoRefillAmount: string`，表示每次自動補款的設定金額（台幣，例如 `"500.00"`）。關閉時仍回傳保留的設定金額；尚未設定時回傳預設 `"500.00"`。此值不是廣告目前餘額，也不是已補款金額。
+
+### 廣告列表：投放狀態與商品狀態篩選
+
+`GET /api/admin/advertisement/list` 支援選填 `productStatus=active|inactive`，可與 `status=active|paused|depleted|archived` 組合（AND）。查詢全部時省略對應參數，不傳 `all`。賣家權限範圍不變，`total`、`totalPages` 與列表套用相同條件。
+
+主頁籤使用廣告狀態：全部／啟用中／已暫停／預算不足／已封存。每個主頁籤下可設全部商品／商品上架中／商品已下架子頁籤。切換篩選時重設 `page=1`，不要只對當頁資料自行分類。`total` 是當前篩選組合的筆數，並非所有頁籤的統計。
+
+```http
+GET /api/admin/advertisement/list?status=active&productStatus=inactive&page=1&limit=20
+```
+
+此例查詢投放設定啟用、但商品已下架的廣告；商品下架時不會實際投放。軟刪除商品不會被排除，依資料庫的 `product.status` 篩選，FE 可額外用 `product.deletedAt` 標示已刪除。已封存廣告同樣可依商品狀態篩選，並用 `financiallyClosedAt` 區分結清中與已結清。

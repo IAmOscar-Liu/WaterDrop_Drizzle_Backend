@@ -182,6 +182,33 @@ async function main(){
     assert.equal(disabledList.advertisements.find(item => item.id === ad.id)!.autoRefillAmount, "100.00");
     assert.equal(setting.enabled,false); assert.equal(setting.amount,"100.00","Omitted amount preserves prior configuration");
   }
+  for (const value of ["active", "inactive"]) {
+    assert.equal(advertisementValidation.listQuery.safeParse({productStatus:value}).success, true);
+  }
+  for (const value of ["all", "archived", "", ["active", "inactive"]]) {
+    assert.equal(advertisementValidation.listQuery.safeParse({productStatus:value}).success, false);
+  }
+  const [inactiveProduct] = await db.insert(s.productTable).values({sellerId:seller.id,name:"inactive filter fixture",description:"test",status:"inactive",deletedAt:new Date()}).returning();
+  const filterAds = await db.insert(s.advertisementTable).values([1,2,3].map(i=>({productId:inactiveProduct.id,title:`filter-${i}`,video_url:"https://example.test/a.mp4"}))).returning();
+  await db.insert(s.advertisementStatsTable).values(filterAds.map((ad,i)=>({advertisementId:ad.id,status:i===2?"archived" as const:"active" as const})));
+  const filtered = await listAdminAdvertisements({requesterId:seller.id,status:"active",productStatus:"inactive",limit:1});
+  assert.equal(filtered.total,2);
+  assert.equal(filtered.totalPages,2);
+  assert.equal(filtered.advertisements.length,1);
+  assert.equal(filtered.advertisements[0].product!.status,"inactive");
+  assert.ok(filtered.advertisements[0].product!.deletedAt, "Soft-deleted products remain queryable");
+  const nextPage = await listAdminAdvertisements({requesterId:seller.id,status:"active",productStatus:"inactive",limit:1,page:2});
+  assert.equal(nextPage.total,2);
+  assert.notEqual(nextPage.advertisements[0].id,filtered.advertisements[0].id);
+  assert.equal((await listAdminAdvertisements({requesterId:seller.id,productStatus:"inactive"})).total,3);
+  const archivedFiltered = await listAdminAdvertisements({requesterId:admin.id,sellerId:seller.id,status:"archived",productStatus:"inactive"});
+  assert.equal(archivedFiltered.total,1);
+  assert.equal(archivedFiltered.advertisements[0].id,filterAds[2].id);
+  const activeProducts = await listAdminAdvertisements({requesterId:seller.id,productStatus:"active"});
+  assert.ok(activeProducts.total > 0);
+  assert.ok(activeProducts.advertisements.every(ad=>ad.product!.status==="active"));
+  assert.equal((await listAdminAdvertisements({requesterId:other.id,productStatus:"inactive"})).total,0);
+  assert.ok(spec.paths["/api/admin/advertisement/list"].get.parameters.some((p:any)=>p.name==="productStatus"));
   console.log("Seller earnings, wallet requests and advertising automation tests passed");
 }
 main().then(()=>client.end()).catch(async error=>{console.error(error);await client.end();process.exitCode=1;});

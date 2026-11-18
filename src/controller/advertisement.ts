@@ -53,13 +53,14 @@ class AdvertisementController {
     req: RequestWithId,
     res: Response,
   ): Promise<any> {
-    const { page, limit, sellerId, status } = req.query;
+    const { page, limit, sellerId, status, productStatus } = req.query;
     const result = await advertisementService.listAdminAdvertisements({
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
       requesterId: req.userId ?? "",
       sellerId: sellerId ? String(sellerId) : undefined,
       status: status as ListAdminAdvertisementsParams["status"],
+      productStatus: productStatus as ListAdminAdvertisementsParams["productStatus"],
     });
     sendJsonResponse(res, result);
   }
