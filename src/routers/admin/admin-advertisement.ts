@@ -148,7 +148,15 @@ router.post("/:id/budget-withdrawal", isAuth, validateZod({ params: adminValidat
  *         advertisements:
  *           type: array
  *           items:
- *             $ref: '#/components/schemas/AdvertisementWithProductAndStats'
+ *             allOf:
+ *               - $ref: '#/components/schemas/AdvertisementWithProductAndStats'
+ *               - type: object
+ *                 required: [autoRefill]
+ *                 properties:
+ *                   autoRefill:
+ *                     type: boolean
+ *                     default: false
+ *                     description: Whether automatic refill is enabled; false when no setting exists. Does not indicate successful funding or eligibility.
  *         total:
  *           type: integer
  *         page:

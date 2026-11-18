@@ -441,6 +441,10 @@ export async function listAdminAdvertisements({
         ),
       )
       .where(whereClause)
+      .leftJoin(
+        schema.adAutoRefillTable,
+        eq(schema.advertisementTable.id, schema.adAutoRefillTable.advertisementId),
+      )
       .limit(pagination.limit)
       .offset(pagination.offset)
       .orderBy(() => [sql`${schema.advertisementTable.createdAt} desc`]),
@@ -480,6 +484,7 @@ export async function listAdminAdvertisements({
         )
       : r.products,
     stats: r.advertisement_stats,
+    autoRefill: r.ad_auto_refills?.enabled ?? false,
   }));
 
   return {

@@ -11,7 +11,7 @@ import { units, earningsHoldMs } from "../lib/earningsMoney";
 import { adjustRevenue, earningsSummary, postPaidOrderRevenue, postRefundRevenue, releaseSellerEarnings } from "../repository/sellerEarnings";
 import { createWalletRequest, reviewWalletRequest } from "../repository/walletRequest";
 import { batchFundAds, attemptAutoRefill, setAutoRefill, retrySellerAutoRefills } from "../repository/adAutomation";
-import { depositAdBalance, spendAdBalanceWithTx } from "../repository/advertisement";
+import { depositAdBalance, spendAdBalanceWithTx, listAdminAdvertisements } from "../repository/advertisement";
 import { listAdvertisementMetrics } from "../repository/advertisementReport";
 import { shippingSummary, updateShippingClaim, reverseShippingSubsidy } from "../repository/shippingReimbursement";
 
@@ -59,6 +59,11 @@ async function main(){
   assert.equal((await db.query.advertisementStatsTable.findFirst({where:eq(s.advertisementStatsTable.advertisementId,ads[0].id)}))!.status,"paused");
   await retrySellerAutoRefills(seller.id);
   assert.equal((await db.query.accountWalletTable.findFirst({where:eq(s.accountWalletTable.accountId,seller.id)}))!.walletBalance,"600.00");
+  const adList = await listAdminAdvertisements({ requesterId: seller.id });
+  assert.equal(adList.total, 2);
+  assert.equal(adList.advertisements.find(ad => ad.id === ads[0].id)!.autoRefill, true, "Paused ad still exposes its enabled setting");
+  assert.equal(adList.advertisements.find(ad => ad.id === ads[1].id)!.autoRefill, false, "No setting defaults to false");
+  assert.equal((await listAdminAdvertisements({ requesterId: other.id })).total, 0);
   const metrics=await listAdvertisementMetrics({requesterId:seller.id});
   assert.equal(metrics.advertisements.find(a=>a.advertisement.id===ads[0].id)!.totalFundedAmount,"700.00");
   const [buyer]=await db.insert(s.userTable).values({email:`${randomUUID()}@test.invalid`,oauthProvider:"other",oauthId:randomUUID(),referralCode:randomUUID()}).returning();
@@ -161,6 +166,8 @@ async function main(){
   assert.ok(denied.data.every(r=>!r.success));
   const disabled = await advertisementService.batchAutoRefill(admin.id,{advertisementIds:settingsAds.map(a=>a.id),enabled:false});
   assert.ok(disabled.data.every(r=>r.success));
+  const disabledList = await listAdminAdvertisements({ requesterId: admin.id, sellerId: seller.id });
+  assert.ok(disabledList.advertisements.filter(ad => settingsAds.some(a => a.id === ad.id)).every(ad => ad.autoRefill === false));
   for (const ad of settingsAds) {
     const setting = (await db.query.adAutoRefillTable.findFirst({where:eq(s.adAutoRefillTable.advertisementId,ad.id)}))!;
     assert.equal(setting.enabled,false); assert.equal(setting.amount,"100.00","Omitted amount preserves prior configuration");
