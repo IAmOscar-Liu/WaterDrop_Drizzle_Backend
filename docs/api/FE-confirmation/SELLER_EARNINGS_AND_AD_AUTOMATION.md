@@ -275,8 +275,8 @@ FE 在廣告列表多選操作增加「設定自動補款」，顯示開關、�
 
 本次同步僅針對應用資料庫結構，未複製 local 訂單、帳戶、餘額或測試資料至 dev；各環境遷移歷史保留獨立。
 
-## 廣告列表自動補款開關（2026-11-18）
+## 廣告列表與單筆詳情自動補款開關（2026-11-18）
 
-`GET /api/admin/advertisement/list` 的 `data.advertisements[]` 每筆新增頂層 `autoRefill: boolean`：true 表示設定已開啟，false 表示關閉或尚未設定。FE 可直接顯示開關狀態，無須逐則查詢。
+`GET /api/admin/advertisement/list` 的 `data.advertisements[]` 每筆，以及 `GET /api/admin/advertisement/:id` 的 `data`，均包含頂層 `autoRefill: boolean`：true 表示設定已開啟，false 表示關閉或尚未設定。FE 可直接顯示開關狀態，無須逐則查詢。
 
-此值只代表設定，不代表廣告目前符合補款資格或已成功扣款；暫停的廣告仍可能設定為 true。需要每次補款金額或等待原因時，仍查詢 `GET /api/admin/advertisement/:id/auto-refill`。修改設定後刷新列表。原分頁、權限與其他欄位不變，不影響 Flutter API，無需資料庫遷移。
+此值只代表設定，不代表廣告目前符合補款資格或已成功扣款；暫停的廣告仍可能設定為 true。需要每次補款金額或等待原因時，仍查詢 `GET /api/admin/advertisement/:id/auto-refill`。修改設定後刷新列表與詳情。原分頁、權限與其他欄位不變，不影響 Flutter API，無需資料庫遷移。

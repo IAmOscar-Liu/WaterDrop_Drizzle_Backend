@@ -155,8 +155,9 @@ export async function getAdvertisement(
     },
   });
 
-  if (!advertisement?.product) {
-    return advertisement;
+  if (!advertisement) return undefined;
+  if (!advertisement.product) {
+    throw new CustomError("Advertisement product not found", 404);
   }
   if (requesterId) {
     const scope = await resolveAdminSellerScope(requesterId);
@@ -165,9 +166,15 @@ export async function getAdvertisement(
     }
   }
 
+  const refillSetting = await db.query.adAutoRefillTable.findFirst({
+    where: eq(schema.adAutoRefillTable.advertisementId, advertisementId),
+    columns: { enabled: true },
+  });
+
   return {
     ...advertisement,
     product: withProductVariantAggregates(advertisement.product),
+    autoRefill: refillSetting?.enabled ?? false,
   };
 }
 

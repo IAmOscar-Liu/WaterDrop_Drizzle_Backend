@@ -673,7 +673,15 @@ router.get(
  *                 success:
  *                   type: boolean
  *                 data:
- *                   $ref: '#/components/schemas/AdvertisementWithProductAndDetails'
+ *                   allOf:
+ *                     - $ref: '#/components/schemas/AdvertisementWithProductAndDetails'
+ *                     - type: object
+ *                       required: [autoRefill]
+ *                       properties:
+ *                         autoRefill:
+ *                           type: boolean
+ *                           default: false
+ *                           description: Whether automatic refill is enabled; false when no setting exists. Does not indicate funding eligibility or success.
  */
 router.get(
   "/:id",

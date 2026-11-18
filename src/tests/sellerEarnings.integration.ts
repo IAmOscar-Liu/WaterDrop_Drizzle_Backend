@@ -11,7 +11,7 @@ import { units, earningsHoldMs } from "../lib/earningsMoney";
 import { adjustRevenue, earningsSummary, postPaidOrderRevenue, postRefundRevenue, releaseSellerEarnings } from "../repository/sellerEarnings";
 import { createWalletRequest, reviewWalletRequest } from "../repository/walletRequest";
 import { batchFundAds, attemptAutoRefill, setAutoRefill, retrySellerAutoRefills } from "../repository/adAutomation";
-import { depositAdBalance, spendAdBalanceWithTx, listAdminAdvertisements } from "../repository/advertisement";
+import { depositAdBalance, spendAdBalanceWithTx, listAdminAdvertisements, getAdvertisement } from "../repository/advertisement";
 import { listAdvertisementMetrics } from "../repository/advertisementReport";
 import { shippingSummary, updateShippingClaim, reverseShippingSubsidy } from "../repository/shippingReimbursement";
 
@@ -61,6 +61,9 @@ async function main(){
   assert.equal((await db.query.accountWalletTable.findFirst({where:eq(s.accountWalletTable.accountId,seller.id)}))!.walletBalance,"600.00");
   const adList = await listAdminAdvertisements({ requesterId: seller.id });
   assert.equal(adList.total, 2);
+  assert.equal((await getAdvertisement(ads[0].id, seller.id))!.autoRefill, true);
+  assert.equal((await getAdvertisement(ads[1].id, seller.id))!.autoRefill, false);
+  await assert.rejects(getAdvertisement(ads[0].id, other.id), /another seller/);
   assert.equal(adList.advertisements.find(ad => ad.id === ads[0].id)!.autoRefill, true, "Paused ad still exposes its enabled setting");
   assert.equal(adList.advertisements.find(ad => ad.id === ads[1].id)!.autoRefill, false, "No setting defaults to false");
   assert.equal((await listAdminAdvertisements({ requesterId: other.id })).total, 0);
@@ -170,6 +173,7 @@ async function main(){
   assert.ok(disabledList.advertisements.filter(ad => settingsAds.some(a => a.id === ad.id)).every(ad => ad.autoRefill === false));
   for (const ad of settingsAds) {
     const setting = (await db.query.adAutoRefillTable.findFirst({where:eq(s.adAutoRefillTable.advertisementId,ad.id)}))!;
+    assert.equal((await getAdvertisement(ad.id, admin.id))!.autoRefill, false);
     assert.equal(setting.enabled,false); assert.equal(setting.amount,"100.00","Omitted amount preserves prior configuration");
   }
   console.log("Seller earnings, wallet requests and advertising automation tests passed");
