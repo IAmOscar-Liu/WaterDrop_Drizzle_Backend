@@ -63,6 +63,10 @@ async function main(){
   assert.equal(adList.total, 2);
   assert.equal((await getAdvertisement(ads[0].id, seller.id))!.autoRefill, true);
   assert.equal((await getAdvertisement(ads[1].id, seller.id))!.autoRefill, false);
+  for (const ad of ads) {
+    assert.equal((await getAdvertisement(ad.id, seller.id))!.autoRefillAmount, "500.00");
+    assert.equal(adList.advertisements.find(item => item.id === ad.id)!.autoRefillAmount, "500.00");
+  }
   await assert.rejects(getAdvertisement(ads[0].id, other.id), /another seller/);
   assert.equal(adList.advertisements.find(ad => ad.id === ads[0].id)!.autoRefill, true, "Paused ad still exposes its enabled setting");
   assert.equal(adList.advertisements.find(ad => ad.id === ads[1].id)!.autoRefill, false, "No setting defaults to false");
@@ -174,6 +178,8 @@ async function main(){
   for (const ad of settingsAds) {
     const setting = (await db.query.adAutoRefillTable.findFirst({where:eq(s.adAutoRefillTable.advertisementId,ad.id)}))!;
     assert.equal((await getAdvertisement(ad.id, admin.id))!.autoRefill, false);
+    assert.equal((await getAdvertisement(ad.id, admin.id))!.autoRefillAmount, "100.00");
+    assert.equal(disabledList.advertisements.find(item => item.id === ad.id)!.autoRefillAmount, "100.00");
     assert.equal(setting.enabled,false); assert.equal(setting.amount,"100.00","Omitted amount preserves prior configuration");
   }
   console.log("Seller earnings, wallet requests and advertising automation tests passed");

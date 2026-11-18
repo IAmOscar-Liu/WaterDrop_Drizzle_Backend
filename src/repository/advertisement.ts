@@ -168,13 +168,14 @@ export async function getAdvertisement(
 
   const refillSetting = await db.query.adAutoRefillTable.findFirst({
     where: eq(schema.adAutoRefillTable.advertisementId, advertisementId),
-    columns: { enabled: true },
+    columns: { enabled: true, amount: true },
   });
 
   return {
     ...advertisement,
     product: withProductVariantAggregates(advertisement.product),
     autoRefill: refillSetting?.enabled ?? false,
+    autoRefillAmount: refillSetting?.amount ?? "500.00",
   };
 }
 
@@ -492,6 +493,7 @@ export async function listAdminAdvertisements({
       : r.products,
     stats: r.advertisement_stats,
     autoRefill: r.ad_auto_refills?.enabled ?? false,
+    autoRefillAmount: r.ad_auto_refills?.amount ?? "500.00",
   }));
 
   return {

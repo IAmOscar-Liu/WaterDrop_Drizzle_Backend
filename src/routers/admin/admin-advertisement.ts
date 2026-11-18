@@ -151,12 +151,16 @@ router.post("/:id/budget-withdrawal", isAuth, validateZod({ params: adminValidat
  *             allOf:
  *               - $ref: '#/components/schemas/AdvertisementWithProductAndStats'
  *               - type: object
- *                 required: [autoRefill]
+ *                 required: [autoRefill, autoRefillAmount]
  *                 properties:
  *                   autoRefill:
  *                     type: boolean
  *                     default: false
  *                     description: Whether automatic refill is enabled; false when no setting exists. Does not indicate successful funding or eligibility.
+ *                   autoRefillAmount:
+ *                     type: string
+ *                     example: "500.00"
+ *                     description: Configured refill amount per operation in TWD, retained when disabled; defaults to "500.00" when no setting exists.
  *         total:
  *           type: integer
  *         page:
@@ -676,12 +680,16 @@ router.get(
  *                   allOf:
  *                     - $ref: '#/components/schemas/AdvertisementWithProductAndDetails'
  *                     - type: object
- *                       required: [autoRefill]
+ *                       required: [autoRefill, autoRefillAmount]
  *                       properties:
  *                         autoRefill:
  *                           type: boolean
  *                           default: false
  *                           description: Whether automatic refill is enabled; false when no setting exists. Does not indicate funding eligibility or success.
+ *                         autoRefillAmount:
+ *                           type: string
+ *                           example: "500.00"
+ *                           description: Configured refill amount per operation in TWD, retained when disabled; defaults to "500.00" when no setting exists.
  */
 router.get(
   "/:id",
