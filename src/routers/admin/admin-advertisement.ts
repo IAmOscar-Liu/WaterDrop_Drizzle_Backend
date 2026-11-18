@@ -6,6 +6,7 @@ import validateZod from "../../middleware/validateZod";
 import { adminValidation } from "../../middleware/admin";
 
 const router = Router();
+router.put("/batch/auto-refill", isAuth, validateZod({ body: adminValidation.advertisement.batchAutoRefillBody }), AdvertisementController.batchAutoRefill);
 router.post("/batch/budget", isAuth, validateZod({ body: adminValidation.advertisement.batchFundingBody }), AdvertisementController.batchFunding);
 router.patch("/batch/status", isAuth, validateZod({ body: adminValidation.advertisement.batchStatusBody }), AdvertisementController.batchStatus);
 router.get("/:id/auto-refill", isAuth, validateZod({ params: adminValidation.advertisement.idParams }), AdvertisementController.autoRefill);
@@ -1941,7 +1942,7 @@ export default router;
  *         "Advertisement"
  *       ],
  *       "summary": "Configure fixed-amount automatic refill",
- *       "description": "Owner/admin only. Minimum NT$100; default NT$500 for a new setting. Omitted amount preserves existing amount. Fixed trigger balance < 100; exactly 100 does not trigger. No daily cap. Eligible active/depleted ads only, active product and seller. Full spendable wallet amount required; never use revenue or reserved funds. Events: view debit, completed wallet deposit, enabling/changing settings. No minute cron. Paused/archived/closed ads excluded.",
+ *       "description": "Owner/admin only. Minimum NT$100; technical maximum NT$90071992547409.91, at most two decimal places; no separate business maximum; default NT$500 for a new setting. Omitted amount preserves existing amount. Fixed trigger balance < 100; exactly 100 does not trigger. No daily cap. Eligible active/depleted ads only, active product and seller. Full spendable wallet amount required; never use revenue or reserved funds. Events: view debit, completed wallet deposit, enabling/changing settings. No minute cron. Paused/archived/closed ads excluded.",
  *       "security": [
  *         {
  *           "bearerAuth": []
@@ -2037,4 +2038,66 @@ export default router;
  *     }
  *   }
  * }
+ */
+
+/**
+ * @swagger
+ * /api/admin/advertisement/batch/auto-refill:
+ *   put:
+ *     tags: [Advertisement]
+ *     summary: Batch configure automatic ad refill
+ *     description: Owner or admin; employees denied per item. Applies common settings to 1–100 distinct ads in request order, returning individual results without rolling back successful items. Admins may operate ads belonging to different sellers. Omitted amount preserves each existing setting, or defaults to 500 for new settings. Enabling may immediately debit the owning seller's advertising wallet if eligible and balance is below 100. Success means settings saved, not necessarily funds transferred; inspect lastReason and refresh balances. Repeated requests recheck balances and may trigger another refill if funds have since been spent.
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [advertisementIds, enabled]
+ *             additionalProperties: false
+ *             properties:
+ *               advertisementIds:
+ *                 type: array
+ *                 minItems: 1
+ *                 maxItems: 100
+ *                 uniqueItems: true
+ *                 items: { type: string, format: uuid }
+ *               enabled: { type: boolean }
+ *               amount:
+ *                 type: string
+ *                 example: '500.00'
+ *                 description: TWD decimal with at most two places; minimum 100, technical maximum 90071992547409.91. No separate business maximum.
+ *     responses:
+ *       '200':
+ *         description: Per-ad results; inspect every success flag even when outer success is true.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       advertisementId: { type: string, format: uuid }
+ *                       success: { type: boolean }
+ *                       message: { type: string }
+ *                       statusCode: { type: integer }
+ *                       code: { type: string }
+ *                       data:
+ *                         type: object
+ *                         properties:
+ *                           advertisementId: { type: string, format: uuid }
+ *                           enabled: { type: boolean }
+ *                           amount: { type: string }
+ *                           waitingSince: { type: string, format: date-time, nullable: true }
+ *                           lastReason: { type: string, nullable: true }
+ *                           updatedAt: { type: string, format: date-time }
+ *       '400':
+ *         description: Invalid batch, duplicate IDs or amount outside limits; no items processed.
+ *       '401':
+ *         description: Authentication required.
  */

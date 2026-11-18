@@ -1,6 +1,6 @@
 # FE／AI 實作規格：賣家收益、存提申請與廣告管理
 
-日期：2026-11-17。狀態：已合併至 development，local 與 dev 資料庫遷移完成且結構一致；尚未推送本次提交或部署／重啟 dev 服務。
+最後更新：2026-11-18（新增批次設定自動補款；本次新增尚未部署）。既有功能狀態：已合併至 development，local 與 dev 資料庫遷移完成且結構一致；尚未推送本次提交或部署／重啟 dev 服務。
 
 團隊業務摘要及完整新增 API 一覽見 [11/17 定案摘要與附錄](../../plans/SELLER_EARNINGS_MEETING_AGENDA_ZH_TW.md)。本文保留 FE 串接所需的參數、欄位及操作細節。
 
@@ -31,6 +31,7 @@
 | POST | `/api/admin/advertisement/batch/budget` | 所屬賣家／管理員：批次補款 |
 | PATCH | `/api/admin/advertisement/batch/status` | 所屬賣家／管理員：批次啟用／暫停 |
 | GET | `/api/admin/advertisement/:id/auto-refill` | 所屬賣家／管理員：讀取自動補款設定 |
+| PUT | `/api/admin/advertisement/batch/auto-refill` | 所屬賣家／管理員：批次設定自動補款 |
 | PUT | `/api/admin/advertisement/:id/auto-refill` | 所屬賣家／管理員：儲存自動補款設定 |
 
 一般員工不支援上述新功能。管理員查詢前三支 GET 時必須帶 `sellerId`；不是全平台列表。賣家省略該參數即查自己。切換賣家時重置列表頁碼，快取鍵必須包含賣家、日期與列表篩選，避免顯示上一位賣家的資料。
@@ -138,6 +139,28 @@ Summary 主要欄位：
 錢包不足支付完整金額就跳過，不部分補款、不透支。手動暫停、封存、已結清、商品下架／軟刪除、賣家停用時不補款。可用金額排除提領保留款。`waitingSince` 與 `lastReason` 提供等待及未執行原因，例如 `insufficient_wallet_balance`、`not_eligible`、`balance_sufficient`、`funding_disabled`；資金不足的廣告維持原有停止曝光規則。
 
 觀看與入金已提交後，補款失敗不回滾原操作。待處理事件保存在資料庫；事件重試與服務啟動時可補處理，不建立頻繁輪詢。並發事件會再次檢查餘額，不重複補款。
+
+## 批次設定自動補款（2026-11-18）
+
+`PUT /api/admin/advertisement/batch/auto-refill`
+
+```json
+{
+  "advertisementIds": ["廣告 UUID 1", "廣告 UUID 2"],
+  "enabled": true,
+  "amount": "500.00"
+}
+```
+
+- 每次 1–100 則不重複廣告，同一組 enabled／amount 套用至所有選取項目。賣家只可設定自己的廣告；管理員可跨賣家，員工不可操作。
+- amount 可省略：保留每則廣告既有金額；尚無設定時預設 500 元。批次關閉可只傳 IDs 與 enabled=false，不重設原金額。
+- 單則與批次均為最低 100 元、最多兩位小數；技術上限 90,071,992,547,409.91 元，尚未另訂業務上限。建議以十進位字串傳送。
+- 請求格式、重複 ID 或金額範圍錯誤整批回 400，不進行任何設定。合法請求則依傳入順序逐則處理；不存在／無權限項目失敗，不回滾其他成功設定。
+- 回應為 `{ success: true, data: [...] }`；每項包含 advertisementId、success，成功含 data 設定，失敗含 message 及可能的 statusCode／code。外層成功不代表所有廣告成功。
+- 成功代表設定已保存，不代表已補款。enabled=true 會立即嘗試低餘額補款；資金不足或不符合資格時仍可保存設定，使用 lastReason 顯示原因。請同步刷新設定、廣告餘額及廣告錢包。
+- 這不是一次性整批儲值，不使用 batch/budget 的整批回滾規則，也不需要 idempotencyKey。重送會重新檢查低餘額條件：餘額足夠不重複補；若期間又被消耗至門檻以下，可再次補款。
+
+FE 在廣告列表多選操作增加「設定自動補款」，顯示開關、可選的統一金額及可能立即扣款的提示；結果逐則呈現，僅重試失敗項目。不要將保存設定顯示成全部儲值成功。
 
 ## 原運費一次性退還
 

@@ -1,3 +1,5 @@
+import advertisementService from "../services/advertisement";
+import { advertisementValidation } from "../middleware/admin/advertisement";
 import { swaggerSpec } from "../lib/swagger";
 import "../lib/env";
 import assert from "node:assert/strict";
@@ -136,6 +138,32 @@ async function main(){
       const shipments=await db.select().from(s.sellerShipmentSnapshotTable).where(eq(s.sellerShipmentSnapshotTable.orderId,shippingOrder.id));
       assert.equal(shipments.find(row=>row.logisticsType==="CVS")!.subsidy,"20.00");
     }
+  }
+  assert.ok(spec.paths["/api/admin/advertisement/batch/auto-refill"].put);
+  const batchSchema = advertisementValidation.batchAutoRefillBody;
+  assert.equal(batchSchema.safeParse({ advertisementIds: [], enabled: true }).success, false);
+  assert.equal(batchSchema.safeParse({ advertisementIds: [ads[0].id, ads[0].id], enabled: true }).success, false);
+  for (const value of ["99.99", "90071992547409.92", "100.001"]) {
+    assert.equal(batchSchema.safeParse({ advertisementIds: [ads[0].id], enabled: true, amount: value }).success, false);
+  }
+  assert.equal(batchSchema.safeParse({ advertisementIds: [ads[0].id], enabled: true, amount: "90071992547409.91" }).success, true);
+  const settingsAds = await db.insert(s.advertisementTable).values([1,2].map(i=>({productId:product.id,title:`batch-settings-${i}`,video_url:"https://example.test/a.mp4"}))).returning();
+  await db.insert(s.advertisementStatsTable).values(settingsAds.map(ad=>({advertisementId:ad.id,balance:0,status:"depleted" as const})));
+  const defaultSettings = await advertisementService.batchAutoRefill(seller.id,{advertisementIds:settingsAds.map(a=>a.id),enabled:false});
+  assert.ok(defaultSettings.data.every(r=>r.success));
+  for (const ad of settingsAds) assert.equal((await db.query.adAutoRefillTable.findFirst({where:eq(s.adAutoRefillTable.advertisementId,ad.id)}))!.amount,"500.00");
+  const configured = await advertisementService.batchAutoRefill(seller.id,{advertisementIds:[settingsAds[0].id,randomUUID(),settingsAds[1].id],enabled:true,amount:"100"});
+  assert.deepEqual(configured.data.map(r=>r.success),[true,false,true]);
+  for (const ad of settingsAds) assert.equal((await db.query.advertisementStatsTable.findFirst({where:eq(s.advertisementStatsTable.advertisementId,ad.id)}))!.balance,100);
+  await advertisementService.batchAutoRefill(seller.id,{advertisementIds:settingsAds.map(a=>a.id),enabled:true,amount:"100"});
+  for (const ad of settingsAds) assert.equal((await db.query.advertisementStatsTable.findFirst({where:eq(s.advertisementStatsTable.advertisementId,ad.id)}))!.balance,100,"Repeat configuration does not refill an adequate balance");
+  const denied = await advertisementService.batchAutoRefill(other.id,{advertisementIds:settingsAds.map(a=>a.id),enabled:false});
+  assert.ok(denied.data.every(r=>!r.success));
+  const disabled = await advertisementService.batchAutoRefill(admin.id,{advertisementIds:settingsAds.map(a=>a.id),enabled:false});
+  assert.ok(disabled.data.every(r=>r.success));
+  for (const ad of settingsAds) {
+    const setting = (await db.query.adAutoRefillTable.findFirst({where:eq(s.adAutoRefillTable.advertisementId,ad.id)}))!;
+    assert.equal(setting.enabled,false); assert.equal(setting.amount,"100.00","Omitted amount preserves prior configuration");
   }
   console.log("Seller earnings, wallet requests and advertising automation tests passed");
 }

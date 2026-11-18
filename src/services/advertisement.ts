@@ -28,6 +28,15 @@ import {
 } from "../repository/advertisementReport";
 
 class AdvertisementService {
+  async batchAutoRefill(actorId: string, input: { advertisementIds: string[]; enabled: boolean; amount?: string }) {
+    const results = [];
+    for (const advertisementId of input.advertisementIds) {
+      const result = await this.configureAutoRefill(actorId, advertisementId, { enabled: input.enabled, amount: input.amount });
+      results.push({ advertisementId, ...result });
+    }
+    return { success: true as const, data: results };
+  }
+
   async batchFunding(actorId: string, input: Parameters<typeof batchFundAds>[1]) {
     try { return { success: true as const, data: await batchFundAds(actorId, input) }; } catch (error) { return handleServiceError(error); }
   }

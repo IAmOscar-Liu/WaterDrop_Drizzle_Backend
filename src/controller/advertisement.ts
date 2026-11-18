@@ -5,6 +5,7 @@ import { RequestWithId } from "../type/request";
 import type { ListAdminAdvertisementsParams } from "../repository/advertisement";
 
 class AdvertisementController {
+  async batchAutoRefill(req: RequestWithId, res: Response) { sendJsonResponse(res, await advertisementService.batchAutoRefill(req.userId!, req.body)); }
   async batchFunding(req: RequestWithId, res: Response) { sendJsonResponse(res, await advertisementService.batchFunding(req.userId!, req.body)); }
   async batchStatus(req: RequestWithId, res: Response) { sendJsonResponse(res, await advertisementService.batchStatus(req.userId!, req.body)); }
   async autoRefill(req: RequestWithId, res: Response) { sendJsonResponse(res, await advertisementService.autoRefill(req.userId!, req.params.id)); }

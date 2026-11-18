@@ -5,7 +5,7 @@ Last updated: 2026-11-17 (Asia/Taipei)
 
 Status as of 2026-11-17: implemented and merged into development; local and dev migrations applied, local earnings verified, and application schema parity confirmed. The dev service has not been deployed/restarted in this task; stg and production remain unchanged.
 
-For the consolidated final business rules and the 11 new API routes, use the [11/17 decision summary and API appendix](SELLER_EARNINGS_MEETING_AGENDA_ZH_TW.md). For implemented request/response contracts, use the [FE integration document](../api/FE-confirmation/SELLER_EARNINGS_AND_AD_AUTOMATION.md). This document retains detailed discussion and investigation notes; historical “planned” or “not implemented” statements describe the earlier review, not current implementation status. Where older proposals differ, the consolidated summary and implemented FE contract take precedence.
+For the consolidated final business rules and the new API routes, use the [11/17 decision summary and API appendix](SELLER_EARNINGS_MEETING_AGENDA_ZH_TW.md). For implemented request/response contracts, use the [FE integration document](../api/FE-confirmation/SELLER_EARNINGS_AND_AD_AUTOMATION.md). This document retains detailed discussion and investigation notes; historical “planned” or “not implemented” statements describe the earlier review, not current implementation status. Where older proposals differ, the consolidated summary and implemented FE contract take precedence.
 
 ## Initial source investigation (historical)
 
@@ -425,3 +425,7 @@ The user accepted these rules on 2026-11-17: fixed refill amount defaults to NT$
 - Verify event integration and recovery during implementation: duplicate event delivery and retries must not duplicate either the original view debit/deposit credit or the refill. Preserve existing Flutter contracts; these triggers are backend behavior.
 
 Implementation should extend existing admin-side funding/status workflows and ledgers, with matching validation, Swagger and FE documentation. Preserve Flutter contracts. Tests should cover authorization, mixed valid/invalid batches, insufficient funds, idempotent retries, reserved funds, fixed-amount refill with default NT$500, the strict NT$100 trigger boundary, paused/archived/product-inactive exclusions, event triggers after view debit, completed wallet deposit and settings updates, no refill on disabled settings or pending deposits, and concurrent batch/manual/automatic funding.
+
+## Batch auto-refill configuration — 2026-11-18
+
+Added `PUT /api/admin/advertisement/batch/auto-refill`: 1–100 distinct ads, common enabled flag and optional amount, per-item results using existing ownership rules. Omitted amounts preserve each existing setting or default to NT$500. Minimum NT$100; technical maximum NT$90,071,992,547,409.91, with no separately agreed business cap. Enabling can immediately trigger refill; saving a setting is distinct from successfully transferring funds. See the FE contract for payloads and retry behavior.
