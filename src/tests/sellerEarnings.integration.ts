@@ -1,3 +1,4 @@
+import { canManageAdFunding } from "../repository/utils/adPermissions";
 import advertisementService from "../services/advertisement";
 import { advertisementValidation } from "../middleware/admin/advertisement";
 import { swaggerSpec } from "../lib/swagger";
@@ -227,6 +228,66 @@ async function main(){
   await db.update(s.advertisementTable).set({title:"literal 50%_offer"}).where(eq(s.advertisementTable.id,filterAds[0].id));
   assert.equal((await listAdminAdvertisements({requesterId:seller.id,search:"%_"})).total,1,"SQL wildcard characters are literal");
   assert.ok(spec.paths["/api/admin/advertisement/list"].get.parameters.some((p:any)=>p.name==="search"));
+  // Permission hints and mutation guards share the same policy.
+  const pausedAd = ads[0];
+  assert.equal((await getAdvertisement(pausedAd.id,seller.id))!.allowFunding,true);
+  assert.equal((await listAdminAdvertisements({requesterId:seller.id})).advertisements.find(a=>a.id===pausedAd.id)!.allowFunding,true);
+  await setAutoRefill(seller.id,pausedAd.id,{enabled:true,amount:"600"});
+  const pausedBalance = (await db.query.advertisementStatsTable.findFirst({where:eq(s.advertisementStatsTable.advertisementId,pausedAd.id)}))!.balance;
+  assert.equal((await attemptAutoRefill(pausedAd.id))!.reason,"not_eligible");
+  await depositAdBalance({advertisementId:pausedAd.id,requesterId:seller.id,amount:"1",idempotencyKey:randomUUID()});
+  const pausedAfter = (await db.query.advertisementStatsTable.findFirst({where:eq(s.advertisementStatsTable.advertisementId,pausedAd.id)}))!;
+  assert.equal(pausedAfter.status,"paused");
+  assert.equal(pausedAfter.balance,pausedBalance+1);
+  assert.equal(canManageAdFunding({id:seller.id,role:"employee"},{archivedAt:null,financiallyClosedAt:null},product,pausedAfter,seller),false);
+  assert.equal(canManageAdFunding(other,{archivedAt:null,financiallyClosedAt:null},product,pausedAfter,seller),false);
+  assert.equal((await getAdvertisement(filterAds[0].id,admin.id))!.allowFunding,false);
+  assert.ok((await listAdminAdvertisements({requesterId:admin.id,sellerId:seller.id,productStatus:"inactive"})).advertisements.every(ad=>!ad.allowFunding));
+  for (const actor of [seller,admin]) {
+    await assert.rejects(setAutoRefill(actor.id,filterAds[0].id,{enabled:true}),e=>(e as any).code==="AD_AUTO_REFILL_NOT_ALLOWED");
+    await assert.rejects(setAutoRefill(actor.id,filterAds[0].id,{enabled:false,amount:"700"}),e=>(e as any).code==="AD_AUTO_REFILL_NOT_ALLOWED");
+    await setAutoRefill(actor.id,filterAds[0].id,{enabled:false});
+  }
+  const walletBeforeRejected = (await db.query.accountWalletTable.findFirst({where:eq(s.accountWalletTable.accountId,seller.id)}))!.walletBalance;
+  await assert.rejects(depositAdBalance({advertisementId:filterAds[0].id,requesterId:admin.id,amount:"1",idempotencyKey:randomUUID()}),e=>(e as any).code==="AD_PRODUCT_NOT_ACTIVE");
+  await assert.rejects(batchFundAds(seller.id,{items:[{advertisementId:pausedAd.id,amount:"1"},{advertisementId:filterAds[0].id,amount:"1"}],idempotencyKey:randomUUID()}),/no batch funding was committed/);
+  assert.equal((await db.query.accountWalletTable.findFirst({where:eq(s.accountWalletTable.accountId,seller.id)}))!.walletBalance,walletBeforeRejected);
+  const mixedSettings = await advertisementService.batchAutoRefill(seller.id,{advertisementIds:[pausedAd.id,filterAds[0].id],enabled:true});
+  assert.deepEqual(mixedSettings.data.map(r=>r.success),[true,false]);
+  await assert.rejects(setAutoRefill(other.id,filterAds[0].id,{enabled:false}),/owning/);
+  // A previously enabled ad can still be disabled after its product is taken down.
+  await db.update(s.productTable).set({status:"inactive"}).where(eq(s.productTable.id,product.id));
+  assert.equal((await getAdvertisement(pausedAd.id,seller.id))!.autoRefill,true);
+  assert.equal((await getAdvertisement(pausedAd.id,seller.id))!.allowFunding,false);
+  await assert.rejects(setAutoRefill(seller.id,pausedAd.id,{enabled:true}),e=>(e as any).code==="AD_AUTO_REFILL_NOT_ALLOWED");
+  await setAutoRefill(seller.id,pausedAd.id,{enabled:false});
+  assert.equal((await getAdvertisement(pausedAd.id,seller.id))!.autoRefillAmount,"600.00");
+  await db.update(s.productTable).set({status:"active",deletedAt:new Date()}).where(eq(s.productTable.id,product.id));
+  assert.equal((await getAdvertisement(pausedAd.id,seller.id))!.allowFunding,false);
+  await assert.rejects(depositAdBalance({advertisementId:pausedAd.id,requesterId:seller.id,amount:"1",idempotencyKey:randomUUID()}),e=>(e as any).code==="AD_PRODUCT_NOT_ACTIVE");
+  await db.update(s.productTable).set({deletedAt:null}).where(eq(s.productTable.id,product.id));
+  await db.update(s.advertisementStatsTable).set({status:"archived"}).where(eq(s.advertisementStatsTable.advertisementId,pausedAd.id));
+  assert.equal((await getAdvertisement(pausedAd.id,seller.id))!.allowFunding,false);
+  await assert.rejects(setAutoRefill(admin.id,pausedAd.id,{enabled:true}),e=>(e as any).code==="AD_AUTO_REFILL_NOT_ALLOWED");
+  await setAutoRefill(seller.id,pausedAd.id,{enabled:false});
+  await db.update(s.advertisementStatsTable).set({status:"active"}).where(eq(s.advertisementStatsTable.advertisementId,pausedAd.id));
+  await db.update(s.advertisementTable).set({financiallyClosedAt:new Date()}).where(eq(s.advertisementTable.id,pausedAd.id));
+  assert.equal((await getAdvertisement(pausedAd.id,admin.id))!.allowFunding,false);
+  await assert.rejects(setAutoRefill(admin.id,pausedAd.id,{enabled:true}),e=>(e as any).code==="AD_AUTO_REFILL_NOT_ALLOWED");
+  assert.equal(spec.components.schemas.ListAdvertisementsResponse.properties.advertisements.items.allOf[1].properties.allowFunding.type,"boolean");
+  await assert.rejects(depositAdBalance({advertisementId:pausedAd.id,requesterId:admin.id,amount:"1",idempotencyKey:randomUUID()}),/Archived or financially closed/);
+  await db.update(s.advertisementTable).set({financiallyClosedAt:null}).where(eq(s.advertisementTable.id,pausedAd.id));
+  const [employee] = await db.insert(s.accountTable).values({role:"employee",email:`${randomUUID()}@test.invalid`,password:"unused",realName:"test",phone:"0900000000"}).returning();
+  await assert.rejects(depositAdBalance({advertisementId:pausedAd.id,requesterId:employee.id,amount:"1",idempotencyKey:randomUUID()}),/Only the owning seller/);
+  await assert.rejects(setAutoRefill(employee.id,pausedAd.id,{enabled:false}),/owning/);
+  await assert.rejects(depositAdBalance({advertisementId:pausedAd.id,requesterId:other.id,amount:"1",idempotencyKey:randomUUID()}),/Only the owning seller/);
+  await db.update(s.accountTable).set({deletedAt:new Date()}).where(eq(s.accountTable.id,seller.id));
+  assert.equal((await getAdvertisement(pausedAd.id,admin.id))!.allowFunding,false);
+  await assert.rejects(depositAdBalance({advertisementId:pausedAd.id,requesterId:admin.id,amount:"1",idempotencyKey:randomUUID()}),/active seller account/);
+  await assert.rejects(depositAdBalance({advertisementId:pausedAd.id,requesterId:seller.id,amount:"1",idempotencyKey:randomUUID()}),/inactive or no longer available/);
+  await db.update(s.accountTable).set({deletedAt:null}).where(eq(s.accountTable.id,seller.id));
+  assert.equal((await getAdvertisement(pausedAd.id,seller.id))!.allowFunding,true);
+  await assert.rejects(depositAdBalance({advertisementId:pausedAd.id,requesterId:seller.id,amount:"999999",idempotencyKey:randomUUID()}),/Insufficient seller wallet balance/);
   console.log("Seller earnings, wallet requests and advertising automation tests passed");
 }
 main().then(()=>client.end()).catch(async error=>{console.error(error);await client.end();process.exitCode=1;});

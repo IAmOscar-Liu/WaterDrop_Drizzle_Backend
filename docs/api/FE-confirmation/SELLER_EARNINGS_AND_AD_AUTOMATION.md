@@ -300,3 +300,24 @@ GET /api/admin/advertisement/list?status=active&productStatus=inactive&page=1&li
 ```http
 GET /api/admin/advertisement/list?search=Netflix&status=active&productStatus=inactive&page=1&limit=20
 ```
+
+### 手動補款與自動補款共用操作資格
+
+廣告列表的 `data.advertisements[]` 與單筆詳情的 `data` 新增 `allowFunding: boolean`，由後端依目前呼叫者與商品／廣告／賣家狀態判斷是否允許手動增加廣告餘額，以及開啟或修改自動補款設定。
+
+- `autoRefill` 是已儲存的開關；`autoRefillAmount` 是每次補款額度；`allowFunding` 是本次查詢時的操作資格，三者不同。
+- 僅擁有者賣家／平台管理員可操作，員工為 false。商品與賣家須啟用且未軟刪除，廣告須未封存、未結清。
+- 暫停廣告仍可手動補款與設定自動補款，但暫停期間不會實際自動扣款。FE 顯示「暫停期間不會自動補款」，不要顯示會立即補款。
+- `allowFunding=false` 時停用手動補款、開啟自動補款與額度編輯；若開關原本為 true，授權擁有者／管理員仍可用 `{ "enabled": false }` 關閉，**不要附帶 amount**。員工仍不可關閉。
+- 手動單筆／批次補款與自動補款設定共用同一個狀態／角色判斷，操作時重新檢查，不信任查詢時的 `allowFunding`。手動補款另檢查錢包可用金額與補款功能開關；自動扣款另外要求廣告啟用／預算不足、餘額低於 100 元，且有可售庫存。
+- 自動補款設定的單筆與批次操作均重新檢查權限與狀態，不信任 FE 欄位或傳入的 allowFunding。狀態不允許時回傳 409、code `AD_AUTO_REFILL_NOT_ALLOWED`；無權限回傳 403。批次維持逐筆結果。
+- 商品下架／軟刪除禁止手動補款（409、code `AD_PRODUCT_NOT_ACTIVE`），批次補款遇到不合格項目會整批回滾；暫停且商品上架的廣告仍可手動補款。既有成功請求的 idempotent replay 不會再次扣款。
+- 歷史與收支明細維持可讀，不要因操作停用而整列禁止查看。
+
+```json
+{ "autoRefill": true, "autoRefillAmount": "500.00", "allowFunding": false }
+```
+
+上例表示設定仍開啟，但目前不能手動補款或開啟／修改設定；授權使用者可關閉。
+
+`allowFunding` 統一取代尚未發布的 `allowAutoRefill`，不保留兩個重複欄位。它不控制封存後回收廣告費，該操作仍使用既有回收預覽與資格驗證。

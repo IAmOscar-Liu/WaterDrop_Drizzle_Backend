@@ -1,3 +1,4 @@
+import { canManageAdFunding } from "./utils/adPermissions";
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, sql } from "drizzle-orm";
 import * as s from "../db/schema";
@@ -53,10 +54,28 @@ export async function setAutoRefill(actorId:string,adId:string,input:{enabled:bo
   const value=normalizeMoney(input.amount??"500");
   if(moneyToMinorUnits(value)>BigInt(Number.MAX_SAFE_INTEGER))throw new CustomError("Refill amount is too large",400);
   if(moneyToMinorUnits(value)<BigInt(10000))throw new CustomError("Refill amount must be at least NT$100",400);
-  const [row]=await db.insert(s.adAutoRefillTable).values({advertisementId:adId,enabled:input.enabled,amount:value})
-    .onConflictDoUpdate({target:s.adAutoRefillTable.advertisementId,set:{enabled:input.enabled,...(input.amount!==undefined?{amount:value}:{}),waitingSince:null,lastReason:null,updatedAt:new Date()}}).returning();
-  if (row.enabled) await db.insert(s.adRefillEventTable).values({advertisementId:adId}).onConflictDoNothing();
-  return row;
+  const actor = await getActiveAdminAccount(actorId);
+  return db.transaction(async tx => {
+    // Match automatic refill's setting -> stats lock order.
+    await tx.select().from(s.adAutoRefillTable).where(eq(s.adAutoRefillTable.advertisementId,adId)).for("update");
+    const [stats] = await tx.select().from(s.advertisementStatsTable).where(eq(s.advertisementStatsTable.advertisementId,adId)).for("update");
+    const [state] = await tx.select({ad:s.advertisementTable,product:s.productTable,seller:s.accountTable})
+      .from(s.advertisementTable)
+      .innerJoin(s.productTable,eq(s.productTable.id,s.advertisementTable.productId))
+      .innerJoin(s.accountTable,eq(s.accountTable.id,s.productTable.sellerId))
+      .where(eq(s.advertisementTable.id,adId))
+      .for("update", { of: s.productTable });
+    if (!state) throw new CustomError("Advertisement not found",404);
+    const allowed = canManageAdFunding(actor,state.ad,state.product,stats,state.seller);
+    if (!allowed && (input.enabled || input.amount !== undefined)) {
+      throw new CustomError("This advertisement cannot enable or change automatic refill; disabling without an amount is still allowed",409,"AD_AUTO_REFILL_NOT_ALLOWED");
+    }
+    const [row]=await tx.insert(s.adAutoRefillTable).values({advertisementId:adId,enabled:input.enabled,amount:value})
+      .onConflictDoUpdate({target:s.adAutoRefillTable.advertisementId,set:{enabled:input.enabled,...(input.amount!==undefined?{amount:value}:{}),waitingSince:null,lastReason:null,updatedAt:new Date()}}).returning();
+    if (row.enabled) await tx.insert(s.adRefillEventTable).values({advertisementId:adId}).onConflictDoNothing();
+    else await tx.delete(s.adRefillEventTable).where(eq(s.adRefillEventTable.advertisementId,adId));
+    return row;
+  });
 }
 export async function attemptAutoRefill(adId:string) {
   return db.transaction(async tx=>{

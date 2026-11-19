@@ -151,7 +151,7 @@ router.post("/:id/budget-withdrawal", isAuth, validateZod({ params: adminValidat
  *             allOf:
  *               - $ref: '#/components/schemas/AdvertisementWithProductAndStats'
  *               - type: object
- *                 required: [autoRefill, autoRefillAmount]
+ *                 required: [autoRefill, autoRefillAmount, allowFunding]
  *                 properties:
  *                   autoRefill:
  *                     type: boolean
@@ -161,6 +161,9 @@ router.post("/:id/budget-withdrawal", isAuth, validateZod({ params: adminValidat
  *                     type: string
  *                     example: "500.00"
  *                     description: Configured refill amount per operation in TWD, retained when disabled; defaults to "500.00" when no setting exists.
+ *                   allowFunding:
+ *                     type: boolean
+ *                     description: Whether this caller may manually increase the ad budget or enable/edit auto-refill settings. Requires owner/admin, active non-deleted product and seller, and a non-archived/non-closed ad. Paused ads may be configured but never automatically funded while paused. Independent of current toggle, balance, stock, and wallet funds; funding operations additionally check feature availability and spendable wallet funds. False does not prevent an authorized caller disabling via enabled=false with amount omitted. Operations revalidate permissions and state.
  *         total:
  *           type: integer
  *         page:
@@ -692,7 +695,7 @@ router.get(
  *                   allOf:
  *                     - $ref: '#/components/schemas/AdvertisementWithProductAndDetails'
  *                     - type: object
- *                       required: [autoRefill, autoRefillAmount]
+ *                       required: [autoRefill, autoRefillAmount, allowFunding]
  *                       properties:
  *                         autoRefill:
  *                           type: boolean
@@ -702,6 +705,9 @@ router.get(
  *                           type: string
  *                           example: "500.00"
  *                           description: Configured refill amount per operation in TWD, retained when disabled; defaults to "500.00" when no setting exists.
+ *                         allowFunding:
+ *                           type: boolean
+ *                           description: Whether this caller may manually increase the ad budget or enable/edit auto-refill settings. Requires owner/admin, active non-deleted product and seller, and a non-archived/non-closed ad. Paused ads may be configured but never automatically funded while paused. Independent of current toggle, balance, stock, and wallet funds; funding operations additionally check feature availability and spendable wallet funds. False does not prevent an authorized caller disabling via enabled=false with amount omitted. Operations revalidate permissions and state.
  */
 router.get(
   "/:id",
@@ -1215,7 +1221,7 @@ router.get(
  *                             balanceAfter: { type: string, example: "200.00" }
  *                         idempotentReplay: { type: boolean, example: false }
  *       '403': { description: Only the owning seller or a platform administrator may fund the ad. }
- *       '409': { description: Insufficient wallet balance, inactive seller, archived/closed ad, idempotency conflict, or unsupported decrease operation. }
+ *       '409': { description: Insufficient wallet balance, inactive seller, inactive/deleted product (AD_PRODUCT_NOT_ACTIVE), archived/closed ad, idempotency conflict, or unsupported decrease operation. }
  *       '503': { description: Wallet-based advertisement funding is disabled during rollout. }
  */
 router.put(
@@ -1713,7 +1719,7 @@ export default router;
  *         "Advertisement"
  *       ],
  *       "summary": "Batch increase ad budgets",
- *       "description": "Owner or admin; no employees. 1–100 distinct ads from one seller. All-or-nothing funding; one amount per item (repeat the same amount for uniform funding). Uses available advertising wallet only, excludes withdrawal reservations. Archived/closed ads rejected. Idempotency is scoped to actor and full sorted batch.",
+ *       "description": "Owner or admin; no employees. 1–100 distinct ads from one seller. All-or-nothing funding; one amount per item (repeat the same amount for uniform funding). Uses available advertising wallet only, excludes withdrawal reservations. Inactive/deleted products and archived/closed ads rejected; paused ads with active products may be funded and stay paused. Idempotency is scoped to actor and full sorted batch.",
  *       "security": [
  *         {
  *           "bearerAuth": []
@@ -1978,7 +1984,7 @@ export default router;
  *         "Advertisement"
  *       ],
  *       "summary": "Configure fixed-amount automatic refill",
- *       "description": "Owner/admin only. Minimum NT$100; technical maximum NT$90071992547409.91, at most two decimal places; no separate business maximum; default NT$500 for a new setting. Omitted amount preserves existing amount. Fixed trigger balance < 100; exactly 100 does not trigger. No daily cap. Eligible active/depleted ads only, active product and seller. Full spendable wallet amount required; never use revenue or reserved funds. Events: view debit, completed wallet deposit, enabling/changing settings. No minute cron. Paused/archived/closed ads excluded.",
+ *       "description": "Owner/admin only; employees denied. Enabling or changing amount requires an active non-deleted product and seller, and a non-archived/non-closed ad; paused ads may retain/edit settings but cannot automatically debit. Otherwise returns 409 AD_AUTO_REFILL_NOT_ALLOWED. Authorized callers can still disable by sending enabled=false without amount. Minimum NT$100; technical maximum NT$90071992547409.91, at most two decimal places; no separate business maximum; default NT$500 for a new setting. Omitted amount preserves existing amount. Fixed trigger balance < 100; exactly 100 does not trigger. No daily cap. Eligible active/depleted ads only, active product and seller. Full spendable wallet amount required; never use revenue or reserved funds. Events: view debit, completed wallet deposit, enabling/changing settings. No minute cron. Paused/archived/closed ads excluded.",
  *       "security": [
  *         {
  *           "bearerAuth": []
@@ -2082,7 +2088,7 @@ export default router;
  *   put:
  *     tags: [Advertisement]
  *     summary: Batch configure automatic ad refill
- *     description: Owner or admin; employees denied per item. Applies common settings to 1–100 distinct ads in request order, returning individual results without rolling back successful items. Admins may operate ads belonging to different sellers. Omitted amount preserves each existing setting, or defaults to 500 for new settings. Enabling may immediately debit the owning seller's advertising wallet if eligible and balance is below 100. Success means settings saved, not necessarily funds transferred; inspect lastReason and refresh balances. Repeated requests recheck balances and may trigger another refill if funds have since been spent.
+ *     description: Owner or admin; employees denied per item. Each item revalidates the same state restrictions as the single settings endpoint; inactive/deleted products or sellers and archived/closed ads reject enabling or amount changes with 409. Disabling without amount remains allowed. Paused ads allow configuration but do not automatically debit. Applies common settings to 1–100 distinct ads in request order, returning individual results without rolling back successful items. Admins may operate ads belonging to different sellers. Omitted amount preserves each existing setting, or defaults to 500 for new settings. Enabling may immediately debit the owning seller's advertising wallet if eligible and balance is below 100. Success means settings saved, not necessarily funds transferred; inspect lastReason and refresh balances. Repeated requests recheck balances and may trigger another refill if funds have since been spent.
  *     security: [{ bearerAuth: [] }]
  *     requestBody:
  *       required: true

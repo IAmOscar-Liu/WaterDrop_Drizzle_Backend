@@ -27,6 +27,8 @@ import {
   PaginationParams,
 } from "./utils/query";
 
+import { canManageAdFunding } from "./utils/adPermissions";
+
 // --- Advertisement Functions ---
 
 type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -159,13 +161,17 @@ export async function getAdvertisement(
   if (!advertisement.product) {
     throw new CustomError("Advertisement product not found", 404);
   }
-  if (requesterId) {
-    const scope = await resolveAdminSellerScope(requesterId);
+  const scope = requesterId ? await resolveAdminSellerScope(requesterId) : undefined;
+  if (scope) {
     if (scope.sellerId && scope.sellerId !== advertisement.product.sellerId) {
       throw new CustomError("You cannot view another seller's advertisement", 403);
     }
   }
 
+  const seller = await db.query.accountTable.findFirst({
+    where: eq(schema.accountTable.id, advertisement.product.sellerId),
+    columns: { role: true, status: true, deletedAt: true },
+  });
   const refillSetting = await db.query.adAutoRefillTable.findFirst({
     where: eq(schema.adAutoRefillTable.advertisementId, advertisementId),
     columns: { enabled: true, amount: true },
@@ -176,6 +182,7 @@ export async function getAdvertisement(
     product: withProductVariantAggregates(advertisement.product),
     autoRefill: refillSetting?.enabled ?? false,
     autoRefillAmount: refillSetting?.amount ?? "500.00",
+    allowFunding: canManageAdFunding(scope ? { id: scope.accountId, role: scope.role } : undefined, advertisement, advertisement.product, advertisement.stats, seller),
   };
 }
 
@@ -461,6 +468,10 @@ export async function listAdminAdvertisements({
       )
       .where(whereClause)
       .leftJoin(
+        schema.accountTable,
+        eq(schema.productTable.sellerId, schema.accountTable.id),
+      )
+      .leftJoin(
         schema.adAutoRefillTable,
         eq(schema.advertisementTable.id, schema.adAutoRefillTable.advertisementId),
       )
@@ -505,6 +516,7 @@ export async function listAdminAdvertisements({
     stats: r.advertisement_stats,
     autoRefill: r.ad_auto_refills?.enabled ?? false,
     autoRefillAmount: r.ad_auto_refills?.amount ?? "500.00",
+    allowFunding: canManageAdFunding({ id: scope.accountId, role: scope.role }, r.advertisements, r.products, r.advertisement_stats, r.accounts),
   }));
 
   return {
@@ -772,6 +784,7 @@ export async function depositAdBalance({
   }
   const numericAmount = Number(amountInMinorUnits) / 100;
 
+  await getActiveAdminAccount(requesterId);
   const run = async (tx: DbTransaction) => {
     await lockWalletIdempotencyKeyWithTx(tx, idempotencyKey);
 
@@ -783,6 +796,7 @@ export async function depositAdBalance({
         sellerId: schema.productTable.sellerId,
         sellerRole: schema.accountTable.role,
         sellerStatus: schema.accountTable.status,
+        sellerDeletedAt: schema.accountTable.deletedAt,
       })
       .from(schema.advertisementTable)
       .innerJoin(
@@ -798,13 +812,13 @@ export async function depositAdBalance({
     if (!advertisement) throw new CustomError("Advertisement not found.", 404);
 
     const [requester] = await tx
-      .select({ role: schema.accountTable.role })
+      .select({ id: schema.accountTable.id, role: schema.accountTable.role, status: schema.accountTable.status, deletedAt: schema.accountTable.deletedAt })
       .from(schema.accountTable)
       .where(eq(schema.accountTable.id, requesterId))
       .limit(1);
     if (
-      !requester ||
-      (requester.role !== "admin" && requesterId !== advertisement.sellerId)
+      !requester || requester.status !== "active" || requester.deletedAt ||
+      (requester.role !== "admin" && (requester.role !== "seller" || requesterId !== advertisement.sellerId))
     ) {
       throw new CustomError(
         "Only the owning seller or a platform administrator may fund this advertisement.",
@@ -900,7 +914,7 @@ export async function depositAdBalance({
     }
     if (
       advertisement.sellerRole !== "seller" ||
-      advertisement.sellerStatus !== "active"
+      advertisement.sellerStatus !== "active" || advertisement.sellerDeletedAt
     ) {
       throw new CustomError(
         "Advertisement funding requires an active seller account.",
@@ -933,6 +947,23 @@ export async function depositAdBalance({
     if (!statsBefore) throw new CustomError("Advertisement not found.", 404);
     if (statsBefore.status === "archived") {
       throw new CustomError("Archived advertisements cannot receive funding.", 409);
+    }
+
+    const [fundingProduct] = await tx.select({ sellerId: schema.productTable.sellerId, status: schema.productTable.status, deletedAt: schema.productTable.deletedAt })
+      .from(schema.productTable)
+      .innerJoin(schema.advertisementTable, eq(schema.advertisementTable.productId, schema.productTable.id))
+      .where(eq(schema.advertisementTable.id, advertisementId))
+      .for("update", { of: schema.productTable });
+    if (!fundingProduct || fundingProduct.status !== "active" || fundingProduct.deletedAt) {
+      throw new CustomError("Inactive or deleted products cannot receive advertisement funding.", 409, "AD_PRODUCT_NOT_ACTIVE");
+    }
+
+    if (!canManageAdFunding(requester, advertisement, fundingProduct, statsBefore, {
+      role: advertisement.sellerRole,
+      status: advertisement.sellerStatus,
+      deletedAt: advertisement.sellerDeletedAt,
+    })) {
+      throw new CustomError("This advertisement cannot receive funding.", 409, "AD_FUNDING_NOT_ALLOWED");
     }
 
     const walletBalanceAfter = subtractMoney(
