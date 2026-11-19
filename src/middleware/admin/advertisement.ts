@@ -48,6 +48,7 @@ export const advertisementValidation = {
     z.object({ ...withdrawalBase, mode: z.literal("amount"), amount: decimalMoney.refine((v) => Number(v) > 0) }).strict(),
   ]),
   listQuery: paginationQuery.extend(advertisementListFilters),
+  statusCountsQuery: z.object(advertisementListFilters).omit({ status: true }).strict(),
   idParams,
   createBody: z.object({
     productId: uuid,

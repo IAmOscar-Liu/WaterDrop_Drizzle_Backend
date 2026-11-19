@@ -9,6 +9,7 @@ import {
   getAdvertisementCoinLedger,
   getAdViewCount,
   listAdminAdvertisements,
+  countAdminAdvertisementsByStatus,
   ListAdminAdvertisementsParams,
   listAdvertisements,
   ListAdvertisementsParams,
@@ -28,6 +29,11 @@ import {
 } from "../repository/advertisementReport";
 
 class AdvertisementService {
+  async statusCounts(input: Parameters<typeof countAdminAdvertisementsByStatus>[0]) {
+    try { return { success: true as const, data: await countAdminAdvertisementsByStatus(input) }; }
+    catch (error) { return handleServiceError(error); }
+  }
+
   async batchAutoRefill(actorId: string, input: { advertisementIds: string[]; enabled: boolean; amount?: string }) {
     const results = [];
     for (const advertisementId of input.advertisementIds) {

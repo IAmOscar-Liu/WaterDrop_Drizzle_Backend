@@ -12,7 +12,7 @@ import { units, earningsHoldMs } from "../lib/earningsMoney";
 import { adjustRevenue, earningsSummary, postPaidOrderRevenue, postRefundRevenue, releaseSellerEarnings } from "../repository/sellerEarnings";
 import { createWalletRequest, reviewWalletRequest } from "../repository/walletRequest";
 import { batchFundAds, attemptAutoRefill, setAutoRefill, retrySellerAutoRefills } from "../repository/adAutomation";
-import { depositAdBalance, spendAdBalanceWithTx, listAdminAdvertisements, getAdvertisement } from "../repository/advertisement";
+import { depositAdBalance, spendAdBalanceWithTx, listAdminAdvertisements, countAdminAdvertisementsByStatus, getAdvertisement } from "../repository/advertisement";
 import { listAdvertisementMetrics } from "../repository/advertisementReport";
 import { shippingSummary, updateShippingClaim, reverseShippingSubsidy } from "../repository/shippingReimbursement";
 
@@ -106,6 +106,13 @@ async function main(){
   for (const { filter, expected } of filterCases) {
     const expectedIds = expected.map(ad => ad.id).sort().reverse();
     for (const requester of [{ requesterId: filterSeller.id }, { requesterId: admin.id, sellerId: filterSeller.id }]) {
+      const { status: _selectedStatus, ...countFilters } = filter;
+      const counts = await countAdminAdvertisementsByStatus({ ...requester, ...countFilters });
+      for (const tab of ["all", "active", "paused", "depleted", "archived"] as const) {
+        const list = await listAdminAdvertisements({ ...requester, ...countFilters, limit: 1, ...(tab === "all" ? {} : { status: tab }) });
+        assert.equal(counts[tab], list.total, `Count for ${tab} must match the filtered list total`);
+      }
+      assert.equal(counts.all, counts.active + counts.paused + counts.depleted + counts.archived);
       for (const page of [1, 2, 3]) {
         const input = { ...requester, ...filter, page, limit: 2 };
         const [list, report] = await Promise.all([listAdminAdvertisements(input), listAdvertisementMetrics(input)]);
@@ -126,6 +133,15 @@ async function main(){
   for (const query of [{ productStatus: "all" }, { search: "a".repeat(201) }, { search: ["a", "b"] }]) {
     assert.equal(advertisementValidation.metricsQuery.safeParse(query).success, false);
   }
+  assert.deepEqual(await countAdminAdvertisementsByStatus({ requesterId: other.id }), { all: 0, active: 0, paused: 0, depleted: 0, archived: 0 });
+  await assert.rejects(countAdminAdvertisementsByStatus({ requesterId: other.id, sellerId: filterSeller.id }), /another seller/);
+  const platformCounts = await countAdminAdvertisementsByStatus({ requesterId: admin.id });
+  assert.equal(platformCounts.all, (await listAdminAdvertisements({ requesterId: admin.id, limit: 1 })).total);
+  assert.equal(advertisementValidation.statusCountsQuery.parse({ search: "  hello  ", productStatus: "active" }).search, "hello");
+  for (const query of [{ status: "active" }, { page: 1 }, { limit: 20 }, { productStatus: "all" }, { search: "a".repeat(201) }, { search: ["a", "b"] }, { sellerId: "invalid" }]) {
+    assert.equal(advertisementValidation.statusCountsQuery.safeParse(query).success, false);
+  }
+  assert.deepEqual(spec.paths["/api/admin/advertisement/status-counts"].get.parameters.map((p: any) => p.name), ["sellerId", "productStatus", "search"]);
   const [buyer]=await db.insert(s.userTable).values({email:`${randomUUID()}@test.invalid`,oauthProvider:"other",oauthId:randomUUID(),referralCode:randomUUID()}).returning();
   const confirmedAt=new Date("2026-11-01T19:00:00Z");
   const [order]=await db.insert(s.orderTable).values({userId:buyer.id,subTotal:1000,totalAmount:930,discountCoin:1000,orderStatus:"paid",completedAt:confirmedAt,shippingCost:30,shippingInfo:{nonCvsPickupGroup:[{LogisticsType:"home_delivery",products:[{productId:product.id,variantId:variant.id}],shippingCost:30,shippingCostDeduction:0}]}}).returning();
@@ -280,6 +296,8 @@ async function main(){
   await db.update(s.advertisementTable).set({title:"literal 50%_offer"}).where(eq(s.advertisementTable.id,filterAds[0].id));
   assert.equal((await listAdminAdvertisements({requesterId:seller.id,search:"%_"})).total,1,"SQL wildcard characters are literal");
   assert.ok(spec.paths["/api/admin/advertisement/list"].get.parameters.some((p:any)=>p.name==="search"));
+  const deletedProductCounts = await countAdminAdvertisementsByStatus({ requesterId: seller.id, productStatus: "inactive", search: "%_" });
+  assert.deepEqual(deletedProductCounts, { all: 1, active: 1, paused: 0, depleted: 0, archived: 0 });
   // Permission hints and mutation guards share the same policy.
   const pausedAd = ads[0];
   assert.equal((await getAdvertisement(pausedAd.id,seller.id))!.allowFunding,true);

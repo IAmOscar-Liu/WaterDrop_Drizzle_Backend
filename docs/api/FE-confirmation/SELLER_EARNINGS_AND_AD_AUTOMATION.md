@@ -335,3 +335,16 @@ GET /api/admin/advertisement/metrics?productStatus=active&search=Netflix&page=1&
 ```
 
 合併時必須使用列表的 `id` 對應 metrics 的 `advertisement.id`，不可依陣列位置配對。兩個 HTTP 請求並非共同資料快照；若中途新增廣告或變更狀態，頁面成員仍可能改變。找不到對應 ID 時顯示未取得／重新整理，不可套用其他廣告的統計或補成 0。回應結構未變更，也未新增逐筆查詢需求。
+
+
+### 2026-11-20：一次取得所有廣告狀態數量（本機完成，尚未部署）
+
+新增 `GET /api/admin/advertisement/status-counts`，取代 FE 為各狀態額外呼叫列表 API 的作法。
+
+選填 query：`sellerId`、`productStatus=active|inactive`、`search`，權限與篩選規則沿用 `/advertisement/list`。`search` 去除頭尾空白後最多 200 字元，標題或商品名稱不分大小寫包含比對，`%`、`_`、反斜線為一般文字。空白搜尋不篩選，軟刪除商品仍依當前狀態計入。此端點不接受 `status`、`page`、`limit` 或未知參數（400），因為它一次回傳跨所有頁面的各狀態數量。
+
+```json
+{"success":true,"data":{"all":33,"active":17,"paused":11,"depleted":0,"archived":5}}
+```
+
+無資料時每個欄位均為 0。賣家僅能查本人，子帳號依所屬賣家；管理員可指定賣家或省略以取得全平台數量。FE 把五個欄位直接對應「全部／啟用中／已暫停／預算不足／已封存」，不再以 `limit=1` 查詢其他狀態。列表、統計與狀態數量仍是獨立 HTTP 請求，並非共用資料快照；同時有其他寫入時數量可能短暫不同。

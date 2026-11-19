@@ -408,6 +408,34 @@ export interface ListAdminAdvertisementsParams extends PaginationParams {
   search?: string;
 }
 
+export type AdvertisementStatusCounts = {
+  all: number;
+  active: number;
+  paused: number;
+  depleted: number;
+  archived: number;
+};
+
+export async function countAdminAdvertisementsByStatus(
+  input: Omit<ListAdminAdvertisementsParams, "page" | "limit" | "status">,
+): Promise<AdvertisementStatusCounts> {
+  const scope = await resolveAdminSellerScope(input.requesterId, input.sellerId);
+  const rows = await db.select({ status: schema.advertisementStatsTable.status, total: count() })
+    .from(schema.advertisementTable)
+    .leftJoin(schema.productTable, eq(schema.advertisementTable.productId, schema.productTable.id))
+    .leftJoin(schema.advertisementStatsTable, eq(schema.advertisementTable.id, schema.advertisementStatsTable.advertisementId))
+    .where(compactConditions(advertisementListConditions({
+      sellerId: scope.sellerId, productStatus: input.productStatus, search: input.search,
+    })))
+    .groupBy(schema.advertisementStatsTable.status);
+  const counts: AdvertisementStatusCounts = { all: 0, active: 0, paused: 0, depleted: 0, archived: 0 };
+  for (const row of rows) {
+    counts.all += row.total;
+    if (row.status !== null) counts[row.status] = row.total;
+  }
+  return counts;
+}
+
 /**
  * Lists advertisements with pagination.
  * @param params The pagination parameters.

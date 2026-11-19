@@ -5,6 +5,16 @@ import { RequestWithId } from "../type/request";
 import type { ListAdminAdvertisementsParams } from "../repository/advertisement";
 
 class AdvertisementController {
+  async statusCounts(req: RequestWithId, res: Response) {
+    const result = await advertisementService.statusCounts({
+      requesterId: req.userId ?? "",
+      sellerId: req.query.sellerId ? String(req.query.sellerId) : undefined,
+      productStatus: req.query.productStatus as ListAdminAdvertisementsParams["productStatus"],
+      search: req.query.search === undefined ? undefined : String(req.query.search),
+    });
+    sendJsonResponse(res, result);
+  }
+
   async batchAutoRefill(req: RequestWithId, res: Response) { sendJsonResponse(res, await advertisementService.batchAutoRefill(req.userId!, req.body)); }
   async batchFunding(req: RequestWithId, res: Response) { sendJsonResponse(res, await advertisementService.batchFunding(req.userId!, req.body)); }
   async batchStatus(req: RequestWithId, res: Response) { sendJsonResponse(res, await advertisementService.batchStatus(req.userId!, req.body)); }

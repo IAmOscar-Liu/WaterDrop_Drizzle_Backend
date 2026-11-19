@@ -6,6 +6,43 @@ import validateZod from "../../middleware/validateZod";
 import { adminValidation } from "../../middleware/admin";
 
 const router = Router();
+/**
+ * @swagger
+ * /api/admin/advertisement/status-counts:
+ *   get:
+ *     tags: [Advertisement]
+ *     summary: Count advertisements for every status tab in one request
+ *     description: Returns counts across all pages with the same seller scope, product-status and literal search rules as the admin advertisement list. Sellers see only their own ads; employees see their parent seller's ads. Platform admins may select a sellerId or omit it for platform totals. Archived and financially closed ads remain included. Status and pagination parameters are not accepted; counts are independent of the currently selected ad-status tab. Empty results return zeros. Separate list and count requests are not a shared database snapshot. Counts represent advertisements, not money or view counts.
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { in: query, name: sellerId, schema: { type: string, format: uuid }, description: Optional seller scope for platform admins. }
+ *       - { in: query, name: productStatus, schema: { type: string, enum: [active, inactive] }, description: Omit for all products. Soft-deleted products remain included under their current status. }
+ *       - { in: query, name: search, schema: { type: string, maxLength: 200 }, description: "Trimmed case-insensitive literal substring of ad title or product name. Blank means no filter. Percent, underscore and backslash are literal." }
+ *     responses:
+ *       '200':
+ *         description: All status counts for the selected scope and filters.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               required: [success, data]
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   required: [all, active, paused, depleted, archived]
+ *                   properties:
+ *                     all: { type: integer, minimum: 0, example: 33 }
+ *                     active: { type: integer, minimum: 0, example: 17 }
+ *                     paused: { type: integer, minimum: 0, example: 11 }
+ *                     depleted: { type: integer, minimum: 0, example: 0 }
+ *                     archived: { type: integer, minimum: 0, example: 5 }
+ *       '400': { description: Invalid query or unsupported status/pagination/unknown parameters. }
+ *       '401': { description: Authentication required. }
+ *       '403': { description: Inactive account or access to another seller is forbidden. }
+ */
+router.get("/status-counts", isAuth, validateZod({ query: adminValidation.advertisement.statusCountsQuery }), AdvertisementController.statusCounts);
+
 router.put("/batch/auto-refill", isAuth, validateZod({ body: adminValidation.advertisement.batchAutoRefillBody }), AdvertisementController.batchAutoRefill);
 router.post("/batch/budget", isAuth, validateZod({ body: adminValidation.advertisement.batchFundingBody }), AdvertisementController.batchFunding);
 router.patch("/batch/status", isAuth, validateZod({ body: adminValidation.advertisement.batchStatusBody }), AdvertisementController.batchStatus);
