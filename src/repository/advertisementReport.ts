@@ -1,7 +1,6 @@
 import {
   and,
   count,
-  desc,
   eq,
   gte,
   inArray,
@@ -20,11 +19,15 @@ import {
   PaginationParams,
 } from "./utils/query";
 
+import { advertisementListConditions, advertisementListOrder } from "./utils/advertisementList";
+
 export type AdvertisementMetricsInput = PaginationParams & {
   requesterId: string;
   sellerId?: string;
   productId?: string;
   status?: schema.AdvertisementStats["status"];
+  productStatus?: schema.Product["status"];
+  search?: string;
   startAt?: Date;
   endAt?: Date;
 };
@@ -61,9 +64,8 @@ export async function listAdvertisementMetrics(input: AdvertisementMetricsInput)
   const scope = await resolveAdminSellerScope(input.requesterId, input.sellerId);
   const pagination = getPagination(input.page, input.limit);
   const conditions: (SQL | undefined)[] = [
-    scope.sellerId ? eq(schema.productTable.sellerId, scope.sellerId) : undefined,
+    ...advertisementListConditions({ ...input, sellerId: scope.sellerId }),
     input.productId ? eq(schema.productTable.id, input.productId) : undefined,
-    input.status ? eq(schema.advertisementStatsTable.status, input.status) : undefined,
   ];
   const where = compactConditions(conditions);
   const [[totalRow], advertisements] = await Promise.all([
@@ -92,7 +94,7 @@ export async function listAdvertisementMetrics(input: AdvertisementMetricsInput)
         eq(schema.advertisementCoinFundingAccountTable.advertisementId, schema.advertisementTable.id),
       )
       .where(where)
-      .orderBy(desc(schema.advertisementTable.createdAt))
+      .orderBy(...advertisementListOrder())
       .limit(pagination.limit)
       .offset(pagination.offset),
   ]);

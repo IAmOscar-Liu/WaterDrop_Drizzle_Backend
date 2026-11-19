@@ -1,4 +1,4 @@
-import { SQL, and, count, eq, gte, ilike, inArray, lte, not, or, sql } from "drizzle-orm";
+import { SQL, and, count, eq, gte, inArray, lte, not, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
 import * as schema from "../db/schema";
@@ -27,6 +27,7 @@ import {
   PaginationParams,
 } from "./utils/query";
 
+import { advertisementListConditions, advertisementListOrder } from "./utils/advertisementList";
 import { canManageAdFunding } from "./utils/adPermissions";
 
 // --- Advertisement Functions ---
@@ -424,17 +425,9 @@ export async function listAdminAdvertisements({
   const pagination = getPagination(page, limit);
 
   const scope = await resolveAdminSellerScope(requesterId, sellerId);
-  const keyword = search?.trim();
-  const searchPattern = keyword ? `%${keyword.replace(/[\\%_]/g, "\\$&")}%` : undefined;
-  const whereClause = compactConditions([
-    scope.sellerId ? eq(schema.productTable.sellerId, scope.sellerId) : undefined,
-    status ? eq(schema.advertisementStatsTable.status, status) : undefined,
-    productStatus ? eq(schema.productTable.status, productStatus) : undefined,
-    searchPattern ? or(
-      ilike(schema.advertisementTable.title, searchPattern),
-      ilike(schema.productTable.name, searchPattern),
-    ) : undefined,
-  ]);
+  const whereClause = compactConditions(advertisementListConditions({
+    sellerId: scope.sellerId, status, productStatus, search,
+  }));
 
   const [totalResult, results] = await Promise.all([
     db
@@ -477,7 +470,7 @@ export async function listAdminAdvertisements({
       )
       .limit(pagination.limit)
       .offset(pagination.offset)
-      .orderBy(() => [sql`${schema.advertisementTable.createdAt} desc`]),
+      .orderBy(...advertisementListOrder()),
   ]);
 
   const total = totalResult[0].total;

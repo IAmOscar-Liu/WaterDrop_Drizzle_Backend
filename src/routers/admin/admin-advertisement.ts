@@ -525,7 +525,7 @@ router.post("/:id/budget-withdrawal", isAuth, validateZod({ params: adminValidat
  *   get:
  *     tags: [Advertisement]
  *     summary: List advertisements with pagination
- *     description: Returns all statuses by default, including archived and financially closed ads. Optional status filtering preserves the caller's seller scope. Pagination totals use the same filters.
+ *     description: Returns all statuses by default, including archived and financially closed ads. Optional status filtering preserves the caller's seller scope. Pagination totals use the same filters. Ordered by createdAt DESC, id DESC, matching metrics. Merge responses by advertisement ID, never array position; concurrent writes can shift separate requests.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -590,7 +590,7 @@ router.get(
  *   get:
  *     tags: [Advertisement]
  *     summary: List financial and reward metrics for advertisements
- *     description: Seller/employee scope is resolved by the server. Platform admins may filter sellerId. Each ad includes budgetWithdrawnAmount (lifetime) and periodBudgetWithdrawnAmount (filtered range), exact positive TWD strings for 回收廣告費. Withdrawals are separate from view spend and settlement returns. CTR and impressions are absent because they are not reliably recorded.
+ *     description: Seller/employee scope is resolved by the server. Platform admins may filter sellerId. Each ad includes budgetWithdrawnAmount (lifetime) and periodBudgetWithdrawnAmount (filtered range), exact positive TWD strings for 回收廣告費. Withdrawals are separate from view spend and settlement returns. CTR and impressions are absent because they are not reliably recorded. Both list and metrics use createdAt DESC, id DESC. Use identical page, limit and shared filters, and merge by advertisement ID. Separate requests are not a shared snapshot; concurrent writes can shift pages.
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - { in: query, name: page, schema: { type: integer } }
@@ -600,6 +600,8 @@ router.get(
  *       - { in: query, name: status, schema: { type: string, enum: [active, paused, depleted, archived] } }
  *       - { in: query, name: startAt, schema: { type: string, format: date-time } }
  *       - { in: query, name: endAt, schema: { type: string, format: date-time } }
+ *       - { in: query, name: productStatus, schema: { type: string, enum: [active, inactive] }, description: "Filter by current product status, matching the advertisement list endpoint." }
+ *       - { in: query, name: search, schema: { type: string, maxLength: 200 }, description: "Trimmed case-insensitive literal substring of advertisement title or product name. Blank means no filter; percent, underscore and backslash are literal. Combines with all other filters and pagination totals." }
  *     responses:
  *       '200':
  *         description: Paginated ad metrics including completed views, spend, returned/net amounts, funded coins, current balance, and platform advance/expense.

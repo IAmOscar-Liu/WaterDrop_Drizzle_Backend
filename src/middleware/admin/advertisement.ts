@@ -19,6 +19,13 @@ const advertisementStatus = z.enum([
   "archived",
 ]);
 
+const advertisementListFilters = {
+  sellerId: uuid.optional(),
+  status: advertisementStatus.optional(),
+  productStatus: z.enum(["active", "inactive"]).optional(),
+  search: z.string().trim().max(200).optional(),
+};
+
 const decimalMoney = z.string().regex(/^(?:0|[1-9]\d{0,13})(?:\.\d{1,2})?$/);
 const withdrawalBase = {
   expectedBalance: decimalMoney,
@@ -40,12 +47,7 @@ export const advertisementValidation = {
     z.object({ ...withdrawalBase, mode: z.literal("all") }).strict(),
     z.object({ ...withdrawalBase, mode: z.literal("amount"), amount: decimalMoney.refine((v) => Number(v) > 0) }).strict(),
   ]),
-  listQuery: paginationQuery.extend({
-    sellerId: uuid.optional(),
-    status: advertisementStatus.optional(),
-    productStatus: z.enum(["active", "inactive"]).optional(),
-    search: z.string().trim().max(200).optional(),
-  }),
+  listQuery: paginationQuery.extend(advertisementListFilters),
   idParams,
   createBody: z.object({
     productId: uuid,
@@ -65,9 +67,8 @@ export const advertisementValidation = {
     sellerId: uuid.optional(),
   }),
   metricsQuery: paginationQuery.merge(dateRangeQuery).extend({
-    sellerId: uuid.optional(),
+    ...advertisementListFilters,
     productId: uuid.optional(),
-    status: advertisementStatus.optional(),
   }),
   productDashboardParams: z.object({ productId: uuid }),
   productDashboardQuery: dateRangeQuery,

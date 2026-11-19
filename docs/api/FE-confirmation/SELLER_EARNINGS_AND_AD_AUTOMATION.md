@@ -321,3 +321,17 @@ GET /api/admin/advertisement/list?search=Netflix&status=active&productStatus=ina
 上例表示設定仍開啟，但目前不能手動補款或開啟／修改設定；授權使用者可關閉。
 
 `allowFunding` 統一取代尚未發布的 `allowAutoRefill`，不保留兩個重複欄位。它不控制封存後回收廣告費，該操作仍使用既有回收預覽與資格驗證。
+
+
+### 2026-11-19：廣告統計與列表篩選對齊（本機完成，尚未部署）
+
+`GET /api/admin/advertisement/metrics` 現在亦支援 `productStatus=active|inactive` 及 `search`，驗證與比對規則與 `/advertisement/list` 相同。`search` 去除頭尾空白後最多 200 字元，不分大小寫，搜尋廣告標題或商品名稱；`%`、`_`、反斜線均為一般文字，空白搜尋不篩選。可與 `sellerId`、廣告 `status` 組合，`total`、`totalPages` 套用相同條件；metrics 既有 `productId`、日期條件仍保留。
+
+兩端排序統一為 `createdAt DESC, id DESC`，避免建立時間相同時分頁順序不確定。FE 請在兩個請求使用相同的 `page`、`limit`、`sellerId`、`status`、`productStatus`、`search`；切換商品狀態或搜尋時，仍可取得播放次數與扣款統計，不必再跳過 metrics。
+
+```text
+GET /api/admin/advertisement/list?productStatus=active&search=Netflix&page=1&limit=20
+GET /api/admin/advertisement/metrics?productStatus=active&search=Netflix&page=1&limit=20
+```
+
+合併時必須使用列表的 `id` 對應 metrics 的 `advertisement.id`，不可依陣列位置配對。兩個 HTTP 請求並非共同資料快照；若中途新增廣告或變更狀態，頁面成員仍可能改變。找不到對應 ID 時顯示未取得／重新整理，不可套用其他廣告的統計或補成 0。回應結構未變更，也未新增逐筆查詢需求。

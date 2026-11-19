@@ -74,6 +74,58 @@ async function main(){
   assert.equal((await listAdminAdvertisements({ requesterId: other.id })).total, 0);
   const metrics=await listAdvertisementMetrics({requesterId:seller.id});
   assert.equal(metrics.advertisements.find(a=>a.advertisement.id===ads[0].id)!.totalFundedAmount,"700.00");
+  // Matching filters and timestamp ties must not put different ads on each page.
+  const [filterSeller] = await db.insert(s.accountTable).values({
+    role: "seller", email: `${randomUUID()}@test.invalid`, password: "unused",
+    realName: "filter test", phone: "0900000000", profileCompletedAt: new Date(), emailVerifiedAt: new Date(),
+  }).returning();
+  const filterProducts = await db.insert(s.productTable).values([
+    { sellerId: filterSeller.id, name: "product-only match", description: "test", status: "active" as const },
+    { sellerId: filterSeller.id, name: "inactive product", description: "test", status: "inactive" as const },
+  ]).returning();
+  const tiedTime = new Date("2026-01-01T00:00:00Z");
+  const alignmentAds = await db.insert(s.advertisementTable).values([
+    { productId: filterProducts[0].id, title: "literal %_\\ token", video_url: "https://example.test/a.mp4", createdAt: tiedTime },
+    { productId: filterProducts[0].id, title: "literal abc token", video_url: "https://example.test/a.mp4", createdAt: tiedTime },
+    { productId: filterProducts[0].id, title: "paused title", video_url: "https://example.test/a.mp4", createdAt: tiedTime },
+    { productId: filterProducts[1].id, title: "literal %_\\ token", video_url: "https://example.test/a.mp4", createdAt: tiedTime },
+  ]).returning();
+  await db.insert(s.advertisementStatsTable).values(alignmentAds.map((ad, i) => ({
+    advertisementId: ad.id, status: i === 2 ? "paused" as const : "active" as const, balance: 0,
+  })));
+  const filterCases = [
+    { filter: {}, expected: alignmentAds },
+    { filter: { productStatus: "active" as const }, expected: alignmentAds.slice(0, 3) },
+    { filter: { productStatus: "inactive" as const }, expected: [alignmentAds[3]] },
+    { filter: { search: "  PRODUCT-ONLY  " }, expected: alignmentAds.slice(0, 3) },
+    { filter: { search: "%_\\" }, expected: [alignmentAds[0], alignmentAds[3]] },
+    { filter: { productStatus: "active" as const, status: "active" as const, search: "literal" }, expected: alignmentAds.slice(0, 2) },
+    { filter: { search: "   " }, expected: alignmentAds },
+    { filter: { search: "not present" }, expected: [] },
+  ];
+  for (const { filter, expected } of filterCases) {
+    const expectedIds = expected.map(ad => ad.id).sort().reverse();
+    for (const requester of [{ requesterId: filterSeller.id }, { requesterId: admin.id, sellerId: filterSeller.id }]) {
+      for (const page of [1, 2, 3]) {
+        const input = { ...requester, ...filter, page, limit: 2 };
+        const [list, report] = await Promise.all([listAdminAdvertisements(input), listAdvertisementMetrics(input)]);
+        const ids = expectedIds.slice((page - 1) * 2, page * 2);
+        assert.deepEqual(list.advertisements.map(ad => ad.id), ids);
+        assert.deepEqual(report.advertisements.map(row => row.advertisement.id), ids);
+        assert.equal(list.total, expectedIds.length);
+        assert.equal(report.total, list.total);
+        assert.equal(report.totalPages, list.totalPages);
+      }
+    }
+  }
+  assert.equal((await listAdvertisementMetrics({ requesterId: other.id, search: "literal" })).total, 0);
+  assert.equal(advertisementValidation.metricsQuery.parse({ search: "  hello  ", productStatus: "active" }).search, "hello");
+  for (const name of ["productStatus", "search"]) {
+    assert.ok(spec.paths["/api/admin/advertisement/metrics"].get.parameters.some((parameter: any) => parameter.name === name));
+  }
+  for (const query of [{ productStatus: "all" }, { search: "a".repeat(201) }, { search: ["a", "b"] }]) {
+    assert.equal(advertisementValidation.metricsQuery.safeParse(query).success, false);
+  }
   const [buyer]=await db.insert(s.userTable).values({email:`${randomUUID()}@test.invalid`,oauthProvider:"other",oauthId:randomUUID(),referralCode:randomUUID()}).returning();
   const confirmedAt=new Date("2026-11-01T19:00:00Z");
   const [order]=await db.insert(s.orderTable).values({userId:buyer.id,subTotal:1000,totalAmount:930,discountCoin:1000,orderStatus:"paid",completedAt:confirmedAt,shippingCost:30,shippingInfo:{nonCvsPickupGroup:[{LogisticsType:"home_delivery",products:[{productId:product.id,variantId:variant.id}],shippingCost:30,shippingCostDeduction:0}]}}).returning();
