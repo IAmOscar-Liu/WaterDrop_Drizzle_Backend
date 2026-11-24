@@ -136,7 +136,7 @@ Summary 主要欄位：
 
 觸發點為觀看扣款完成、廣告錢包入金完成、開啟或修改自動補款設定。沒有新增每分鐘排程。不以廣告分配或寶箱開啟觸發補款。多則等待補款時優先處理等待最久者。
 
-錢包不足支付完整金額就跳過，不部分補款、不透支。手動暫停、封存、已結清、商品下架／軟刪除、賣家停用時不補款。可用金額排除提領保留款。`waitingSince` 與 `lastReason` 提供等待及未執行原因，例如 `insufficient_wallet_balance`、`not_eligible`、`balance_sufficient`、`funding_disabled`；資金不足的廣告維持原有停止曝光規則。
+錢包不足支付完整金額就跳過，不部分補款、不透支。手動暫停、封存、已結清、商品下架／軟刪除、賣家停用時不補款。可用金額排除提領保留款。`waitingSince` 與 `lastReason` 提供等待及未執行原因，例如 `insufficient_wallet_balance`、`wallet_below_auto_refill_threshold`、`not_eligible`、`balance_sufficient`、`funding_disabled`；資金不足的廣告維持原有停止曝光規則。
 
 觀看與入金已提交後，補款失敗不回滾原操作。待處理事件保存在資料庫；事件重試與服務啟動時可補處理，不建立頻繁輪詢。並發事件會再次檢查餘額，不重複補款。
 
@@ -348,3 +348,23 @@ GET /api/admin/advertisement/metrics?productStatus=active&search=Netflix&page=1&
 ```
 
 無資料時每個欄位均為 0。賣家僅能查本人，子帳號依所屬賣家；管理員可指定賣家或省略以取得全平台數量。FE 把五個欄位直接對應「全部／啟用中／已暫停／預算不足／已封存」，不再以 `limit=1` 查詢其他狀態。列表、統計與狀態數量仍是獨立 HTTP 請求，並非共用資料快照；同時有其他寫入時數量可能短暫不同。
+
+
+## 廣告錢包自動補款停止門檻（2026-11-24）
+
+此設定屬於賣家廣告錢包，套用至該賣家的所有廣告，不是每則廣告的獨立門檻。
+
+- 錢包 GET `/api/admin/account-wallet/me`（賣家）及 GET `/api/admin/account-wallet/{accountId}`（管理員）新增 `autoRefillStopThreshold`，金額以小數字串回傳，預設 `"0.00"`，維持舊行為。
+- 賣家 PATCH `/api/admin/account-wallet/me/auto-refill-settings`；管理員 PATCH `/api/admin/account-wallet/{accountId}/auto-refill-settings`。
+- Body：`{"autoRefillStopThreshold":"10000.00"}`。必填、非負、最多兩位小數，可傳安全範圍內數字或最多 16 位整數的小數字串；不接受其他欄位。`0` 表示關閉額外門檻。成功回傳 `{success:true,data:AccountWallet}`，含最新設定；不是補款交易。
+- 僅啟用中的賣家本人或平台管理員可修改，員工及其他賣家不得修改。目標必須是啟用中的賣家且錢包已初始化；未初始化回 409、金額格式或非賣家目標回 400、權限不足回 403。
+- 自動補款使用可用金額 `walletBalance - lockedBalance`，**每次扣款前**在錢包列鎖內重新比較。低於門檻就停止；等於門檻仍可補一次，該次扣款後可以低於門檻，之後其他廣告便停止。此設定不是扣款後必須保留的最低餘額。
+- 例：門檻 10,000，可用 10,000，單則補款 500 → 可補一次，剩 9,500 → 後續自動補款停止。可用 9,999.99 時不補款。多則同時觸發仍會逐次檢查，不共用舊餘額快照。
+- 停止時不關閉個別廣告的 `enabled`，不改投放狀態，也不建立扣款紀錄；`lastReason` 為 `wallet_below_auto_refill_threshold`，保留 `waitingSince`。FE 可顯示「錢包可用餘額低於自動補款門檻」。
+- 手動補款／批次補款不受此門檻限制，仍驗證錢包可用餘額與廣告資格。即使門檻為 0，自動補款仍需足夠支付完整設定金額。
+- 存款完成、保留款釋放／例行工作或調低門檻後，符合資格的廣告會經現有自動補款流程重試。保存門檻只排入工作佇列，不立即補款。若之後再提高可用餘額，也無需重新開啟各廣告的開關。
+- FE 建議在廣告錢包頁新增「自動補款停止門檻」金額欄位及儲存按鈕，顯示目前可用金額；說明 0 為不設定門檻，以及上述扣款前判斷規則。
+
+需先套用新增 `account_wallets.auto_refill_stop_threshold` 欄位與非負限制的各環境 Drizzle migration，再部署引用此欄位的 BE。既有錢包預設為 0，不會因這次新增設定而停止補款。
+
+本次已套用至已設定的 local、development、stg 資料庫，對應新增 migration 為 `0124_lucky_ultimates`、`0074_sparkling_night_thrasher`、`0022_daffy_bishop`。保留 stage 已套用的 `0021_peaceful_doorman` 及其原始 journal/snapshot，避免 development 分支重新產生或重複執行舊的 staging migration。三個環境皆無待執行 migration，實際 public schema 一致：76 tables、764 columns、286 constraints、187 indexes。此處僅確認 schema，不同步業務資料。build、seller-earnings、account-wallet 及 API e2e 測試皆通過。BE 程式與 FE 設定畫面尚未部署。

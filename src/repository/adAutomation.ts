@@ -92,8 +92,9 @@ export async function attemptAutoRefill(adId:string) {
     if(!stats||!variant||!['active','depleted'].includes(stats.status)||ad.ad.archivedAt||ad.ad.financiallyClosedAt||ad.product.status!=="active"||ad.product.deletedAt||ad.seller.status!=="active"||ad.seller.deletedAt)reason="not_eligible";
     else if(stats.balance>=100)reason="balance_sufficient";
     else if(process.env.ACCOUNT_WALLET_AD_FUNDING_ENABLED!=="true")reason="funding_disabled";
+    else if(wallet && moneyToMinorUnits(wallet.walletBalance)-moneyToMinorUnits(wallet.lockedBalance)<moneyToMinorUnits(wallet.autoRefillStopThreshold))reason="wallet_below_auto_refill_threshold";
     else if(!wallet||moneyToMinorUnits(wallet.walletBalance)-moneyToMinorUnits(wallet.lockedBalance)<moneyToMinorUnits(setting.amount))reason="insufficient_wallet_balance";
-    if(reason){await tx.delete(s.adRefillEventTable).where(eq(s.adRefillEventTable.advertisementId,adId));await tx.update(s.adAutoRefillTable).set({lastReason:reason,waitingSince:reason==="insufficient_wallet_balance"?(setting.waitingSince??new Date()):null,updatedAt:new Date()}).where(eq(s.adAutoRefillTable.advertisementId,adId));return {reason};}
+    if(reason){await tx.delete(s.adRefillEventTable).where(eq(s.adRefillEventTable.advertisementId,adId));await tx.update(s.adAutoRefillTable).set({lastReason:reason,waitingSince:["insufficient_wallet_balance","wallet_below_auto_refill_threshold"].includes(reason)?(setting.waitingSince??new Date()):null,updatedAt:new Date()}).where(eq(s.adAutoRefillTable.advertisementId,adId));return {reason};}
     const result=await depositAdBalance({advertisementId:adId,requesterId:ad.seller.id,amount:setting.amount,idempotencyKey:`auto-refill:${randomUUID()}`,metadata:{source:"automatic_refill",configuredAmount:setting.amount}},tx);
     await tx.update(s.adAutoRefillTable).set({lastReason:null,waitingSince:null,updatedAt:new Date()}).where(eq(s.adAutoRefillTable.advertisementId,adId));
     await tx.delete(s.adRefillEventTable).where(eq(s.adRefillEventTable.advertisementId,adId));

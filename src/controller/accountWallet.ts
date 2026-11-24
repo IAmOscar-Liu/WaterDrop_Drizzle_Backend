@@ -5,6 +5,17 @@ import accountWalletService from "../services/accountWallet";
 import { RequestWithId } from "../type/request";
 
 class AccountWalletController {
+  async setOwnAutoRefillSettings(req: RequestWithId, res: Response): Promise<any> {
+    sendJsonResponse(res, await accountWalletService.setAutoRefillThreshold(
+      req.userId ?? "", req.userId ?? "", req.body.autoRefillStopThreshold,
+    ));
+  }
+
+  async setAccountAutoRefillSettings(req: RequestWithId, res: Response): Promise<any> {
+    sendJsonResponse(res, await accountWalletService.setAutoRefillThreshold(
+      req.userId ?? "", req.params.accountId, req.body.autoRefillStopThreshold,
+    ));
+  }
   async getOwnWallet(req: RequestWithId, res: Response): Promise<any> {
     sendJsonResponse(
       res,

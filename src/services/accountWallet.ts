@@ -5,10 +5,15 @@ import {
   listAccountWalletTransactions,
   ListWalletTransactionsParams,
   getAccountWalletSummary,
+  setWalletAutoRefillThreshold,
 } from "../repository/accountWallet";
 import { ServiceResponse } from "../type/general";
 
 class AccountWalletService {
+  async setAutoRefillThreshold(actorId: string, accountId: string, threshold: string) {
+    try { return { success: true as const, data: await setWalletAutoRefillThreshold(actorId, accountId, threshold) }; }
+    catch (error) { return handleServiceError(error); }
+  }
   async getSummary(input: Parameters<typeof getAccountWalletSummary>[0]) {
     try {
       return { success: true as const, data: await getAccountWalletSummary(input) };

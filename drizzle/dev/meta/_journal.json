@@ -519,6 +519,13 @@
       "when": 1794907746196,
       "tag": "0073_peaceful_green_goblin",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1795506370604,
+      "tag": "0074_sparkling_night_thrasher",
+      "breakpoints": true
     }
   ]
 }
