@@ -15,12 +15,94 @@ import { batchFundAds, attemptAutoRefill, setAutoRefill, retrySellerAutoRefills 
 import { depositAdBalance, spendAdBalanceWithTx, listAdminAdvertisements, countAdminAdvertisementsByStatus, getAdvertisement } from "../repository/advertisement";
 import { listAdvertisementMetrics } from "../repository/advertisementReport";
 import { shippingSummary, updateShippingClaim, reverseShippingSubsidy } from "../repository/shippingReimbursement";
+import { setWalletAutoRefillThreshold, getAccountWallet } from "../repository/accountWallet";
+import { accountWalletValidation } from "../middleware/admin/accountWallet";
+import { fixtureToken } from "./accountSessionFixture";
+import app from "../app";
+import type { AddressInfo } from "node:net";
+
+async function testWalletRefillThreshold(adminId: string, otherId: string) {
+  const [seller] = await db.insert(s.accountTable).values({ role: "seller", email: `${randomUUID()}@test.invalid`, password: "unused", realName: "Threshold Seller", phone: "0900000000", profileCompletedAt: new Date(), emailVerifiedAt: new Date() }).returning();
+  await db.insert(s.accountWalletTable).values({ accountId: seller.id, walletBalance: "1000" });
+  const [product] = await db.insert(s.productTable).values({ sellerId: seller.id, name: "Threshold product", description: "test" }).returning();
+  await db.insert(s.productVariantTable).values({ productId: product.id, price: 100, stock: 10 });
+  const ads = await db.insert(s.advertisementTable).values([1, 2].map(i => ({ productId: product.id, title: `Threshold ${i}`, video_url: "https://example.test/ad.mp4" }))).returning();
+  await db.insert(s.advertisementStatsTable).values(ads.map(ad => ({ advertisementId: ad.id, balance: 0, status: "depleted" as const })));
+  for (const ad of ads) await setAutoRefill(seller.id, ad.id, { enabled: true, amount: "500" });
+  assert.equal((await getAccountWallet(seller.id)).autoRefillStopThreshold, "0.00");
+  const bodySchema = accountWalletValidation.autoRefillSettingsBody;
+  for (const value of [-1, "-1", "1.001", "NaN", "1e4", "10000000000000000", null]) {
+    assert.equal(bodySchema.safeParse({ autoRefillStopThreshold: value }).success, false);
+  }
+  assert.equal(bodySchema.safeParse({}).success, false);
+  assert.equal(bodySchema.safeParse({ autoRefillStopThreshold: 0, extra: true }).success, false);
+  assert.deepEqual(bodySchema.parse({ autoRefillStopThreshold: 1000 }), { autoRefillStopThreshold: "1000.00" });
+  await assert.rejects(setWalletAutoRefillThreshold(otherId, seller.id, "1000"), /owning/);
+  await setWalletAutoRefillThreshold(adminId, seller.id, "1000");
+  // Equality permits one refill; wallet locking makes the competing ad recheck
+  // the lower balance instead of both spending from the same snapshot.
+  const results = await Promise.all(ads.map(ad => attemptAutoRefill(ad.id)));
+  assert.deepEqual(results.map(r => r!.reason).sort(), ["funded", "wallet_below_auto_refill_threshold"]);
+  assert.equal((await getAccountWallet(seller.id)).walletBalance, "500.00");
+  const blockedAd = ads[results.findIndex(r => r!.reason === "wallet_below_auto_refill_threshold")];
+  const setting = (await db.query.adAutoRefillTable.findFirst({ where: eq(s.adAutoRefillTable.advertisementId, blockedAd.id) }))!;
+  assert.equal(setting.enabled, true);
+  assert.ok(setting.waitingSince);
+  assert.equal(setting.lastReason, "wallet_below_auto_refill_threshold");
+  // Manual funding remains available below the automatic threshold.
+  await depositAdBalance({ advertisementId: blockedAd.id, requesterId: seller.id, amount: "1", idempotencyKey: randomUUID() });
+  assert.equal((await getAccountWallet(seller.id)).walletBalance, "499.00");
+  // Locked withdrawal money is excluded even when total balance reaches threshold.
+  await db.update(s.accountWalletTable).set({ walletBalance: "1500", lockedBalance: "501" }).where(eq(s.accountWalletTable.accountId, seller.id));
+  assert.equal((await attemptAutoRefill(blockedAd.id))!.reason, "wallet_below_auto_refill_threshold");
+  await db.update(s.accountWalletTable).set({ lockedBalance: "500" }).where(eq(s.accountWalletTable.accountId, seller.id));
+  assert.equal((await attemptAutoRefill(blockedAd.id))!.reason, "funded");
+  assert.equal((await getAccountWallet(seller.id)).walletBalance, "1000.00");
+  // Disabling the extra threshold still enforces full refill affordability.
+  await db.update(s.advertisementStatsTable).set({ balance: 0, status: "depleted" }).where(eq(s.advertisementStatsTable.advertisementId, blockedAd.id));
+  await db.update(s.accountWalletTable).set({ walletBalance: "499", lockedBalance: "0" }).where(eq(s.accountWalletTable.accountId, seller.id));
+  await setWalletAutoRefillThreshold(seller.id, seller.id, "0");
+  assert.equal((await attemptAutoRefill(blockedAd.id))!.reason, "insufficient_wallet_balance");
+  await db.update(s.accountWalletTable).set({ walletBalance: "1000" }).where(eq(s.accountWalletTable.accountId, seller.id));
+  await setWalletAutoRefillThreshold(seller.id, seller.id, "1001");
+  assert.equal((await attemptAutoRefill(blockedAd.id))!.reason, "wallet_below_auto_refill_threshold");
+  await setWalletAutoRefillThreshold(seller.id, seller.id, "1000");
+  assert.ok(await db.query.adRefillEventTable.findFirst({ where: eq(s.adRefillEventTable.advertisementId, blockedAd.id) }));
+  assert.equal((await getAccountWallet(seller.id)).walletBalance, "1000.00", "Saving settings never debits money");
+  await retrySellerAutoRefills(seller.id);
+  assert.equal((await getAccountWallet(seller.id)).walletBalance, "500.00");
+
+  const server = app.listen(0, "127.0.0.1");
+  await new Promise<void>(resolve => server.once("listening", resolve));
+  try {
+    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/admin/account-wallet`;
+    const token = await fixtureToken({ id: seller.id });
+    const adminToken = await fixtureToken({ id: adminId });
+    const patch = (path: string, bearer: string, body: unknown) => fetch(`${url}${path}`, { method: "PATCH", headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json" }, body: JSON.stringify(body) });
+    const response = await patch("/me/auto-refill-settings", token, { autoRefillStopThreshold: "10000" });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).data.autoRefillStopThreshold, "10000.00");
+    const get = await fetch(`${url}/me`, { headers: { authorization: `Bearer ${token}` } });
+    assert.equal((await get.json()).data.autoRefillStopThreshold, "10000.00");
+    assert.equal((await patch("/me/auto-refill-settings", token, { autoRefillStopThreshold: "-1" })).status, 400);
+    assert.equal((await patch(`/${seller.id}/auto-refill-settings`, await fixtureToken({ id: otherId }), { autoRefillStopThreshold: "0" })).status, 403);
+    const [employee] = await db.insert(s.accountTable).values({ role: "employee", email: `${randomUUID()}@test.invalid`, password: "unused" }).returning();
+    assert.equal((await patch("/me/auto-refill-settings", await fixtureToken({ id: employee.id }), { autoRefillStopThreshold: "0" })).status, 403);
+    assert.equal((await patch(`/${seller.id}/auto-refill-settings`, adminToken, { autoRefillStopThreshold: "0" })).status, 200);
+    assert.equal((await getAccountWallet(seller.id)).autoRefillStopThreshold, "0.00");
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  }
+}
 
 async function main(){
   assert.equal(process.env.TEST_DATABASE_MANAGED,"true");
   const spec=swaggerSpec as any;
   assert.ok(spec.paths["/api/admin/seller-earnings/requests"].post);
   assert.ok(spec.paths["/api/admin/advertisement/{id}/auto-refill"].put);
+  assert.ok(spec.paths["/api/admin/account-wallet/me/auto-refill-settings"].patch);
+  assert.ok(spec.paths["/api/admin/account-wallet/{accountId}/auto-refill-settings"].patch);
+  assert.ok(spec.components.schemas.AccountWallet.properties.autoRefillStopThreshold);
   assert.ok(spec.components.schemas.RefundItem.properties.shippingReimbursement);
 
   process.env.SELLER_EARNINGS_LAUNCH_AT="2026-01-01T00:00:00Z";
@@ -29,6 +111,7 @@ async function main(){
   process.env.NODE_ENV="local";assert.equal(earningsHoldMs(),33.6*3600_000);
   process.env.NODE_ENV="stg";assert.equal(earningsHoldMs(),336*3600_000);process.env.NODE_ENV=env;
   const [seller,admin,other]=await db.insert(s.accountTable).values((["seller","admin","seller"] as const).map(role=>({role,email:`${randomUUID()}@test.invalid`,password:"unused",realName:"test",phone:"0900000000",profileCompletedAt:new Date(),emailVerifiedAt:new Date()}))).returning();
+  await testWalletRefillThreshold(admin.id, other.id);
   await db.insert(s.accountWalletTable).values({accountId:seller.id});
   const [product]=await db.insert(s.productTable).values({sellerId:seller.id,name:"test",description:"test"}).returning();
   const [variant]=await db.insert(s.productVariantTable).values({productId:product.id,price:1000,stock:10}).returning();

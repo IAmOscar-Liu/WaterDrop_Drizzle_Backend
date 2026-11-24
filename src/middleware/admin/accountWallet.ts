@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizeMoney } from "../../lib/money";
 
 import {
   dateRangeQuery,
@@ -19,6 +20,11 @@ const transactionType = z.enum([
 
 export const accountWalletValidation = {
   accountIdParams: z.object({ accountId: uuid }),
+  autoRefillSettingsBody: z.object({
+    autoRefillStopThreshold: z.union([z.string(), z.number()]).refine((value) => {
+      try { normalizeMoney(value); return true; } catch { return false; }
+    }, "Threshold must be non-negative with at most two decimal places").transform(normalizeMoney),
+  }).strict(),
   transactionListQuery: paginationQuery.merge(dateRangeQuery).extend({
     type: transactionType.optional(),
   }),

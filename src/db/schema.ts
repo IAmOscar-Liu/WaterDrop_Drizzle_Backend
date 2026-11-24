@@ -561,6 +561,9 @@ export const accountWalletTable = pgTable(
     lockedBalance: numeric("locked_balance", { precision: 18, scale: 2 })
       .default("0")
       .notNull(),
+    autoRefillStopThreshold: numeric("auto_refill_stop_threshold", { precision: 18, scale: 2 })
+      .default("0")
+      .notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -580,6 +583,7 @@ export const accountWalletTable = pgTable(
       sql`${t.totalRevenueCoin} >= 0`,
     ),
     check("account_wallets_locked_nonnegative", sql`${t.lockedBalance} >= 0`),
+    check("account_wallets_auto_refill_threshold_nonnegative", sql`${t.autoRefillStopThreshold} >= 0`),
     check(
       "account_wallets_locked_not_above_balance",
       sql`${t.lockedBalance} <= ${t.walletBalance}`,

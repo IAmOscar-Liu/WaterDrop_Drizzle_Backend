@@ -15,6 +15,7 @@ import {
   PaginationParams,
 } from "./utils/query";
 import { recordAdminActivityWithTx } from "./adminActivity";
+import { getActiveAdminAccount } from "./adminScope";
 
 type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -61,6 +62,36 @@ export async function getAccountWallet(accountId: string) {
     );
   }
   return wallet;
+}
+
+export async function setWalletAutoRefillThreshold(actorId: string, accountId: string, threshold: string) {
+  const actor = await getActiveAdminAccount(actorId);
+  if (actor.role === "employee" || (actor.role !== "admin" && actor.id !== accountId)) {
+    throw new CustomError("Only the owning seller or admin may change wallet auto-refill settings", 403);
+  }
+  const seller = await getActiveAdminAccount(accountId);
+  if (seller.role !== "seller") throw new CustomError("Wallet must belong to a seller", 400);
+  let normalized: string;
+  try { normalized = normalizeMoney(threshold); }
+  catch { throw new CustomError("Threshold must be a non-negative amount with at most two decimal places", 400); }
+  return db.transaction(async (tx) => {
+    // Serialize settings changes with automatic refill's wallet lock.
+    const [wallet] = await tx.select().from(schema.accountWalletTable)
+      .where(eq(schema.accountWalletTable.accountId, accountId)).for("update");
+    if (!wallet) throw new CustomError("Account wallet has not been initialized.", 409);
+    const [updated] = await tx.update(schema.accountWalletTable)
+      .set({ autoRefillStopThreshold: normalized })
+      .where(eq(schema.accountWalletTable.id, wallet.id)).returning();
+    // Queue enabled ads so lowering the threshold resumes eligible refills through
+    // the normal worker; saving a setting does not itself move money.
+    const ads = await tx.select({ advertisementId: schema.adAutoRefillTable.advertisementId })
+      .from(schema.adAutoRefillTable)
+      .innerJoin(schema.advertisementTable, eq(schema.advertisementTable.id, schema.adAutoRefillTable.advertisementId))
+      .innerJoin(schema.productTable, eq(schema.productTable.id, schema.advertisementTable.productId))
+      .where(and(eq(schema.productTable.sellerId, accountId), eq(schema.adAutoRefillTable.enabled, true)));
+    if (ads.length) await tx.insert(schema.adRefillEventTable).values(ads).onConflictDoNothing();
+    return updated;
+  });
 }
 
 export async function listAccountWalletTransactions({

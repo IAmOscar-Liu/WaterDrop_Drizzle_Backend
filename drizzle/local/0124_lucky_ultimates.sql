@@ -1,0 +1,2 @@
+ALTER TABLE "account_wallets" ADD COLUMN "auto_refill_stop_threshold" numeric(18, 2) DEFAULT '0' NOT NULL;--> statement-breakpoint
+ALTER TABLE "account_wallets" ADD CONSTRAINT "account_wallets_auto_refill_threshold_nonnegative" CHECK ("account_wallets"."auto_refill_stop_threshold" >= 0);

@@ -1997,6 +1997,7 @@ export default router;
  *                         "nullable": true
  *                       },
  *                       "lastReason": {
+ *                         "description": "Includes wallet_below_auto_refill_threshold when available seller wallet balance is below the wallet setting; the ad switch remains enabled.",
  *                         "type": "string",
  *                         "nullable": true
  *                       }
@@ -2073,6 +2074,7 @@ export default router;
  *                         "nullable": true
  *                       },
  *                       "lastReason": {
+ *                         "description": "Includes wallet_below_auto_refill_threshold when available seller wallet balance is below the wallet setting; the ad switch remains enabled.",
  *                         "type": "string",
  *                         "nullable": true
  *                       }
@@ -2175,7 +2177,7 @@ export default router;
  *                           enabled: { type: boolean }
  *                           amount: { type: string }
  *                           waitingSince: { type: string, format: date-time, nullable: true }
- *                           lastReason: { type: string, nullable: true }
+ *                           lastReason: { type: string, nullable: true, description: Includes wallet_below_auto_refill_threshold when blocked by the seller wallet threshold. }
  *                           updatedAt: { type: string, format: date-time }
  *       '400':
  *         description: Invalid batch, duplicate IDs or amount outside limits; no items processed.
