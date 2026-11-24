@@ -56,7 +56,9 @@
 先套用 Drizzle migration 新增 `categories.deleted_at`，再部署讀取此欄位的 BE。既有分類預設 null，因此維持可見。
 
 - Local：`0125_deep_captain_universe`（已套用）。
-- Development：`0075_glamorous_ironclad`（已產生，尚未套用）。
+- Development：`0075_glamorous_ironclad`（已套用）。
 - Staging：`0023_fuzzy_doctor_faustus`（已產生，尚未套用）。
 
 API 測試覆蓋並行新增／恢復、不分大小寫唯一、名稱修剪、兩種清單排除刪除列、關聯保留、重複刪除、改名限制及原管理員權限。
+
+本分支修正已以 `5836c16` 合併至本機 development；local 與 development migration 命令皆成功，最新 SQL hash／時間已記錄，沒有待執行 migration。兩個資料庫的 public schema 定義一致（76 tables、765 columns）。Staging 本次未變更，仍需於部署對應程式前套用其 migration。此為原始碼與 schema 狀態，不代表 API 已部署。
