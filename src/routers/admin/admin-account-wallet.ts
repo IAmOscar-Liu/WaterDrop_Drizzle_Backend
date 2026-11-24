@@ -27,6 +27,10 @@ const router = Router();
  *         totalRevenueCash: { type: string, example: "0.00" }
  *         totalRevenueCoin: { type: string, example: "0.00" }
  *         lockedBalance: { type: string, example: "0.00" }
+ *         autoRefillStopThreshold:
+ *           type: string
+ *           example: "10000.00"
+ *           description: Automatic ad refills stop when walletBalance minus lockedBalance is below this amount before a refill. Default 0 disables this additional threshold. Manual funding is unaffected.
  *         createdAt: { type: string, format: date-time }
  *         updatedAt: { type: string, format: date-time }
  *     AccountWalletTransaction:
@@ -40,7 +44,7 @@ const router = Router();
  *         advertisementId: { type: string, format: uuid, nullable: true }
  *         type:
  *           type: string
- *           enum: [legacy_opening_balance, admin_credit, advertisement_funding_debit, advertisement_budget_return]
+ *           enum: [legacy_opening_balance, admin_credit, advertisement_funding_debit, advertisement_budget_return, seller_deposit, seller_withdrawal]
  *         amount: { type: string, example: "1000.00" }
  *         balanceBefore: { type: string, example: "0.00" }
  *         balanceAfter: { type: string, example: "1000.00" }
@@ -73,6 +77,83 @@ router.get("/me", isAuth, AccountWalletController.getOwnWallet);
 
 /**
  * @swagger
+ * /api/admin/account-wallet/me/auto-refill-settings:
+ *   patch:
+ *     tags: [Account Wallet]
+ *     summary: Set the signed-in seller's wallet automatic refill threshold
+ *     description: Only the owning active seller may use this route. Employees cannot change this setting. Applies to every automatically refilled ad belonging to the seller. Checks available wallet balance (walletBalance minus lockedBalance) BEFORE each refill; equality is allowed, so a successful refill may cross below the threshold. 0 removes the additional threshold. Does not change ad switches/status or restrict manual funding. Saving queues enabled ads for the normal worker without immediately moving money. Below-threshold ads report lastReason wallet_below_auto_refill_threshold; wallet replenishment or lowering the threshold allows automatic retry.
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             additionalProperties: false
+ *             required: [autoRefillStopThreshold]
+ *             properties:
+ *               autoRefillStopThreshold:
+ *                 oneOf:
+ *                   - { type: string, pattern: '^(0|[1-9][0-9]{0,15})(\.[0-9]{1,2})?$', example: "10000.00" }
+ *                   - { type: number, minimum: 0, maximum: 90071992547409.91, multipleOf: 0.01, example: 10000 }
+ *                 description: Non-negative currency amount with at most two decimal places; use decimal strings for large amounts.
+ *     responses:
+ *       '200':
+ *         description: Updated wallet; all currency fields are decimal strings.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 data: { $ref: '#/components/schemas/AccountWallet' }
+ *       '400': { description: Invalid threshold or target is not a seller. }
+ *       '403': { description: Active owning seller required; employees are denied. }
+ *       '409': { description: Wallet has not been initialized. }
+ * /api/admin/account-wallet/{accountId}/auto-refill-settings:
+ *   patch:
+ *     tags: [Account Wallet]
+ *     summary: Set a seller wallet automatic refill threshold (platform admin only)
+ *     description: Same threshold semantics and response as the seller route. The target must be an active seller with an initialized wallet. Does not debit funds.
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { in: path, name: accountId, required: true, schema: { type: string, format: uuid } }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             additionalProperties: false
+ *             required: [autoRefillStopThreshold]
+ *             properties:
+ *               autoRefillStopThreshold:
+ *                 oneOf:
+ *                   - { type: string, pattern: '^(0|[1-9][0-9]{0,15})(\.[0-9]{1,2})?$', example: "10000.00" }
+ *                   - { type: number, minimum: 0, maximum: 90071992547409.91, multipleOf: 0.01 }
+ *     responses:
+ *       '200':
+ *         description: Updated wallet wrapped in success/data; see AccountWallet.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 data: { $ref: '#/components/schemas/AccountWallet' }
+ *       '400': { description: Invalid threshold or target is not a seller. }
+ *       '403': { description: Platform admin required or target inactive. }
+ *       '409': { description: Wallet has not been initialized. }
+ */
+router.patch("/me/auto-refill-settings", isAuth,
+  validateZod({ body: adminValidation.accountWallet.autoRefillSettingsBody }),
+  AccountWalletController.setOwnAutoRefillSettings);
+router.patch("/:accountId/auto-refill-settings", isAuth, isAdmin,
+  validateZod({ params: adminValidation.accountWallet.accountIdParams, body: adminValidation.accountWallet.autoRefillSettingsBody }),
+  AccountWalletController.setAccountAutoRefillSettings);
+
+/**
+ * @swagger
  * /api/admin/account-wallet/me/transactions:
  *   get:
  *     tags: [Account Wallet]
@@ -85,7 +166,7 @@ router.get("/me", isAuth, AccountWalletController.getOwnWallet);
  *         name: type
  *         schema:
  *           type: string
- *           enum: [legacy_opening_balance, admin_credit, advertisement_funding_debit, advertisement_budget_return]
+ *           enum: [legacy_opening_balance, admin_credit, advertisement_funding_debit, advertisement_budget_return, seller_deposit, seller_withdrawal]
  *       - { in: query, name: startAt, schema: { type: string, format: date-time } }
  *       - { in: query, name: endAt, schema: { type: string, format: date-time } }
  *     responses:
@@ -212,7 +293,7 @@ router.get(
  *         name: type
  *         schema:
  *           type: string
- *           enum: [legacy_opening_balance, admin_credit, advertisement_funding_debit, advertisement_budget_return]
+ *           enum: [legacy_opening_balance, admin_credit, advertisement_funding_debit, advertisement_budget_return, seller_deposit, seller_withdrawal]
  *       - { in: query, name: startAt, schema: { type: string, format: date-time } }
  *       - { in: query, name: endAt, schema: { type: string, format: date-time } }
  *     responses:
@@ -235,50 +316,15 @@ router.get(
  * /api/admin/account-wallet/{accountId}/credit:
  *   post:
  *     tags: [Account Wallet]
- *     summary: Credit a seller wallet (platform admin only)
- *     description: Records an already-confirmed payment or manual correction. It is not a public checkout endpoint. The target may be inactive or banned, but must be a seller account. Reusing the same idempotency key and payload returns the original result; a different payload returns 409.
+ *     summary: Retired standalone wallet credit
+ *     deprecated: true
+ *     description: Standalone admin credits are disabled. Sellers must submit an advertising-wallet deposit request through /api/admin/seller-earnings/requests and admins complete that request after checking external receipt.
  *     security: [{ bearerAuth: [] }]
  *     parameters:
- *       - in: path
- *         name: accountId
- *         required: true
- *         schema: { type: string, format: uuid }
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [amount, idempotencyKey]
- *             properties:
- *               amount:
- *                 oneOf: [{ type: string }, { type: number }]
- *                 example: "1000.00"
- *                 description: Positive TWD amount with at most two decimal places.
- *               idempotencyKey: { type: string, minLength: 8, maxLength: 200 }
- *               reason: { type: string, maxLength: 500 }
- *               externalReference: { type: string, maxLength: 200 }
- *               metadata: { type: object, additionalProperties: true }
+ *       - { in: path, name: accountId, required: true, schema: { type: string, format: uuid } }
  *     responses:
- *       '200':
- *         description: Wallet and immutable credit transaction.
- *         content:
- *           application/json:
- *             example:
- *               success: true
- *               data:
- *                 wallet:
- *                   accountId: "11111111-1111-4111-8111-111111111111"
- *                   walletBalance: "1000.00"
- *                 transaction:
- *                   type: admin_credit
- *                   amount: "1000.00"
- *                   balanceBefore: "0.00"
- *                   balanceAfter: "1000.00"
- *                   idempotencyKey: seller-topup-payment-20260916-0001
- *                 idempotentReplay: false
- *       '403': { description: Platform administrator access required. }
- *       '409': { description: Target is not a seller or the idempotency key conflicts. }
+ *       '410': { description: WALLET_CREDIT_REQUIRES_REQUEST }
+ *       '403': { description: Administrator access required }
  */
 router.post(
   "/:accountId/credit",

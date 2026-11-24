@@ -6,6 +6,48 @@ import validateZod from "../../middleware/validateZod";
 import { adminValidation } from "../../middleware/admin";
 
 const router = Router();
+/**
+ * @swagger
+ * /api/admin/advertisement/status-counts:
+ *   get:
+ *     tags: [Advertisement]
+ *     summary: Count advertisements for every status tab in one request
+ *     description: Returns counts across all pages with the same seller scope, product-status and literal search rules as the admin advertisement list. Sellers see only their own ads; employees see their parent seller's ads. Platform admins may select a sellerId or omit it for platform totals. Archived and financially closed ads remain included. Status and pagination parameters are not accepted; counts are independent of the currently selected ad-status tab. Empty results return zeros. Separate list and count requests are not a shared database snapshot. Counts represent advertisements, not money or view counts.
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { in: query, name: sellerId, schema: { type: string, format: uuid }, description: Optional seller scope for platform admins. }
+ *       - { in: query, name: productStatus, schema: { type: string, enum: [active, inactive] }, description: Omit for all products. Soft-deleted products remain included under their current status. }
+ *       - { in: query, name: search, schema: { type: string, maxLength: 200 }, description: "Trimmed case-insensitive literal substring of ad title or product name. Blank means no filter. Percent, underscore and backslash are literal." }
+ *     responses:
+ *       '200':
+ *         description: All status counts for the selected scope and filters.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               required: [success, data]
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: object
+ *                   required: [all, active, paused, depleted, archived]
+ *                   properties:
+ *                     all: { type: integer, minimum: 0, example: 33 }
+ *                     active: { type: integer, minimum: 0, example: 17 }
+ *                     paused: { type: integer, minimum: 0, example: 11 }
+ *                     depleted: { type: integer, minimum: 0, example: 0 }
+ *                     archived: { type: integer, minimum: 0, example: 5 }
+ *       '400': { description: Invalid query or unsupported status/pagination/unknown parameters. }
+ *       '401': { description: Authentication required. }
+ *       '403': { description: Inactive account or access to another seller is forbidden. }
+ */
+router.get("/status-counts", isAuth, validateZod({ query: adminValidation.advertisement.statusCountsQuery }), AdvertisementController.statusCounts);
+
+router.put("/batch/auto-refill", isAuth, validateZod({ body: adminValidation.advertisement.batchAutoRefillBody }), AdvertisementController.batchAutoRefill);
+router.post("/batch/budget", isAuth, validateZod({ body: adminValidation.advertisement.batchFundingBody }), AdvertisementController.batchFunding);
+router.patch("/batch/status", isAuth, validateZod({ body: adminValidation.advertisement.batchStatusBody }), AdvertisementController.batchStatus);
+router.get("/:id/auto-refill", isAuth, validateZod({ params: adminValidation.advertisement.idParams }), AdvertisementController.autoRefill);
+router.put("/:id/auto-refill", isAuth, validateZod({ params: adminValidation.advertisement.idParams, body: adminValidation.advertisement.autoRefillBody }), AdvertisementController.configureAutoRefill);
 router.get("/:id/budget-withdrawal-preview", isAuth, validateZod({ params: adminValidation.advertisement.idParams }), AdvertisementController.withdrawalPreview);
 router.post("/:id/budget-withdrawal", isAuth, validateZod({ params: adminValidation.advertisement.idParams, body: adminValidation.advertisement.withdrawalBody }), AdvertisementController.withdrawBudget);
 
@@ -143,7 +185,22 @@ router.post("/:id/budget-withdrawal", isAuth, validateZod({ params: adminValidat
  *         advertisements:
  *           type: array
  *           items:
- *             $ref: '#/components/schemas/AdvertisementWithProductAndStats'
+ *             allOf:
+ *               - $ref: '#/components/schemas/AdvertisementWithProductAndStats'
+ *               - type: object
+ *                 required: [autoRefill, autoRefillAmount, allowFunding]
+ *                 properties:
+ *                   autoRefill:
+ *                     type: boolean
+ *                     default: false
+ *                     description: Whether automatic refill is enabled; false when no setting exists. Does not indicate successful funding or eligibility.
+ *                   autoRefillAmount:
+ *                     type: string
+ *                     example: "500.00"
+ *                     description: Configured refill amount per operation in TWD, retained when disabled; defaults to "500.00" when no setting exists.
+ *                   allowFunding:
+ *                     type: boolean
+ *                     description: Whether this caller may manually increase the ad budget or enable/edit auto-refill settings. Requires owner/admin, active non-deleted product and seller, and a non-archived/non-closed ad. Paused ads may be configured but never automatically funded while paused. Independent of current toggle, balance, stock, and wallet funds; funding operations additionally check feature availability and spendable wallet funds. False does not prevent an authorized caller disabling via enabled=false with amount omitted. Operations revalidate permissions and state.
  *         total:
  *           type: integer
  *         page:
@@ -505,7 +562,7 @@ router.post("/:id/budget-withdrawal", isAuth, validateZod({ params: adminValidat
  *   get:
  *     tags: [Advertisement]
  *     summary: List advertisements with pagination
- *     description: Returns all statuses by default, including archived and financially closed ads. Optional status filtering preserves the caller's seller scope. Pagination totals use the same filters.
+ *     description: Returns all statuses by default, including archived and financially closed ads. Optional status filtering preserves the caller's seller scope. Pagination totals use the same filters. Ordered by createdAt DESC, id DESC, matching metrics. Merge responses by advertisement ID, never array position; concurrent writes can shift separate requests.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -530,6 +587,18 @@ router.post("/:id/budget-withdrawal", isAuth, validateZod({ params: adminValidat
  *           type: string
  *           enum: [active, paused, depleted, archived]
  *         description: Filter by one exact status. Omit for all statuses; status=all is not supported.
+ *       - in: query
+ *         name: productStatus
+ *         required: false
+ *         schema:
+ *           type: string
+ *           enum: [active, inactive]
+ *         description: Filter by the associated product status, combined with ad status using AND. Omit for all product statuses; all is not supported. Soft-deleted products are not excluded and retain their stored product status. Pagination totals apply both filters.
+ *       - in: query
+ *         name: search
+ *         required: false
+ *         schema: { type: string, maxLength: 200 }
+ *         description: Case-insensitive literal substring search across advertisement title or product name. Trimmed; blank means no search filter. Percent and underscore are literal characters. Combines with all other filters and pagination totals.
  *     responses:
  *       '400':
  *         description: Invalid status or pagination query.
@@ -558,7 +627,7 @@ router.get(
  *   get:
  *     tags: [Advertisement]
  *     summary: List financial and reward metrics for advertisements
- *     description: Seller/employee scope is resolved by the server. Platform admins may filter sellerId. Each ad includes budgetWithdrawnAmount (lifetime) and periodBudgetWithdrawnAmount (filtered range), exact positive TWD strings for 回收廣告費. Withdrawals are separate from view spend and settlement returns. CTR and impressions are absent because they are not reliably recorded.
+ *     description: Seller/employee scope is resolved by the server. Platform admins may filter sellerId. Each ad includes budgetWithdrawnAmount (lifetime) and periodBudgetWithdrawnAmount (filtered range), exact positive TWD strings for 回收廣告費. Withdrawals are separate from view spend and settlement returns. CTR and impressions are absent because they are not reliably recorded. Both list and metrics use createdAt DESC, id DESC. Use identical page, limit and shared filters, and merge by advertisement ID. Separate requests are not a shared snapshot; concurrent writes can shift pages.
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - { in: query, name: page, schema: { type: integer } }
@@ -568,6 +637,8 @@ router.get(
  *       - { in: query, name: status, schema: { type: string, enum: [active, paused, depleted, archived] } }
  *       - { in: query, name: startAt, schema: { type: string, format: date-time } }
  *       - { in: query, name: endAt, schema: { type: string, format: date-time } }
+ *       - { in: query, name: productStatus, schema: { type: string, enum: [active, inactive] }, description: "Filter by current product status, matching the advertisement list endpoint." }
+ *       - { in: query, name: search, schema: { type: string, maxLength: 200 }, description: "Trimmed case-insensitive literal substring of advertisement title or product name. Blank means no filter; percent, underscore and backslash are literal. Combines with all other filters and pagination totals." }
  *     responses:
  *       '200':
  *         description: Paginated ad metrics including completed views, spend, returned/net amounts, funded coins, current balance, and platform advance/expense.
@@ -585,6 +656,9 @@ router.get(
  *                       items:
  *                         type: object
  *                         properties:
+ *                           totalFundedAmount: { type: string, example: "1000.00", description: Lifetime wallet_funding plus legacy deposit; excludes transfers and returns }
+ *                           periodFundedAmount: { type: string, example: "500.00", description: Same funding types within inclusive startAt/endAt }
+ *                           periodViewSpend: { type: string, example: "150.00", description: View charges within inclusive startAt/endAt }
  *                           budgetWithdrawnAmount: { type: string, example: "300.00", description: Lifetime positive TWD withdrawal total }
  *                           periodBudgetWithdrawnAmount: { type: string, example: "100.00", description: Positive TWD withdrawal total within startAt/endAt }
  *                     page: { type: integer }
@@ -657,7 +731,22 @@ router.get(
  *                 success:
  *                   type: boolean
  *                 data:
- *                   $ref: '#/components/schemas/AdvertisementWithProductAndDetails'
+ *                   allOf:
+ *                     - $ref: '#/components/schemas/AdvertisementWithProductAndDetails'
+ *                     - type: object
+ *                       required: [autoRefill, autoRefillAmount, allowFunding]
+ *                       properties:
+ *                         autoRefill:
+ *                           type: boolean
+ *                           default: false
+ *                           description: Whether automatic refill is enabled; false when no setting exists. Does not indicate funding eligibility or success.
+ *                         autoRefillAmount:
+ *                           type: string
+ *                           example: "500.00"
+ *                           description: Configured refill amount per operation in TWD, retained when disabled; defaults to "500.00" when no setting exists.
+ *                         allowFunding:
+ *                           type: boolean
+ *                           description: Whether this caller may manually increase the ad budget or enable/edit auto-refill settings. Requires owner/admin, active non-deleted product and seller, and a non-archived/non-closed ad. Paused ads may be configured but never automatically funded while paused. Independent of current toggle, balance, stock, and wallet funds; funding operations additionally check feature availability and spendable wallet funds. False does not prevent an authorized caller disabling via enabled=false with amount omitted. Operations revalidate permissions and state.
  */
 router.get(
   "/:id",
@@ -1171,7 +1260,7 @@ router.get(
  *                             balanceAfter: { type: string, example: "200.00" }
  *                         idempotentReplay: { type: boolean, example: false }
  *       '403': { description: Only the owning seller or a platform administrator may fund the ad. }
- *       '409': { description: Insufficient wallet balance, inactive seller, archived/closed ad, idempotency conflict, or unsupported decrease operation. }
+ *       '409': { description: Insufficient wallet balance, inactive seller, inactive/deleted product (AD_PRODUCT_NOT_ACTIVE), archived/closed ad, idempotency conflict, or unsupported decrease operation. }
  *       '503': { description: Wallet-based advertisement funding is disabled during rollout. }
  */
 router.put(
@@ -1658,4 +1747,440 @@ export default router;
  *           BALANCE_CHANGED, ZERO_BALANCE, INSUFFICIENT_AD_BALANCE, ADVERTISEMENT_NOT_FINANCIALLY_CLOSED,
  *           IDEMPOTENCY_CONFLICT or WITHDRAWAL_BLOCKED. Failure envelope includes success=false, statusCode,
  *           message and code.
+ */
+
+/**
+ * @swagger
+ * {
+ *   "/api/admin/advertisement/batch/budget": {
+ *     "post": {
+ *       "tags": [
+ *         "Advertisement"
+ *       ],
+ *       "summary": "Batch increase ad budgets",
+ *       "description": "Owner or admin; no employees. 1–100 distinct ads from one seller. All-or-nothing funding; one amount per item (repeat the same amount for uniform funding). Uses available advertising wallet only, excludes withdrawal reservations. Inactive/deleted products and archived/closed ads rejected; paused ads with active products may be funded and stay paused. Idempotency is scoped to actor and full sorted batch.",
+ *       "security": [
+ *         {
+ *           "bearerAuth": []
+ *         }
+ *       ],
+ *       "parameters": [],
+ *       "responses": {
+ *         "200": {
+ *           "description": "Successful operation",
+ *           "content": {
+ *             "application/json": {
+ *               "schema": {
+ *                 "type": "object",
+ *                 "properties": {
+ *                   "success": {
+ *                     "type": "boolean"
+ *                   },
+ *                   "data": {
+ *                     "type": "array",
+ *                     "items": {
+ *                       "type": "object",
+ *                       "description": "Existing ad budget response including walletTransaction and advertisementTransaction"
+ *                     }
+ *                   }
+ *                 }
+ *               }
+ *             }
+ *           }
+ *         },
+ *         "400": {
+ *           "description": "Invalid input or attempt to increase reviewed amounts"
+ *         },
+ *         "403": {
+ *           "description": "Seller scope or role denied"
+ *         },
+ *         "409": {
+ *           "description": "Insufficient available funds, debt, terminal state or idempotency conflict"
+ *         }
+ *       },
+ *       "requestBody": {
+ *         "required": true,
+ *         "content": {
+ *           "application/json": {
+ *             "schema": {
+ *               "type": "object",
+ *               "properties": {
+ *                 "items": {
+ *                   "type": "array",
+ *                   "minItems": 1,
+ *                   "maxItems": 100,
+ *                   "items": {
+ *                     "type": "object",
+ *                     "properties": {
+ *                       "advertisementId": {
+ *                         "type": "string",
+ *                         "format": "uuid"
+ *                       },
+ *                       "amount": {
+ *                         "type": "string",
+ *                         "pattern": "^(0|[1-9]\\d{0,11})(\\.\\d{1,2})?$",
+ *                         "example": "500.00"
+ *                       }
+ *                     },
+ *                     "required": [
+ *                       "advertisementId",
+ *                       "amount"
+ *                     ]
+ *                   }
+ *                 },
+ *                 "idempotencyKey": {
+ *                   "type": "string",
+ *                   "minLength": 8,
+ *                   "maxLength": 120
+ *                 }
+ *               },
+ *               "required": [
+ *                 "items",
+ *                 "idempotencyKey"
+ *               ]
+ *             }
+ *           }
+ *         }
+ *       }
+ *     }
+ *   },
+ *   "/api/admin/advertisement/batch/status": {
+ *     "patch": {
+ *       "tags": [
+ *         "Advertisement"
+ *       ],
+ *       "summary": "Batch activate or pause ads",
+ *       "description": "1–100 distinct ads. Per-item results; owner/admin only. Existing activation prerequisites apply; archived ads cannot be reactivated.",
+ *       "security": [
+ *         {
+ *           "bearerAuth": []
+ *         }
+ *       ],
+ *       "parameters": [],
+ *       "responses": {
+ *         "200": {
+ *           "description": "Successful operation",
+ *           "content": {
+ *             "application/json": {
+ *               "schema": {
+ *                 "type": "object",
+ *                 "properties": {
+ *                   "success": {
+ *                     "type": "boolean"
+ *                   },
+ *                   "data": {
+ *                     "type": "array",
+ *                     "items": {
+ *                       "type": "object",
+ *                       "properties": {
+ *                         "advertisementId": {
+ *                           "type": "string",
+ *                           "format": "uuid"
+ *                         },
+ *                         "success": {
+ *                           "type": "boolean"
+ *                         },
+ *                         "data": {
+ *                           "type": "object"
+ *                         },
+ *                         "statusCode": {
+ *                           "type": "integer"
+ *                         },
+ *                         "message": {
+ *                           "type": "string"
+ *                         }
+ *                       }
+ *                     }
+ *                   }
+ *                 }
+ *               }
+ *             }
+ *           }
+ *         },
+ *         "400": {
+ *           "description": "Invalid input or attempt to increase reviewed amounts"
+ *         },
+ *         "403": {
+ *           "description": "Seller scope or role denied"
+ *         },
+ *         "409": {
+ *           "description": "Insufficient available funds, debt, terminal state or idempotency conflict"
+ *         }
+ *       },
+ *       "requestBody": {
+ *         "required": true,
+ *         "content": {
+ *           "application/json": {
+ *             "schema": {
+ *               "type": "object",
+ *               "properties": {
+ *                 "advertisementIds": {
+ *                   "type": "array",
+ *                   "items": {
+ *                     "type": "string",
+ *                     "format": "uuid"
+ *                   },
+ *                   "minItems": 1,
+ *                   "maxItems": 100
+ *                 },
+ *                 "status": {
+ *                   "type": "string",
+ *                   "enum": [
+ *                     "active",
+ *                     "paused"
+ *                   ]
+ *                 }
+ *               },
+ *               "required": [
+ *                 "advertisementIds",
+ *                 "status"
+ *               ]
+ *             }
+ *           }
+ *         }
+ *       }
+ *     }
+ *   },
+ *   "/api/admin/advertisement/{id}/auto-refill": {
+ *     "get": {
+ *       "tags": [
+ *         "Advertisement"
+ *       ],
+ *       "summary": "Read ad automatic-refill settings",
+ *       "description": "Owner/admin only. Default disabled and amount 500.00.",
+ *       "security": [
+ *         {
+ *           "bearerAuth": []
+ *         }
+ *       ],
+ *       "parameters": [
+ *         {
+ *           "name": "id",
+ *           "in": "path",
+ *           "required": true,
+ *           "schema": {
+ *             "type": "string",
+ *             "format": "uuid"
+ *           }
+ *         }
+ *       ],
+ *       "responses": {
+ *         "200": {
+ *           "description": "Successful operation",
+ *           "content": {
+ *             "application/json": {
+ *               "schema": {
+ *                 "type": "object",
+ *                 "properties": {
+ *                   "success": {
+ *                     "type": "boolean"
+ *                   },
+ *                   "data": {
+ *                     "type": "object",
+ *                     "properties": {
+ *                       "advertisementId": {
+ *                         "type": "string",
+ *                         "format": "uuid"
+ *                       },
+ *                       "enabled": {
+ *                         "type": "boolean",
+ *                         "default": false
+ *                       },
+ *                       "amount": {
+ *                         "type": "string",
+ *                         "pattern": "^(0|[1-9]\\d{0,11})(\\.\\d{1,2})?$",
+ *                         "example": "500.00"
+ *                       },
+ *                       "waitingSince": {
+ *                         "type": "string",
+ *                         "format": "date-time",
+ *                         "nullable": true
+ *                       },
+ *                       "lastReason": {
+ *                         "description": "Includes wallet_below_auto_refill_threshold when available seller wallet balance is below the wallet setting; the ad switch remains enabled.",
+ *                         "type": "string",
+ *                         "nullable": true
+ *                       }
+ *                     }
+ *                   }
+ *                 }
+ *               }
+ *             }
+ *           }
+ *         },
+ *         "400": {
+ *           "description": "Invalid input or attempt to increase reviewed amounts"
+ *         },
+ *         "403": {
+ *           "description": "Seller scope or role denied"
+ *         },
+ *         "409": {
+ *           "description": "Insufficient available funds, debt, terminal state or idempotency conflict"
+ *         }
+ *       }
+ *     },
+ *     "put": {
+ *       "tags": [
+ *         "Advertisement"
+ *       ],
+ *       "summary": "Configure fixed-amount automatic refill",
+ *       "description": "Owner/admin only; employees denied. Enabling or changing amount requires an active non-deleted product and seller, and a non-archived/non-closed ad; paused ads may retain/edit settings but cannot automatically debit. Otherwise returns 409 AD_AUTO_REFILL_NOT_ALLOWED. Authorized callers can still disable by sending enabled=false without amount. Minimum NT$100; technical maximum NT$90071992547409.91, at most two decimal places; no separate business maximum; default NT$500 for a new setting. Omitted amount preserves existing amount. Fixed trigger balance < 100; exactly 100 does not trigger. No daily cap. Eligible active/depleted ads only, active product and seller. Full spendable wallet amount required; never use revenue or reserved funds. Events: view debit, completed wallet deposit, enabling/changing settings. No minute cron. Paused/archived/closed ads excluded.",
+ *       "security": [
+ *         {
+ *           "bearerAuth": []
+ *         }
+ *       ],
+ *       "parameters": [
+ *         {
+ *           "name": "id",
+ *           "in": "path",
+ *           "required": true,
+ *           "schema": {
+ *             "type": "string",
+ *             "format": "uuid"
+ *           }
+ *         }
+ *       ],
+ *       "responses": {
+ *         "200": {
+ *           "description": "Successful operation",
+ *           "content": {
+ *             "application/json": {
+ *               "schema": {
+ *                 "type": "object",
+ *                 "properties": {
+ *                   "success": {
+ *                     "type": "boolean"
+ *                   },
+ *                   "data": {
+ *                     "type": "object",
+ *                     "properties": {
+ *                       "advertisementId": {
+ *                         "type": "string",
+ *                         "format": "uuid"
+ *                       },
+ *                       "enabled": {
+ *                         "type": "boolean",
+ *                         "default": false
+ *                       },
+ *                       "amount": {
+ *                         "type": "string",
+ *                         "pattern": "^(0|[1-9]\\d{0,11})(\\.\\d{1,2})?$",
+ *                         "example": "500.00"
+ *                       },
+ *                       "waitingSince": {
+ *                         "type": "string",
+ *                         "format": "date-time",
+ *                         "nullable": true
+ *                       },
+ *                       "lastReason": {
+ *                         "description": "Includes wallet_below_auto_refill_threshold when available seller wallet balance is below the wallet setting; the ad switch remains enabled.",
+ *                         "type": "string",
+ *                         "nullable": true
+ *                       }
+ *                     }
+ *                   }
+ *                 }
+ *               }
+ *             }
+ *           }
+ *         },
+ *         "400": {
+ *           "description": "Invalid input or attempt to increase reviewed amounts"
+ *         },
+ *         "403": {
+ *           "description": "Seller scope or role denied"
+ *         },
+ *         "409": {
+ *           "description": "Insufficient available funds, debt, terminal state or idempotency conflict"
+ *         }
+ *       },
+ *       "requestBody": {
+ *         "required": true,
+ *         "content": {
+ *           "application/json": {
+ *             "schema": {
+ *               "type": "object",
+ *               "properties": {
+ *                 "enabled": {
+ *                   "type": "boolean"
+ *                 },
+ *                 "amount": {
+ *                   "type": "string",
+ *                   "pattern": "^(0|[1-9]\\d{0,11})(\\.\\d{1,2})?$",
+ *                   "example": "500.00"
+ *                 }
+ *               },
+ *               "required": [
+ *                 "enabled"
+ *               ]
+ *             }
+ *           }
+ *         }
+ *       }
+ *     }
+ *   }
+ * }
+ */
+
+/**
+ * @swagger
+ * /api/admin/advertisement/batch/auto-refill:
+ *   put:
+ *     tags: [Advertisement]
+ *     summary: Batch configure automatic ad refill
+ *     description: Owner or admin; employees denied per item. Each item revalidates the same state restrictions as the single settings endpoint; inactive/deleted products or sellers and archived/closed ads reject enabling or amount changes with 409. Disabling without amount remains allowed. Paused ads allow configuration but do not automatically debit. Applies common settings to 1–100 distinct ads in request order, returning individual results without rolling back successful items. Admins may operate ads belonging to different sellers. Omitted amount preserves each existing setting, or defaults to 500 for new settings. Enabling may immediately debit the owning seller's advertising wallet if eligible and balance is below 100. Success means settings saved, not necessarily funds transferred; inspect lastReason and refresh balances. Repeated requests recheck balances and may trigger another refill if funds have since been spent.
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [advertisementIds, enabled]
+ *             additionalProperties: false
+ *             properties:
+ *               advertisementIds:
+ *                 type: array
+ *                 minItems: 1
+ *                 maxItems: 100
+ *                 uniqueItems: true
+ *                 items: { type: string, format: uuid }
+ *               enabled: { type: boolean }
+ *               amount:
+ *                 type: string
+ *                 example: '500.00'
+ *                 description: TWD decimal with at most two places; minimum 100, technical maximum 90071992547409.91. No separate business maximum.
+ *     responses:
+ *       '200':
+ *         description: Per-ad results; inspect every success flag even when outer success is true.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       advertisementId: { type: string, format: uuid }
+ *                       success: { type: boolean }
+ *                       message: { type: string }
+ *                       statusCode: { type: integer }
+ *                       code: { type: string }
+ *                       data:
+ *                         type: object
+ *                         properties:
+ *                           advertisementId: { type: string, format: uuid }
+ *                           enabled: { type: boolean }
+ *                           amount: { type: string }
+ *                           waitingSince: { type: string, format: date-time, nullable: true }
+ *                           lastReason: { type: string, nullable: true, description: Includes wallet_below_auto_refill_threshold when blocked by the seller wallet threshold. }
+ *                           updatedAt: { type: string, format: date-time }
+ *       '400':
+ *         description: Invalid batch, duplicate IDs or amount outside limits; no items processed.
+ *       '401':
+ *         description: Authentication required.
  */

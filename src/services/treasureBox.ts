@@ -1,3 +1,4 @@
+import { attemptAutoRefill } from "../repository/adAutomation";
 import { handleServiceError } from "../lib/error";
 import {
   getTreasureBoxesByUserId,
@@ -31,6 +32,7 @@ class TreasureBoxService {
   > {
     try {
       const result = await processVideoCompletion(userId, advertisementId);
+      if (result) await attemptAutoRefill(advertisementId).catch(error => console.error("View auto-refill failed", { advertisementId, error }));
       if (result) {
         return { success: true, data: result };
       } else {

@@ -6,6 +6,12 @@ Status: **implemented and tested locally; owner-run migration and deployment sti
 
 ## Endpoints and authorization
 
+### Coin expiration reminder push navigation (2026-11-24)
+
+Coin expiration reminders persist their Message Center notification before sending FCM. Their push `data` is now `{command: "message", notificationId: "SAVED_NOTIFICATION_UUID"}`. Each device receives the ID of the same stored reminder, including when tokens are sent in multiple batches.
+
+On a push tap, handle `command: "message"` with a `notificationId` by opening that notification's detail screen and loading `GET /api/notification/sync/:id` with the signed-in app user's token. Preserve this data when creating foreground local notifications and when handling a cold start or deferred login. Mark the opened item read through the existing read endpoint. For older pushes without an ID, open the Message Center list; if the item is deleted or unavailable (404), show an unavailable state with a link back to the list. The backend payload supplies the target; the app must implement this routing if its current handler always opens the list.
+
 Use the existing bearer access token. The backend derives the recipient from the authenticated app user; an admin-account token cannot open this feed or use these sync endpoints.
 
 | Method | Endpoint | Successful `data` |

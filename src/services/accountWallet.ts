@@ -1,14 +1,19 @@
-import { handleServiceError } from "../lib/error";
+import { CustomError, handleServiceError } from "../lib/error";
 import {
   creditSellerWallet,
   getAccountWallet,
   listAccountWalletTransactions,
   ListWalletTransactionsParams,
   getAccountWalletSummary,
+  setWalletAutoRefillThreshold,
 } from "../repository/accountWallet";
 import { ServiceResponse } from "../type/general";
 
 class AccountWalletService {
+  async setAutoRefillThreshold(actorId: string, accountId: string, threshold: string) {
+    try { return { success: true as const, data: await setWalletAutoRefillThreshold(actorId, accountId, threshold) }; }
+    catch (error) { return handleServiceError(error); }
+  }
   async getSummary(input: Parameters<typeof getAccountWalletSummary>[0]) {
     try {
       return { success: true as const, data: await getAccountWalletSummary(input) };
@@ -45,7 +50,7 @@ class AccountWalletService {
     input: Parameters<typeof creditSellerWallet>[0],
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof creditSellerWallet>>>> {
     try {
-      return { success: true, data: await creditSellerWallet(input) };
+      throw new CustomError("Standalone wallet credits are disabled; complete a seller deposit request", 410, "WALLET_CREDIT_REQUIRES_REQUEST");
     } catch (error) {
       return handleServiceError(error);
     }

@@ -128,6 +128,8 @@ const router = Router();
  *           type: number
  *           nullable: true
  *           description: Product refund amount after coin deduction.
+ *         shippingReimbursement:
+ *           $ref: "#/components/schemas/ShippingReimbursement"
  *         extraRefundAmount:
  *           type: number
  *           description: Additional refund amount for shipping, fees, or manual adjustments.
@@ -502,6 +504,8 @@ router.get(
  *               message:
  *                 type: string
  *                 description: Optional non-empty refund log message. A new log is inserted when this differs from the latest log message.
+ *               reimburseOriginalShipping: { type: boolean, description: Claim original shipping once per shipment; known evidence required. Saving reserves it; completion consumes it; cancellation/rejection releases it. }
+ *               otherExtraRefundAmount: { type: number, minimum: 0, description: Other compensation with at most two decimals. Do not also send extraRefundAmount. }
  *               extraRefundAmount:
  *                 type: number
  *                 description: Additional refund amount for shipping, fees, or manual adjustments. Rounded to two decimal places.
@@ -575,3 +579,19 @@ router.patch(
 );
 
 export default router;
+
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     ShippingReimbursement:
+ *       type: object
+ *       properties:
+ *         buyerPaidAmount: { type: string, nullable: true, description: Original shipment buyer-paid TWD; virtual goods with reconciled zero shipping return 0.00 and not_applicable; null means shipping evidence needs review }
+ *         status: { type: string, enum: [available, reserved, refunded, not_applicable, needs_review] }
+ *         canReimburse: { type: boolean }
+ *         claimedByRefundId: { type: string, format: uuid, nullable: true }
+ *         shipmentId: { type: string, format: uuid, nullable: true }
+ *         shippingAmount: { type: string }
+ *         otherAmount: { type: string, nullable: true }
+ */

@@ -116,7 +116,7 @@ export const transactionTypeEnum = pgEnum("transaction_type", [
 
 export const accountWalletTransactionTypeEnum = pgEnum(
   "account_wallet_transaction_type",
-  ["legacy_opening_balance", "admin_credit", "advertisement_funding_debit", "advertisement_budget_return"],
+  ["legacy_opening_balance", "admin_credit", "advertisement_funding_debit", "advertisement_budget_return", "seller_deposit", "seller_withdrawal"],
 );
 
 export const adminSidebarSectionEnum = pgEnum("admin_sidebar_section", [
@@ -561,6 +561,9 @@ export const accountWalletTable = pgTable(
     lockedBalance: numeric("locked_balance", { precision: 18, scale: 2 })
       .default("0")
       .notNull(),
+    autoRefillStopThreshold: numeric("auto_refill_stop_threshold", { precision: 18, scale: 2 })
+      .default("0")
+      .notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -580,6 +583,7 @@ export const accountWalletTable = pgTable(
       sql`${t.totalRevenueCoin} >= 0`,
     ),
     check("account_wallets_locked_nonnegative", sql`${t.lockedBalance} >= 0`),
+    check("account_wallets_auto_refill_threshold_nonnegative", sql`${t.autoRefillStopThreshold} >= 0`),
     check(
       "account_wallets_locked_not_above_balance",
       sql`${t.lockedBalance} <= ${t.walletBalance}`,
@@ -910,10 +914,10 @@ export const accountWalletTransactionTable = pgTable(
     check(
       "account_wallet_transactions_type_sign",
       sql`(
-        ${t.type}::text in ('legacy_opening_balance', 'admin_credit', 'advertisement_budget_return')
+        ${t.type}::text in ('legacy_opening_balance', 'admin_credit', 'advertisement_budget_return', 'seller_deposit')
         and ${t.amount} > 0
       ) or (
-        ${t.type}::text = 'advertisement_funding_debit'
+        ${t.type}::text in ('advertisement_funding_debit', 'seller_withdrawal')
         and ${t.amount} < 0
       )`,
     ),
@@ -3033,3 +3037,108 @@ export type UserBadgeState = typeof userBadgeStateTable.$inferSelect;
 export type UserBadgeWork = typeof userBadgeWorkTable.$inferSelect;
 
 export type OrderPaymentAttempt = typeof orderPaymentAttemptTable.$inferSelect;
+
+
+// Seller revenue is deliberately separate from the advertising wallet.
+export const sellerRevenueAccountTable = pgTable("seller_revenue_accounts", {
+  sellerId: uuid("seller_id").primaryKey().references(() => accountTable.id, { onDelete: "restrict" }),
+  debt: numeric("debt", { precision: 24, scale: 6 }).notNull().default("0"),
+}, t => ({ debtCheck: check("seller_revenue_debt_nonnegative", sql`${t.debt} >= 0`) }));
+
+export const sellerRevenueLotTable = pgTable("seller_revenue_lots", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  sellerId: uuid("seller_id").notNull().references(() => sellerRevenueAccountTable.sellerId, { onDelete: "restrict" }),
+  sourceKey: text("source_key").notNull().unique(),
+  orderItemId: uuid("order_item_id").references(() => orderItemTable.id, { onDelete: "restrict" }),
+  cash: numeric("cash", { precision: 24, scale: 6 }).notNull().default("0"),
+  coinValue: numeric("coin_value", { precision: 24, scale: 6 }).notNull().default("0"),
+  releaseAt: timestamp("release_at", { withTimezone: true }).notNull(),
+  released: boolean("released").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, t => ({ balancesCheck: check("seller_revenue_lot_balances", sql`${t.cash} >= 0 and ${t.coinValue} >= 0`), dueIdx: index("seller_revenue_lot_due_idx").on(t.released, t.releaseAt) }));
+
+export const sellerRevenueEventTable = pgTable("seller_revenue_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  sellerId: uuid("seller_id").notNull().references(() => sellerRevenueAccountTable.sellerId, { onDelete: "restrict" }),
+  eventKey: text("event_key").notNull().unique(),
+  type: text("type").notNull(),
+  cash: numeric("cash", { precision: 24, scale: 6 }).notNull().default("0"),
+  coinValue: numeric("coin_value", { precision: 24, scale: 6 }).notNull().default("0"),
+  grossCash: numeric("gross_cash", { precision: 24, scale: 6 }).notNull().default("0"),
+  grossCoinValue: numeric("gross_coin_value", { precision: 24, scale: 6 }).notNull().default("0"),
+  debtAfter: numeric("debt_after", { precision: 24, scale: 6 }).notNull(),
+  actorAccountId: uuid("actor_account_id").references(() => accountTable.id),
+  detail: jsonb("detail").$type<Record<string, unknown>>().notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, t => ({ historyIdx: index("seller_revenue_event_history_idx").on(t.sellerId, t.createdAt) }));
+
+export const sellerSaleSnapshotTable = pgTable("seller_sale_snapshots", {
+  orderItemId: uuid("order_item_id").primaryKey().references(() => orderItemTable.id, { onDelete: "restrict" }),
+  sellerId: uuid("seller_id").notNull().references(() => accountTable.id),
+  grossCash: numeric("gross_cash", { precision: 24, scale: 6 }).notNull(),
+  grossCoinValue: numeric("gross_coin_value", { precision: 24, scale: 6 }).notNull(),
+  productValue: numeric("product_value", { precision: 24, scale: 6 }).notNull(),
+  refundedValue: numeric("refunded_value", { precision: 24, scale: 6 }).notNull().default("0"),
+  commissionRate: numeric("commission_rate", { precision: 6, scale: 4 }).notNull().default("0.1"),
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true }).notNull(),
+});
+
+export const sellerWalletRequestTable = pgTable("seller_wallet_requests", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  sellerId: uuid("seller_id").notNull().references(() => accountTable.id, { onDelete: "restrict" }),
+  wallet: text("wallet").$type<"advertising" | "revenue">().notNull(),
+  direction: text("direction").$type<"deposit" | "withdrawal">().notNull(),
+  status: text("status").$type<"pending" | "processing" | "completed" | "cancelled" | "rejected">().notNull().default("pending"),
+  requestedCash: numeric("requested_cash", { precision: 24, scale: 6 }).notNull(),
+  requestedCoins: numeric("requested_coins", { precision: 24, scale: 6 }).notNull(),
+  cash: numeric("cash", { precision: 24, scale: 6 }).notNull(),
+  coins: numeric("coins", { precision: 24, scale: 6 }).notNull(),
+  idempotencyKey: text("idempotency_key").notNull().unique(),
+  reason: text("reason"),
+  actorAccountId: uuid("actor_account_id").references(() => accountTable.id),
+  history: jsonb("history").$type<Array<Record<string, unknown>>>().notNull().default([]),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, t => ({ amountsCheck: check("seller_wallet_request_amounts", sql`${t.cash} >= 0 and ${t.coins} >= 0 and ${t.cash} <= ${t.requestedCash} and ${t.coins} <= ${t.requestedCoins}`), sellerIdx: index("seller_wallet_request_seller_idx").on(t.sellerId, t.status) }));
+
+export const adAutoRefillTable = pgTable("ad_auto_refills", {
+  advertisementId: uuid("advertisement_id").primaryKey().references(() => advertisementTable.id, { onDelete: "restrict" }),
+  enabled: boolean("enabled").notNull().default(false),
+  amount: numeric("amount", { precision: 18, scale: 2 }).notNull().default("500"),
+  waitingSince: timestamp("waiting_since", { withTimezone: true }),
+  lastReason: text("last_reason"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, t => ({ amountCheck: check("ad_auto_refill_amount_check", sql`${t.amount} >= 100`) }));
+
+export const adFundingBatchTable = pgTable("ad_funding_batches", {
+  key: text("key").primaryKey(),
+  actorId: uuid("actor_id").notNull().references(() => accountTable.id),
+  input: text("input").notNull(),
+  result: jsonb("result").notNull(),
+});
+
+export const sellerShipmentSnapshotTable = pgTable("seller_shipment_snapshots", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  sourceKey: text("source_key").notNull().unique(),
+  orderId: uuid("order_id").notNull().references(() => orderTable.id, { onDelete: "restrict" }),
+  sellerId: uuid("seller_id").notNull().references(() => accountTable.id),
+  orderItemIds: uuid("order_item_ids").array().notNull(),
+  buyerPaidAmount: numeric("buyer_paid_amount", { precision: 18, scale: 2 }),
+  standardCost: numeric("standard_cost", { precision: 18, scale: 2 }),
+  subsidy: numeric("subsidy", { precision: 18, scale: 2 }).notNull().default("0"),
+  logisticsType: text("logistics_type").notNull(),
+  claimedByRefundId: uuid("claimed_by_refund_id").references(() => refundItemTable.id, { onDelete: "restrict" }),
+  claimCompleted: boolean("claim_completed").notNull().default(false),
+});
+export const refundShippingBreakdownTable = pgTable("refund_shipping_breakdowns", {
+  refundId: uuid("refund_id").primaryKey().references(() => refundItemTable.id, { onDelete: "restrict" }),
+  shipmentId: uuid("shipment_id").references(() => sellerShipmentSnapshotTable.id),
+  shippingAmount: numeric("shipping_amount", { precision: 18, scale: 2 }).notNull().default("0"),
+  otherAmount: numeric("other_amount", { precision: 18, scale: 2 }).notNull().default("0"),
+});
+
+// Durable event backlog, drained by event handlers and once at startup; no polling cron.
+export const adRefillEventTable = pgTable("ad_refill_events", {
+  advertisementId: uuid("advertisement_id").primaryKey().references(() => advertisementTable.id, { onDelete: "restrict" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});

@@ -11,8 +11,9 @@ import * as s from "../db/schema";
 import { fixtureToken } from "./accountSessionFixture";
 import { creditManualUserCoins, expireUserCoinLots } from "../repository/coinLedger";
 import { createOrder, expirePaymentProcessingOrders } from "../repository/order";
-import { preparePayment } from "../repository/payment";
+import { preparePayment, reconcileUnpaidAtm } from "../repository/payment";
 import { reconcileRecordedPayments } from "../services/payment";
+import { atmPaymentDeadline } from "../lib/orderExpiry";
 import ecpay from "../services/ecpay";
 
 async function run() {
@@ -52,6 +53,9 @@ async function run() {
     const readAttempt = async (id: string) => (await db.query.orderPaymentAttemptTable.findFirst({ where: eq(s.orderPaymentAttemptTable.orderId, id) }))!;
     const staleCredit = await creditManualUserCoins({ userId: buyer.id, amount: 100, reason: "Expired fixture", idempotencyKey: randomUUID() });
     await db.update(s.userCoinLotTable).set({ expiresAt: new Date(Date.now() - 60000) }).where(eq(s.userCoinLotTable.id, staleCredit.lot.id));
+    const addCart = () => db.insert(s.cartItemTable).values({ userId: buyer.id, productId: product.id, productVariantId: variant.id, quantity: 1 });
+    const readCart = () => db.query.cartItemTable.findFirst({ where: eq(s.cartItemTable.userId, buyer.id) });
+    await addCart();
     const f = await order();
     const insufficient = await checkout(f);
     assert.equal(insufficient.status, 409);
@@ -75,6 +79,7 @@ async function run() {
     const attempt = await readAttempt(f.order.id);
     assert.ok((await html.text()).includes(attempt.merchantTradeNo));
     assert.equal((await readOrder(f.order.id)).orderStatus, "payment-processing");
+    assert.ok(await readCart(), "Preparing payment must retain checkout items");
     const allocations = await db.query.orderCoinAllocationTable.findMany({ where: eq(s.orderCoinAllocationTable.orderId, f.order.id) });
     assert.equal(allocations.reduce((sum, a) => sum + Number(a.reservedAmount), 0), 50);
     assert.equal((await checkout(f)).status, 200);
@@ -101,10 +106,13 @@ async function run() {
     const success = await callback(attempt);
     assert.equal(await success.text(), "1|OK");
     assert.equal((await readOrder(f.order.id)).orderStatus, "paid");
+    assert.equal(await readCart(), undefined, "Confirmed payment removes checkout items");
+    await addCart();
     const consumed = await db.query.orderCoinAllocationTable.findMany({ where: eq(s.orderCoinAllocationTable.orderId, f.order.id) });
     assert.equal(Number(consumed[0].consumedAmount), 50);
     const stock = (await db.query.productVariantTable.findFirst({ where: eq(s.productVariantTable.id, variant.id) }))!.stock;
     await Promise.all([callback(attempt), callback(attempt)]);
+    assert.ok(await readCart(), "Repeated payment callbacks must not remove newly added cart items");
     assert.equal((await db.query.productVariantTable.findFirst({ where: eq(s.productVariantTable.id, variant.id) }))!.stock, stock);
     assert.equal((await callback(attempt, { RtnCode: "10100058" })).status, 200);
     assert.equal((await readOrder(f.order.id)).orderStatus, "paid", "Late failure cannot downgrade a paid order");
@@ -118,22 +126,35 @@ async function run() {
     finally { await client.unsafe("DROP TRIGGER fail_paid_commit ON orders"); await client.unsafe("DROP FUNCTION fail_paid_commit()"); }
     assert.equal((await readAttempt(retry.order.id)).state, "succeeded", "Provider success survives failed order settlement");
     assert.equal((await readOrder(retry.order.id)).orderStatus, "payment-processing");
+    assert.ok(await readCart(), "Failed settlement rolls back cart removal");
     await reconcileRecordedPayments();
+    assert.equal(await readCart(), undefined, "Successful settlement recovery removes checkout items");
     assert.equal((await readOrder(retry.order.id)).orderStatus, "paid");
     assert.equal((await readAttempt(retry.order.id)).state, "settled");
 
+    await addCart();
+    const reserveBeforeAtm = (await db.query.productVariantTable.findFirst({ where: eq(s.productVariantTable.id, variant.id) }))!.reserve;
     const atm = await order(50, "ATM");
+    assert.equal((await db.query.productVariantTable.findFirst({ where: eq(s.productVariantTable.id, variant.id) }))!.reserve, reserveBeforeAtm + 1);
+
     const atmAttempt = await preparePayment({ orderId: atm.order.id, userId: buyer.id, idempotencyKey: atm.key, amount: 95, method: "ATM" });
     assert.equal((await callback(atmAttempt, { RtnCode: "2", BankCode: "822", vAccount: "test" }, "/api/ecpay/paymentInfo")).status, 200);
     assert.equal((await readOrder(atm.order.id)).orderStatus, "payment-processing");
+    assert.equal(await readCart(), undefined, "ATM issuance removes checkout items before payment");
+    assert.equal((await db.query.productVariantTable.findFirst({ where: eq(s.productVariantTable.id, variant.id) }))!.reserve, reserveBeforeAtm + 1, "ATM issuance retains inventory reservation without reserving twice");
+    await addCart();
+    assert.equal((await callback(atmAttempt, { RtnCode: "2", BankCode: "822", vAccount: "test" }, "/api/ecpay/paymentInfo")).status, 200);
+    assert.ok(await readCart(), "Repeated ATM issuance must not remove newly added items");
     assert.equal((await callback(atmAttempt)).status, 200);
     assert.equal((await readOrder(atm.order.id)).orderStatus, "paid");
     assert.equal((await callback(atmAttempt, { RtnCode: "2" }, "/api/ecpay/paymentInfo")).status, 200);
     assert.equal((await readOrder(atm.order.id)).orderStatus, "paid");
+    assert.ok(await readCart(), "ATM payment must not remove items added after account issuance");
     const failed = await order();
     const failedAttempt = await preparePayment({ orderId: failed.order.id, userId: buyer.id, idempotencyKey: failed.key, amount: 95, method: "Credit" });
     assert.equal((await callback(failedAttempt, { RtnCode: "10100058" })).status, 200);
     assert.equal((await readOrder(failed.order.id)).orderStatus, "failed");
+    assert.ok(await readCart(), "Failed payment retains checkout items");
     assert.equal(Number((await db.query.orderCoinAllocationTable.findFirst({ where: eq(s.orderCoinAllocationTable.orderId, failed.order.id) }))!.reservedAmount), 0);
     // Credit availability is serialized across independent orders before either can charge.
     const currentBalance = (await db.query.userTable.findFirst({ where: eq(s.userTable.id, buyer.id) }))!.coins;
@@ -190,6 +211,47 @@ async function run() {
     assert.equal((await callback(legacyShortAttempt)).status, 409);
     assert.equal((await readOrder(legacyShort.order.id)).orderStatus, "payment-processing");
     assert.equal((await readAttempt(legacyShort.order.id)).state, "succeeded");
+    assert.equal(atmPaymentDeadline("2026/11/17")!.toISOString(), "2026-11-17T16:00:00.000Z");
+    assert.equal(atmPaymentDeadline("2026/11/17 18:00:00")!.toISOString(), "2026-11-17T10:00:00.000Z");
+    assert.equal(atmPaymentDeadline("2026/02/30"), null);
+    assert.equal(atmPaymentDeadline("2026/11/17 25:00:00"), null);
+    await creditManualUserCoins({ userId: buyer.id, amount: 100, reason: "ATM expiry", idempotencyKey: randomUUID() });
+    const expiring = await order(50, "ATM");
+    const expiryAttempt = await preparePayment({ orderId: expiring.order.id, userId: buyer.id, idempotencyKey: expiring.key, amount: 95, method: "ATM" });
+    await callback(expiryAttempt, { RtnCode: "2", BankCode: "822", vAccount: "test", ExpireDate: "2020/01/01" }, "/api/ecpay/paymentInfo");
+    const unpaid = { MerchantID: process.env.MERCHANTID!, MerchantTradeNo: expiryAttempt.merchantTradeNo, TradeAmt: "95", TradeStatus: "0", SimulatePaid: "0" };
+    assert.equal(await reconcileUnpaidAtm(expiryAttempt.id, unpaid, new Date("2020-01-01T15:59:59Z")), false);
+    await assert.rejects(reconcileUnpaidAtm(expiryAttempt.id, { ...unpaid, TradeAmt: "1" }), /match/);
+    const reserveBeforeExpiry = (await db.query.productVariantTable.findFirst({ where: eq(s.productVariantTable.id, variant.id) }))!.reserve;
+    const coinsBeforeExpiry = (await db.query.userTable.findFirst({ where: eq(s.userTable.id, buyer.id) }))!.coins;
+    const firstProbe = new Date(Date.now() - 11 * 60_000);
+    assert.equal(await reconcileUnpaidAtm(expiryAttempt.id, unpaid, firstProbe), false);
+    assert.equal(await reconcileUnpaidAtm(expiryAttempt.id, unpaid, new Date(firstProbe.getTime() + 9 * 60_000)), false);
+    assert.equal((await readOrder(expiring.order.id)).orderStatus, "payment-processing");
+    await db.update(s.orderPaymentAttemptTable).set({ updatedAt: firstProbe }).where(eq(s.orderPaymentAttemptTable.id, expiryAttempt.id));
+    const expiryQuery = ecpay.queryPaymentTradeInfo;
+    try {
+      ecpay.queryPaymentTradeInfo = async () => { throw new Error("Provider unavailable"); };
+      await reconcileRecordedPayments();
+      assert.equal((await readOrder(expiring.order.id)).orderStatus, "payment-processing", "Query failure must retain resources");
+      await db.update(s.orderPaymentAttemptTable).set({ updatedAt: firstProbe }).where(eq(s.orderPaymentAttemptTable.id, expiryAttempt.id));
+      ecpay.queryPaymentTradeInfo = async trade => trade === expiryAttempt.merchantTradeNo ? unpaid : expiryQuery.call(ecpay, trade);
+      await reconcileRecordedPayments();
+    } finally { ecpay.queryPaymentTradeInfo = expiryQuery; }
+    assert.equal((await readOrder(expiring.order.id)).orderStatus, "expired");
+    assert.equal((await db.query.productVariantTable.findFirst({ where: eq(s.productVariantTable.id, variant.id) }))!.reserve, reserveBeforeExpiry - 1);
+    assert.equal((await db.query.userTable.findFirst({ where: eq(s.userTable.id, buyer.id) }))!.coins, coinsBeforeExpiry + 50);
+    assert.equal(await reconcileUnpaidAtm(expiryAttempt.id, unpaid), false, "Expiry replay cannot release twice");
+    assert.equal((await db.query.orderItemTable.findFirst({ where: eq(s.orderItemTable.orderId, expiring.order.id) }))!.pendingQuantity, 0);
+    const successWins = await order(0, "ATM");
+    const successAttempt = await preparePayment({ orderId: successWins.order.id, userId: buyer.id, idempotencyKey: successWins.key, amount: 100, method: "ATM" });
+    const successUnpaid = { ...unpaid, MerchantTradeNo: successAttempt.merchantTradeNo, TradeAmt: "100" };
+    assert.equal(await reconcileUnpaidAtm(successAttempt.id, successUnpaid), false, "Missing issuance deadline must retain resources");
+    await callback(successAttempt, { RtnCode: "2", ExpireDate: "2020/01/01" }, "/api/ecpay/paymentInfo");
+    await reconcileUnpaidAtm(successAttempt.id, successUnpaid, firstProbe);
+    await callback(successAttempt);
+    assert.equal(await reconcileUnpaidAtm(successAttempt.id, successUnpaid), false, "Stale unpaid query must not undo confirmed payment");
+    assert.equal((await readOrder(successWins.order.id)).orderStatus, "paid");
     console.log("Payment safety passed: pre-charge validation/reservations, owner/amount binding, expiry, verified callbacks, ATM, retries, late failure protection and durable recovery.");
   } finally {
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));

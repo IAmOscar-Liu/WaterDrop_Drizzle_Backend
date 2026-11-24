@@ -1,7 +1,6 @@
 import {
   and,
   count,
-  desc,
   eq,
   gte,
   inArray,
@@ -20,11 +19,15 @@ import {
   PaginationParams,
 } from "./utils/query";
 
+import { advertisementListConditions, advertisementListOrder } from "./utils/advertisementList";
+
 export type AdvertisementMetricsInput = PaginationParams & {
   requesterId: string;
   sellerId?: string;
   productId?: string;
   status?: schema.AdvertisementStats["status"];
+  productStatus?: schema.Product["status"];
+  search?: string;
   startAt?: Date;
   endAt?: Date;
 };
@@ -61,9 +64,8 @@ export async function listAdvertisementMetrics(input: AdvertisementMetricsInput)
   const scope = await resolveAdminSellerScope(input.requesterId, input.sellerId);
   const pagination = getPagination(input.page, input.limit);
   const conditions: (SQL | undefined)[] = [
-    scope.sellerId ? eq(schema.productTable.sellerId, scope.sellerId) : undefined,
+    ...advertisementListConditions({ ...input, sellerId: scope.sellerId }),
     input.productId ? eq(schema.productTable.id, input.productId) : undefined,
-    input.status ? eq(schema.advertisementStatsTable.status, input.status) : undefined,
   ];
   const where = compactConditions(conditions);
   const [[totalRow], advertisements] = await Promise.all([
@@ -92,7 +94,7 @@ export async function listAdvertisementMetrics(input: AdvertisementMetricsInput)
         eq(schema.advertisementCoinFundingAccountTable.advertisementId, schema.advertisementTable.id),
       )
       .where(where)
-      .orderBy(desc(schema.advertisementTable.createdAt))
+      .orderBy(...advertisementListOrder())
       .limit(pagination.limit)
       .offset(pagination.offset),
   ]);
@@ -113,10 +115,24 @@ export async function listAdvertisementMetrics(input: AdvertisementMetricsInput)
     inArray(schema.advertisementTransactionTable.advertisementId, ids),
     eq(schema.advertisementTransactionTable.type, "budget_withdrawal"),
   )).groupBy(schema.advertisementTransactionTable.advertisementId) : [];
+  const funding = ids.length ? await db.select({
+    advertisementId: schema.advertisementTransactionTable.advertisementId,
+    total: sql<string>`coalesce(sum(${schema.advertisementTransactionTable.amount}::numeric),0)::numeric(18,2)::text`,
+    period: sql<string>`coalesce(sum(case when
+      (${input.startAt?.toISOString() ?? null}::timestamptz is null or ${schema.advertisementTransactionTable.createdAt} >= ${input.startAt?.toISOString() ?? null}::timestamptz)
+      and (${input.endAt?.toISOString() ?? null}::timestamptz is null or ${schema.advertisementTransactionTable.createdAt} <= ${input.endAt?.toISOString() ?? null}::timestamptz)
+      then ${schema.advertisementTransactionTable.amount}::numeric else 0 end),0)::numeric(18,2)::text`,
+  }).from(schema.advertisementTransactionTable).where(and(
+    inArray(schema.advertisementTransactionTable.advertisementId, ids),
+    inArray(schema.advertisementTransactionTable.type, ["wallet_funding", "deposit"]),
+  )).groupBy(schema.advertisementTransactionTable.advertisementId) : [];
+  const fundingMap = new Map(funding.map(row => [row.advertisementId, row]));
   const withdrawalMap = new Map(withdrawals.map((row) => [row.advertisementId, row]));
   return {
     advertisements: advertisements.map((row) => ({
       ...row,
+      totalFundedAmount: fundingMap.get(row.advertisement.id)?.total ?? "0.00",
+      periodFundedAmount: fundingMap.get(row.advertisement.id)?.period ?? "0.00",
       completedViewCount: aggregateMap.get(row.advertisement.id)?.completedViewCount ?? 0,
       periodViewSpend: aggregateMap.get(row.advertisement.id)?.periodViewSpend ?? "0.00",
       periodFundedCoinAmount:

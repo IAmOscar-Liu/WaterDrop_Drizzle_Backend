@@ -5,7 +5,7 @@ import db from "../lib/initDB";
 import { CustomError } from "../lib/error";
 import { getBankNameFromCode } from "../lib/general";
 import { createDelivery } from "../repository/delivery";
-import { recordPaymentResult, settlePayment } from "../repository/payment";
+import { recordPaymentResult, settlePayment, recordAtmPaymentInfo, reconcileUnpaidAtm } from "../repository/payment";
 import ecpayService from "./ecpay";
 import orderService from "./order";
 
@@ -57,11 +57,7 @@ export async function handlePaymentCallback(data: Record<string, string>, paymen
     if (attempt.method !== "ATM" || data.RtnCode !== "2") throw new CustomError("Invalid ATM account issuance notification", 400);
     if (attempt.state !== "prepared") return;
     const bankName = data.BankCode ? getBankNameFromCode(data.BankCode) : undefined;
-    await db.transaction(async tx => {
-      await tx.select({ id: schema.orderTable.id }).from(schema.orderTable).where(eq(schema.orderTable.id, attempt.orderId)).for("update");
-      await tx.update(schema.orderTable).set({ paymentInfo: { ...data, ...(bankName ? { BankName: bankName } : {}) } })
-        .where(and(eq(schema.orderTable.id, attempt.orderId), eq(schema.orderTable.orderStatus, "payment-processing")));
-    });
+    await recordAtmPaymentInfo(attempt.id, { ...data, ...(bankName ? { BankName: bankName } : {}) });
     return;
   }
   const attempt = await recordPaymentResult(data);
@@ -98,6 +94,9 @@ export async function reconcileRecordedPayments() {
         checked++;
         await completePayment(recorded.id);
         settled++;
+      } else if (attempt.method === "ATM") {
+        if (await reconcileUnpaidAtm(attempt.id, data)) settled++;
+        checked++;
       }
     } catch (error) { logDiagnosticError("Payment status query requires retry", error, { paymentAttemptId: attempt.id }); }
     await db.update(schema.orderPaymentAttemptTable).set({ updatedAt: new Date() })

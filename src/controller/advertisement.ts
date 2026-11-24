@@ -5,6 +5,21 @@ import { RequestWithId } from "../type/request";
 import type { ListAdminAdvertisementsParams } from "../repository/advertisement";
 
 class AdvertisementController {
+  async statusCounts(req: RequestWithId, res: Response) {
+    const result = await advertisementService.statusCounts({
+      requesterId: req.userId ?? "",
+      sellerId: req.query.sellerId ? String(req.query.sellerId) : undefined,
+      productStatus: req.query.productStatus as ListAdminAdvertisementsParams["productStatus"],
+      search: req.query.search === undefined ? undefined : String(req.query.search),
+    });
+    sendJsonResponse(res, result);
+  }
+
+  async batchAutoRefill(req: RequestWithId, res: Response) { sendJsonResponse(res, await advertisementService.batchAutoRefill(req.userId!, req.body)); }
+  async batchFunding(req: RequestWithId, res: Response) { sendJsonResponse(res, await advertisementService.batchFunding(req.userId!, req.body)); }
+  async batchStatus(req: RequestWithId, res: Response) { sendJsonResponse(res, await advertisementService.batchStatus(req.userId!, req.body)); }
+  async autoRefill(req: RequestWithId, res: Response) { sendJsonResponse(res, await advertisementService.autoRefill(req.userId!, req.params.id)); }
+  async configureAutoRefill(req: RequestWithId, res: Response) { sendJsonResponse(res, await advertisementService.configureAutoRefill(req.userId!, req.params.id, req.body)); }
   async withdrawalPreview(req: RequestWithId, res: Response) {
     sendJsonResponse(res, await advertisementService.withdrawalPreview(req.params.id, req.userId ?? ""));
   }
@@ -16,7 +31,9 @@ class AdvertisementController {
       requesterId: req.userId ?? "",
       sellerId: req.query.sellerId ? String(req.query.sellerId) : undefined,
       productId: req.query.productId ? String(req.query.productId) : undefined,
-      status: req.query.status as any,
+      status: req.query.status as ListAdminAdvertisementsParams["status"],
+      productStatus: req.query.productStatus as ListAdminAdvertisementsParams["productStatus"],
+      search: req.query.search === undefined ? undefined : String(req.query.search),
       page: req.query.page ? Number(req.query.page) : undefined,
       limit: req.query.limit ? Number(req.query.limit) : undefined,
       startAt: req.query.startAt ? new Date(String(req.query.startAt)) : undefined,
@@ -48,13 +65,15 @@ class AdvertisementController {
     req: RequestWithId,
     res: Response,
   ): Promise<any> {
-    const { page, limit, sellerId, status } = req.query;
+    const { page, limit, sellerId, status, productStatus, search } = req.query;
     const result = await advertisementService.listAdminAdvertisements({
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
       requesterId: req.userId ?? "",
       sellerId: sellerId ? String(sellerId) : undefined,
       status: status as ListAdminAdvertisementsParams["status"],
+      productStatus: productStatus as ListAdminAdvertisementsParams["productStatus"],
+      search: search === undefined ? undefined : String(search),
     });
     sendJsonResponse(res, result);
   }
