@@ -137,7 +137,7 @@ async function run() {
       { ...expiryLot, originalAmount: "50.00", availableAmount: "50.00", earningLocalMonth: "2026-10", expiresAt: new Date("2026-11-30T16:00:00Z") },
       { ...expiryLot, userId: fallbackUser.user.id, originalAmount: "1.25", availableAmount: "1.25" },
     ]);
-    const pushed: Array<{ tokens: string[]; notification?: { title?: string; body?: string } }> = [];
+    const pushed: Array<{ tokens: string[]; notification?: { title?: string; body?: string }; data?: Record<string, string> }> = [];
     const expiryJobDependencies = {
       createNotification,
       getFcmTokensInUserIds: async (ids: string[]) => ids
@@ -173,6 +173,14 @@ async function run() {
       assert.match(push.notification!.body!, /2026\/11\/01 00:00（台北時間）/);
       const saved = await db.query.userNotificationTable.findFirst({ where: eq(schema.userNotificationTable.userId, expiryUser.user.id) });
       assert.equal(saved?.body, push.notification!.body);
+      assert.ok(saved);
+      assert.equal(push.data?.command, "message");
+      assert.equal(push.data?.notificationId, saved.id);
+      const notificationDetail = expectSuccess(await request(`/api/notification/sync/${push.data.notificationId}`, {
+        token: octoberLogin.token,
+      }));
+      assert.equal(notificationDetail.id, saved.id);
+      assert.equal(notificationDetail.body, push.notification!.body);
       // Saving the in-app message must not depend on a registered push token.
       const savedWithoutPush = await db.query.userNotificationTable.findFirst({
         where: eq(schema.userNotificationTable.userId, fallbackUser.user.id),
