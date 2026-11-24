@@ -14,7 +14,7 @@ import {
   assignAccountParent,
   listAccountEmployees,
   createSubAccount,
-  softDeleteSubAccount,
+  softDeleteAccount,
   CreateSubAccountInput,
 } from "../repository/account";
 import { ServiceResponse } from "../type/general";
@@ -34,11 +34,11 @@ class AdminService {
     }
   }
 
-  async deleteSubAccount(requesterId: string, targetAccountId: string) {
+  async deleteAccount(requesterId: string, targetAccountId: string) {
     try {
       return {
         success: true as const,
-        data: await softDeleteSubAccount(requesterId, targetAccountId),
+        data: await softDeleteAccount(requesterId, targetAccountId),
       };
     } catch (error) {
       return handleServiceError(error);

@@ -122,23 +122,27 @@ function isUniqueViolation(error: any) {
 // --- Category Functions ---
 
 /**
- * Creates a new category.
+ * Creates or restores a category by its case-insensitively unique name.
  * @param categoryData The data for the new category.
  * @returns The newly created category.
  */
 export async function createCategory(categoryData: schema.NewCategory) {
-  try {
-    const [newCategory] = await db
-      .insert(schema.categoryTable)
-      .values({ ...categoryData, name: categoryData.name.trim() })
-      .returning();
-    return newCategory;
-  } catch (error: any) {
-    if (isUniqueViolation(error)) {
-      throw new CustomError("A category with this name already exists", 409);
-    }
-    throw error;
-  }
+  const name = categoryData.name.trim();
+  return db.transaction(async (tx) => {
+    // The existing unique index serializes conflicting inserts. Read the
+    // committed winner under a row lock before restoring its original ID.
+    const [created] = await tx.insert(schema.categoryTable).values({ name })
+      .onConflictDoNothing().returning();
+    if (created) return created;
+    const [existing] = await tx.select().from(schema.categoryTable)
+      .where(sql`lower(${schema.categoryTable.name}) = lower(${name})`).for("update");
+    if (!existing) throw new CustomError("Category changed; retry creation", 409);
+    if (!existing.deletedAt) return existing;
+    const [restored] = await tx.update(schema.categoryTable)
+      .set({ deletedAt: null, updatedAt: new Date() })
+      .where(eq(schema.categoryTable.id, existing.id)).returning();
+    return restored;
+  });
 }
 
 export async function updateCategory(
@@ -151,7 +155,7 @@ export async function updateCategory(
       const [updated] = await tx
         .update(schema.categoryTable)
         .set({ name: name.trim(), updatedAt: new Date() })
-        .where(eq(schema.categoryTable.id, categoryId))
+        .where(and(eq(schema.categoryTable.id, categoryId), isNull(schema.categoryTable.deletedAt)))
         .returning();
       if (!updated) throw new CustomError("Category not found", 404);
       await recordAdminActivityWithTx(tx, {
@@ -183,48 +187,34 @@ export async function deleteCategory(
       .for("update");
     if (!category) throw new CustomError("Category not found", 404);
 
-    const detachedProducts = await tx
-      .delete(schema.productsToCategoriesTable)
-      .where(eq(schema.productsToCategoriesTable.categoryId, categoryId))
-      .returning({ productId: schema.productsToCategoriesTable.productId });
-    const detachedProductIds = [
-      ...new Set(detachedProducts.map(({ productId }) => productId)),
-    ];
-
-    if (detachedProductIds.length > 0) {
-      await tx
-        .update(schema.productTable)
-        .set({ updatedAt: new Date() })
-        .where(inArray(schema.productTable.id, detachedProductIds));
+    const deletedAt = category.deletedAt ?? new Date();
+    if (!category.deletedAt) {
+      await tx.update(schema.categoryTable).set({ deletedAt, updatedAt: deletedAt })
+        .where(eq(schema.categoryTable.id, categoryId));
+      await recordAdminActivityWithTx(tx, {
+        actorAccountId,
+        eventType: "category.deleted",
+        entityType: "category",
+        entityId: categoryId,
+        metadata: { name: category.name, softDeleted: true, detachedProductCount: 0 },
+      });
     }
-
-    await tx
-      .delete(schema.categoryTable)
-      .where(eq(schema.categoryTable.id, categoryId));
-    await recordAdminActivityWithTx(tx, {
-      actorAccountId,
-      eventType: "category.deleted",
-      entityType: "category",
-      entityId: categoryId,
-      metadata: {
-        name: category.name,
-        detachedProductCount: detachedProductIds.length,
-      },
-    });
     return {
       id: categoryId,
       deleted: true,
-      detachedProductCount: detachedProductIds.length,
+      deletedAt,
+      detachedProductCount: 0,
     };
   });
 }
 
 /**
- * Retrieves a list of all categories, sorted by name.
- * @returns An array of all categories.
+ * Retrieves non-deleted categories, sorted by name.
+ * Existing product/history relations remain available after soft deletion.
  */
 export async function listCategory() {
   return db.query.categoryTable.findMany({
+    where: isNull(schema.categoryTable.deletedAt),
     orderBy: (categories, { asc }) => [asc(categories.name)],
   });
 }

@@ -16,10 +16,11 @@ class AuthController {
   }
 
   async clearDeviceToken(req: RequestWithId, res: Response): Promise<any> {
-    const { deviceId } = req.body;
+    const { deviceId, fcmToken } = req.body;
     const result = await authService.clearDeviceToken({
       userId: req.userId ?? "",
-      deviceId: deviceId ? String(deviceId) : undefined,
+      deviceId,
+      fcmToken,
     });
     sendJsonResponse(res, result);
   }
@@ -75,12 +76,6 @@ class AuthController {
     const { referralCode } = req.body;
     const userId = req.userId ?? "";
     const result = await authService.joinGroup({ referralCode, userId });
-    sendJsonResponse(res, result);
-  }
-
-  async resetDailyStats(req: RequestWithId, res: Response): Promise<any> {
-    const userId = req.body.userId ?? req.userId ?? "";
-    const result = await authService.resetDailyStats(userId);
     sendJsonResponse(res, result);
   }
 

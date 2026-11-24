@@ -199,29 +199,30 @@ export async function upsertDeviceToken({
 export async function clearDeviceToken({
   userId,
   deviceId,
+  fcmToken,
 }: {
   userId: string;
-  deviceId?: string | null;
+  deviceId?: string;
+  fcmToken?: string;
 }) {
-  if (deviceId == null) {
-    const deletedByUser = await db
-      .delete(schema.deviceTokenTable)
-      .where(eq(schema.deviceTokenTable.userId, userId))
-      .returning();
-    return deletedByUser;
+  if ((deviceId !== undefined && (typeof deviceId !== "string" || !deviceId.trim())) ||
+      (fcmToken !== undefined && (typeof fcmToken !== "string" || !fcmToken.trim())) ||
+      (deviceId === undefined && fcmToken === undefined)) {
+    throw new CustomError("Provide a non-empty deviceId or fcmToken", 400);
   }
 
-  const deletedByUserAndDevice = await db
+  // Ownership and all supplied selectors are checked in one atomic deletion.
+  // A stale logout after account transfer cannot remove the new owner's token.
+  return db
     .delete(schema.deviceTokenTable)
     .where(
       and(
         eq(schema.deviceTokenTable.userId, userId),
-        eq(schema.deviceTokenTable.deviceId, deviceId),
+        deviceId === undefined ? undefined : eq(schema.deviceTokenTable.deviceId, deviceId),
+        fcmToken === undefined ? undefined : eq(schema.deviceTokenTable.fcmToken, fcmToken),
       ),
     )
     .returning();
-
-  return deletedByUserAndDevice;
 }
 
 export async function deleteUnusedDeviceTokens(

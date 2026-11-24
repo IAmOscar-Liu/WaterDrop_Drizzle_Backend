@@ -108,7 +108,7 @@ No third SSE connection or recurring client polling is required. Background reco
 
 ## Device registration
 
-The existing device-token endpoint's request/response shape is preserved. Registration replaces conflicting token/device bindings atomically, including a token reused across accounts or a refreshed token for the same device. Keep `deviceId` stable for an installation and distinct between installations. When omitted, token uniqueness still prevents multiple owners of that token; the backend cannot identify a rotated old token by device identity alone.
+The device-token registration endpoint's request/response shape is preserved. Removal is tightened as of 2026-11-24: [device-token removal changes](FLUTTER_DEVICE_TOKEN_REMOVAL_API_CHANGES.md) require a deviceId or fcmToken and never remove all devices by omission. Registration replaces conflicting token/device bindings atomically, including a token reused across accounts or a refreshed token for the same device. Keep `deviceId` stable for an installation and distinct between installations. When omitted, token uniqueness still prevents multiple owners of that token; the backend cannot identify a rotated old token by device identity alone.
 
 Each successful registration records forced delivery work, even if the count/revision did not change or the total is zero. It is processed by the next worker pass. With cron disabled, REST still provides the immediate initial badge; pending pushes wait for a worker.
 

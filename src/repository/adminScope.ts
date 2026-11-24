@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import * as schema from "../db/schema";
 import { CustomError } from "../lib/error";
 import db from "../lib/initDB";
-import { requireCompletedSeller } from "../lib/accountProfile";
+import { requireCompletedSeller, requireActiveEmployeeParent } from "../lib/accountProfile";
 
 export type AdminSellerScope = {
   accountId: string;
@@ -21,6 +21,7 @@ export async function getActiveAdminAccount(accountId: string) {
     throw new CustomError("Account is inactive or no longer available", 403);
   }
   requireCompletedSeller(account);
+  requireActiveEmployeeParent(account, account.group?.parent);
   if (account.group?.parent) requireCompletedSeller(account.group.parent);
   return account;
 }

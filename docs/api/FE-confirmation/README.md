@@ -28,6 +28,10 @@ Latest seller finance implementation (2026-11-17): [賣家收益、存提申請�
 
 ## Admin web FE — recommended reading order
 
+Account deletion update (2026-11-24): [帳號軟刪除權限更新](ACCOUNT_SOFT_DELETE_API_CHANGES.md) — admins may soft-delete sellers/employees; sellers may delete only their own employees. Parent seller deletion blocks employee access and preserves business history. Pending deployment.
+
+Category safety update (2026-11-24): [分類軟刪除與同名恢復](CATEGORY_SOFT_DELETE_AND_RESTORE.md) — lists exclude deleted categories; creating an existing name restores the same ID; soft deletion preserves product associations. Pending deployment.
+
 Latest product deletion fix (2026-11-16): [商品刪除 API 修正通知](ADMIN_PRODUCT_DELETION_API_CHANGES.md) — permanent deletion route removed; soft deletion restricted to platform admins. Pending deployment.
 
 1. [Original confirmation checklist](ADMIN_FE_CONFIRMATION_CHECKLIST.md) —

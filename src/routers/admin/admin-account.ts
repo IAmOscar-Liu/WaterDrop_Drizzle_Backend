@@ -60,6 +60,16 @@ import { adminValidation } from "../../middleware/admin";
  *           enum: [active, inactive, banned]
  *           description: The status of the account.
  *           default: active
+ *         deletedAt:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *           description: Soft-deletion timestamp; deleted accounts cannot sign in or access business APIs.
+ *         deletedByAccountId:
+ *           type: string
+ *           format: uuid
+ *           nullable: true
+ *           description: Account that performed the soft deletion.
  *         isEmailVerified:
  *           type: boolean
  *           description: Whether the current email has been verified; admin/employee own verification is not required for business access.
@@ -905,8 +915,8 @@ router.post(
  * /api/admin/account/{id}:
  *   delete:
  *     tags: [Account]
- *     summary: Soft-delete an employee sub-account
- *     description: The owning seller or a platform admin may deactivate an employee. Existing tokens are rejected immediately; history and wallet records remain.
+ *     summary: Soft-delete a seller or employee account
+ *     description: Platform admins may delete sellers or employees, including unassigned employees. Sellers may delete only employees belonging to their own seller group; employees may not delete accounts. Administrator targets are protected. Sets status inactive, deletedAt and deletedByAccountId without removing records or releasing the email for reuse. Repeated deletion returns the original deletion details without another activity event. Seller deletion revokes seller and employee sessions; employees retain their own rows but cannot log in, refresh or use business APIs while their parent seller is deleted/inactive. Products, orders, wallets and transactions remain stored; this does not soft-delete employees/products or automatically change product/ad statuses. No restore endpoint is provided.
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: path
@@ -914,15 +924,24 @@ router.post(
  *         required: true
  *         schema: { type: string, format: uuid }
  *     responses:
- *       '200': { description: Employee was deactivated. }
- *       '403': { description: Caller does not own the employee. }
- *       '409': { description: Target is not an employee. }
+ *       '200':
+ *         description: Seller or employee soft-deleted. Original timestamp/actor retained on repeated deletion. Password and credential version are excluded.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data: { $ref: '#/components/schemas/Account' }
+ *       '403': { description: Employee caller, seller target without admin permissions, non-owning seller, or caller/parent unavailable. }
+ *       '404': { description: Target account not found. }
+ *       '409': { description: Administrator accounts cannot be deleted. }
  */
 router.delete(
   "/:id",
   isAuth,
   validateZod({ params: adminValidation.account.idParams }),
-  AccountController.deleteSubAccount,
+  AccountController.deleteAccount,
 );
 
 /**

@@ -34,6 +34,15 @@ export function requireCompletedSeller(account: { role: string; profileCompleted
     throw new CustomError("Please complete your seller profile.", 403, "ACCOUNT_PROFILE_INCOMPLETE");
   }
 }
+
+export function requireActiveEmployeeParent(
+  account: { role: string },
+  parent?: { role: string; status: string; deletedAt: Date | null } | null,
+) {
+  if (account.role === "employee" && (!parent || parent.role !== "seller" || parent.status !== "active" || parent.deletedAt)) {
+    throw new CustomError("Employee's seller is inactive or no longer available", 403, "ACCOUNT_PARENT_UNAVAILABLE");
+  }
+}
 export function profileState(account: SellerProfile & { role: string; profileCompletedAt: Date | null }) {
   return { isProfileComplete: account.role !== "seller" || !!account.profileCompletedAt,
     missingProfileFields: account.role === "seller" ? missingProfileFields(account) : [] };

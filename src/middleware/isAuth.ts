@@ -7,7 +7,7 @@ import { CustomError } from "../lib/error";
 import db from "../lib/initDB";
 import { isAdminAccessPayload } from "../lib/token";
 import { assertAccountSession } from "../repository/accountSession";
-import { requireCompletedSeller } from "../lib/accountProfile";
+import { requireCompletedSeller, requireActiveEmployeeParent } from "../lib/accountProfile";
 import { RequestWithId } from "../type/request";
 
 const JWT_SECRET =
@@ -63,6 +63,7 @@ async function authenticate(
     if (account || decodedPayload.tokenUse === "admin_access" || req.originalUrl.startsWith("/api/admin/")) {
       if (!process.env.JWT_SECRET) throw new CustomError("Admin token verification is not configured", 503);
       if (!account || account.status !== "active" || account.deletedAt) throw new CustomError("Account is inactive or no longer available", 403);
+      requireActiveEmployeeParent(account, account.group?.parent);
       if (!isAdminAccessPayload(decodedPayload)) throw new CustomError("Admin access token required; please log in again", 401, "ADMIN_ACCESS_TOKEN_REQUIRED");
       const version = decodedPayload.data?.credentialVersion ?? 0;
       if (!Number.isInteger(version) || version !== account.credentialVersion) throw new CustomError("Credentials changed; please log in again", 401, "ACCOUNT_CREDENTIALS_CHANGED");

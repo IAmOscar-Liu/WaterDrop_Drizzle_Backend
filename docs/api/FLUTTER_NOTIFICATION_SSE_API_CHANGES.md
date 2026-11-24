@@ -6,6 +6,12 @@ Status: **implemented and tested locally; owner-run migration and deployment sti
 
 ## Endpoints and authorization
 
+### Notification deletion preserves history (2026-11-24)
+
+`DELETE /api/notification` and `DELETE /api/notification/sync` now hide the recipient's notification without clearing title, body, metadata or orderId. Existing routes, authentication, 1–200 unique-ID batch validation, ownership checks and response shapes stay unchanged. Legacy delete returns `Deleted N notifications.` and returns 404 if nothing newly deleted; sync delete returns IDs/versions/stats and remains idempotent.
+
+Deleted notifications remain absent from legacy/sync lists and unread counts. Both detail routes return 404, read mutations omit deleted items, deletion events contain only the existing ID/version/stats fields, and replay never delivers historical content for an item now deleted. No Flutter UI changes or notification schema migration are required. There is no new restore or deleted-history endpoint. Previously cleared contents cannot be recovered by this change. Backend deployment is required; tests use disposable databases only.
+
 ### Coin expiration reminder push navigation (2026-11-24)
 
 Coin expiration reminders persist their Message Center notification before sending FCM. Their push `data` is now `{command: "message", notificationId: "SAVED_NOTIFICATION_UUID"}`. Each device receives the ID of the same stored reminder, including when tokens are sent in multiple batches.
@@ -100,7 +106,7 @@ For bootstrap, register handlers and connect first. On `stream.ready`, fetch sta
 
 Background/logout closes the stream. Resume may replay with a checkpoint only when its corresponding cache/invalidations remain. Cold launch, account change, an expired cursor or `stream.reset` requires fresh notification bootstrap. Leave chat state alone. Share the existing token refresh mechanism; token expiry resets/closes the stream. Immediate session revocation is not implemented beyond current authentication/user-access checks.
 
-Deleted rows become recipient-scoped tombstones and cannot reuse their IDs. Content fields on the row are scrubbed. **Replay that encounters historical content for an item now deleted/inaccessible resets instead of delivering that content.** This can occur after deleting items during a disconnect; it is a normal full-resync case. Historical journal payloads remain stored until retention cleanup but are not delivered after deletion. Tombstones are retained for the recipient's lifetime, independently of 48-hour replay retention, so deletion retries stay idempotent.
+Deleted rows become recipient-scoped tombstones and cannot reuse their IDs. As of the 2026-11-24 history-preservation change, the original title, body, metadata, order reference, recipient, read state and creation time remain stored. Deletion only sets deletedAt and advances synchronization version/updatedAt; it does not restore previously scrubbed rows or expose retained content through app APIs. **Replay that encounters historical content for an item now deleted/inaccessible resets instead of delivering that content.** This can occur after deleting items during a disconnect; it is a normal full-resync case. Historical journal payloads remain stored until retention cleanup but are not delivered after deletion. Tombstones are retained for the recipient's lifetime, independently of 48-hour replay retention, so deletion retries stay idempotent.
 
 ## Transport, errors and operations
 
@@ -185,4 +191,4 @@ npm run test:notification-sse
 
 The suite creates a disposable database on the `.env.test` PostgreSQL server using the current schema **in memory**, tests two API processes, then drops it. No configured database is migrated and no migration files are produced. It also runs the existing chat legacy-compatibility and SSE regression suites because the transport implementation is shared. Tests do not send real device pushes. The shared test runner now builds the current schema in memory for every suite, with a separate disposable database per test script. Deployment migration generation/execution remains an owner task.
 
-Verified: app-user isolation, legacy ownership fixes and response shapes, created/read/deleted events across processes, atomic mixed-owner rejection, batch stats/revisions, concurrent no-op retries, content edits, scrubbed tombstones and ID non-reuse, category totals, tied-timestamp paging, filtered snapshot holes/replacement/expiry/caps, normalized query binding, replay/live transitions, expiry/retention/rollback, oversized/malformed-event resets, the 10,000-item cap, JWT expiry, and independent chat quotas. Actual Flutter UI behavior, FCM presentation and production proxy/load behavior remain deployment checks.
+Verified: app-user isolation, legacy ownership fixes and response shapes, created/read/deleted events across processes, atomic mixed-owner rejection, batch stats/revisions, concurrent no-op retries, content edits, history-preserving tombstones and ID non-reuse, category totals, tied-timestamp paging, filtered snapshot holes/replacement/expiry/caps, normalized query binding, replay/live transitions, expiry/retention/rollback, oversized/malformed-event resets, the 10,000-item cap, JWT expiry, and independent chat quotas. Actual Flutter UI behavior, FCM presentation and production proxy/load behavior remain deployment checks.

@@ -22,9 +22,9 @@ below are under `/api/admin` and require an admin-side bearer token.
 | Feature | Endpoint | Notes |
 | --- | --- | --- |
 | Create employee | `POST /account/sub-account` | Seller creates under itself; admin supplies `parentId`; creates wallet atomically. |
-| Delete employee | `DELETE /account/:id` | Soft delete; seller owner or platform admin. |
+| Soft-delete account | `DELETE /account/:id` | Admin may delete sellers/employees; sellers may delete only their own employees. Admin targets protected. Seller deletion blocks employee access while preserving history. See [updated account rules](ACCOUNT_SOFT_DELETE_API_CHANGES.md). |
 | Rename category | `PUT /product/categories/:id` | Platform admin; names are case-insensitively unique. |
-| Delete category | `DELETE /product/categories/:id` | Detaches the category from associated products, preserves those products, and returns `detachedProductCount`. |
+| Delete category | `DELETE /product/categories/:id` | Soft-deletes the category and preserves all product associations (updated 2026-11-24). `detachedProductCount` is now always 0. Creating the same name restores the original ID; see [category changes](CATEGORY_SOFT_DELETE_AND_RESTORE.md). |
 | Soft-delete product | `DELETE /product/:id` | Platform admin only (updated 2026-11-16); deactivates variants and pauses non-archived ads. No restore endpoint. |
 | Permanent product deletion (retired 2026-11-16) | `DELETE /product/:id/permanent` | Route and Swagger entry removed; the old path returns `404`, including for platform admins. Remove the permanent-delete UI. Deactivation and soft deletion remain supported. |
 | Adjust ad budget | `PUT /advertisement/budget/:id` | Supports `increase`. `decrease` returns `409 operation_not_supported`. `set` has been removed and returns `400`. |

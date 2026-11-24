@@ -1,7 +1,7 @@
 import { revokeEmailVerificationWithTx } from "./accountEmailVerification";
 import { revokeAccountSessionsWithTx } from "./accountSession";
 import bcrypt from "bcrypt";
-import { profileState, requireValidProfile, requireCompletedSeller, validatePassword } from "../lib/accountProfile";
+import { profileState, requireValidProfile, requireCompletedSeller, requireActiveEmployeeParent, validatePassword } from "../lib/accountProfile";
 import { count, eq, ilike, inArray, isNull, or, SQL, sql, and } from "drizzle-orm";
 import {
   RECIPROCAL_ACCOUNT_GROUP_ASSIGNMENT_ERROR_MESSAGE,
@@ -94,6 +94,7 @@ export async function getAccountByEmailAndPassword(
   }
 
   const result = await getAccountById(account.id);
+  requireActiveEmployeeParent(result, result.parent);
   if (result.credentialVersion !== account.credentialVersion) throw new CustomError("Credentials changed; please log in again", 401);
   return result;
 }
@@ -129,6 +130,11 @@ export async function createSubAccount(
 
   try {
     const createdId = await db.transaction(async (tx) => {
+      const [lockedParent] = await tx.select().from(schema.accountTable)
+        .where(eq(schema.accountTable.id, parentId)).for("update");
+      if (!lockedParent || lockedParent.role !== "seller" || lockedParent.status !== "active" || lockedParent.deletedAt) {
+        throw new CustomError("The parent account must be an active seller", 403);
+      }
       let [group] = await tx
         .select()
         .from(schema.accountGroupTable)
@@ -181,26 +187,24 @@ export async function createSubAccount(
   }
 }
 
-export async function softDeleteSubAccount(
+export async function softDeleteAccount(
   requesterId: string,
   targetAccountId: string,
 ) {
   const requester = await requireNonEmployee(requesterId);
   return db.transaction(async (tx) => {
-    const target = await tx.query.accountTable.findFirst({
-      where: eq(schema.accountTable.id, targetAccountId),
-      with: { group: true },
-    });
+    const [target] = await tx.select().from(schema.accountTable)
+      .where(eq(schema.accountTable.id, targetAccountId)).for("update");
     if (!target) throw new CustomError("Account not found", 404);
-    if (target.role !== "employee") {
-      throw new CustomError("Only employee sub-accounts can be deleted", 409);
+    if (target.role === "admin") {
+      throw new CustomError("Administrator accounts cannot be deleted", 409);
     }
-    const parentId = target.group?.parentId;
-    if (!parentId) {
-      throw new CustomError("Employee is not assigned to a seller", 409);
-    }
-    if (requester.role !== "admin" && requester.id !== parentId) {
-      throw new CustomError("You cannot delete another seller's employee", 403);
+    const group = target.accountGroupId ? await tx.query.accountGroupTable.findFirst({
+      where: eq(schema.accountGroupTable.id, target.accountGroupId),
+    }) : undefined;
+    const parentId = target.role === "seller" ? target.id : group?.parentId;
+    if (requester.role !== "admin" && (target.role !== "employee" || requester.id !== parentId)) {
+      throw new CustomError("A seller may delete only its own employees", 403);
     }
     if (target.deletedAt) {
       const { password: _, ...result } = target;
@@ -208,6 +212,19 @@ export async function softDeleteSubAccount(
     }
 
     await revokeEmailVerificationWithTx(tx, targetAccountId);
+    await revokeAccountSessionsWithTx(tx, targetAccountId, "account_deleted");
+    if (target.role === "seller") {
+      const groups = await tx.select({ id: schema.accountGroupTable.id }).from(schema.accountGroupTable)
+        .where(eq(schema.accountGroupTable.parentId, target.id));
+      if (groups.length) {
+        const employees = await tx.select({ id: schema.accountTable.id }).from(schema.accountTable)
+          .where(and(eq(schema.accountTable.role, "employee"), inArray(schema.accountTable.accountGroupId, groups.map(row => row.id))))
+          .orderBy(schema.accountTable.id).for("update");
+        for (const employee of employees) {
+          await revokeAccountSessionsWithTx(tx, employee.id, "parent_seller_deleted");
+        }
+      }
+    }
     const [updated] = await tx
       .update(schema.accountTable)
       .set({
@@ -220,8 +237,10 @@ export async function softDeleteSubAccount(
       .returning();
     await recordAdminActivityWithTx(tx, {
       actorAccountId: requesterId,
-      sellerId: parentId,
-      eventType: "account.sub_account_deleted",
+      sellerId: target.role === "seller" ? target.id : (parentId ? await tx.query.accountTable.findFirst({
+        columns: { id: true }, where: and(eq(schema.accountTable.id, parentId), eq(schema.accountTable.role, "seller")),
+      }) : undefined)?.id,
+      eventType: target.role === "seller" ? "account.seller_deleted" : "account.sub_account_deleted",
       entityType: "account",
       entityId: targetAccountId,
     });

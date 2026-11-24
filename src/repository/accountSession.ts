@@ -3,6 +3,7 @@ import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import * as schema from "../db/schema";
 import db from "../lib/initDB";
 import { CustomError } from "../lib/error";
+import { requireActiveEmployeeParent } from "../lib/accountProfile";
 
 const sessions = schema.accountSessionTable;
 const tokens = schema.accountRefreshTokenTable;
@@ -12,6 +13,14 @@ const newToken = () => `ar_${randomBytes(32).toString("base64url")}`;
 const validShape = (value?: string): value is string => typeof value === "string" && /^ar_[A-Za-z0-9_-]{43}$/.test(value);
 const invalid = () => new CustomError("Refresh session is unavailable; please log in", 403, "REFRESH_TOKEN_INVALID");
 
+async function checkEmployeeParent(tx: Tx, account: schema.Account) {
+  if (account.role !== "employee") return;
+  const group = account.accountGroupId ? await tx.query.accountGroupTable.findFirst({
+    where: eq(schema.accountGroupTable.id, account.accountGroupId), with: { parent: true },
+  }) : undefined;
+  requireActiveEmployeeParent(account, group?.parent);
+}
+
 // Every mutation locks account -> session -> token. Reset/password changes use the same order.
 export async function createAccountSession(accountId: string, expectedVersion: number) {
   return db.transaction(async (tx) => {
@@ -19,6 +28,7 @@ export async function createAccountSession(accountId: string, expectedVersion: n
     if (!account || account.status !== "active" || account.deletedAt || account.credentialVersion !== expectedVersion) {
       throw new CustomError("Credentials changed; please log in again", 401, "ACCOUNT_CREDENTIALS_CHANGED");
     }
+    await checkEmployeeParent(tx, account);
     const [session] = await tx.insert(sessions).values({ accountId, credentialVersion: expectedVersion,
       expiresAt: sql`clock_timestamp() + interval '30 days'` }).returning();
     const refreshToken = newToken();
@@ -49,6 +59,7 @@ export async function rotateAccountRefreshToken(raw?: string) {
       await tx.update(sessions).set({ revokedAt: new Date(), revocationReason: "account_or_session_invalid" }).where(eq(sessions.id, candidate.sessionId));
       return { error: "REFRESH_TOKEN_INVALID" } as const;
     }
+    await checkEmployeeParent(tx, account);
     const refreshToken = newToken();
     await tx.update(tokens).set({ usedAt: new Date() }).where(eq(tokens.id, token.id));
     await tx.insert(tokens).values({ sessionId: candidate.sessionId, tokenHash: hash(refreshToken) });

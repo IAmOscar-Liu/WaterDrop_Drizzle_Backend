@@ -80,7 +80,8 @@ async function run() {
     assert.equal((await connect(account.id)).status, 401);
     const stream = await connect(user.id);
     const ready = await stream.next(); assert.equal(ready.event, "stream.ready"); assert.equal(ready.id, undefined);
-    const legacyCreated = await createNotification({ userId: user.id, title: "訂單更新", body: "Paid", type: "order_status" });
+    const [linkedOrder] = await db.insert(schema.orderTable).values({ userId: user.id, subTotal: 100, totalAmount: 100 }).returning();
+    const legacyCreated = await createNotification({ userId: user.id, title: "訂單更新", body: "Paid", type: "order_status", orderId: linkedOrder.id, metadata: { status: "paid", reference: "preserve-history" } });
     assert.equal("version" in legacyCreated, false); assert.equal("deletedAt" in legacyCreated, false);
     const created = await stream.next();
     assert.equal(created.event, "notification.created"); assert.equal(created.data.notification.id, legacyCreated.id);
@@ -106,8 +107,15 @@ async function run() {
     assert.equal((await mutateNotifications(user.id, [legacyCreated.id], "read")).notifications.length, 0);
     assert.equal((await openNotificationFeed(user.id)).sequence, beforeRetry.sequence);
     assert.equal((await request(`/notification/${legacyCreated.id}`, user.id)).status, 404);
+    assert.equal((await request(`/notification/sync/${legacyCreated.id}`, user.id)).status, 404);
+    assert.equal((await request("/notification/list", user.id)).body.data.total, 0);
+    assert.equal((await request("/notification/sync/list", user.id)).body.data.total, 0);
     const tombstone = await db.query.userNotificationTable.findFirst({ where: eq(schema.userNotificationTable.id, legacyCreated.id) });
-    assert.equal(tombstone?.title, ""); assert.equal(tombstone?.body, "");
+    assert.ok(tombstone?.deletedAt);
+    assert.equal(tombstone.title, legacyCreated.title); assert.equal(tombstone.body, legacyCreated.body);
+    assert.equal(tombstone.orderId, linkedOrder.id); assert.deepEqual(tombstone.metadata, legacyCreated.metadata);
+    assert.deepEqual(tombstone.createdAt, legacyCreated.createdAt);
+    assert.equal((await db.query.orderTable.findFirst({ where: eq(schema.orderTable.id, linkedOrder.id) }))!.id, linkedOrder.id);
     await assert.rejects(createNotificationRecord({ id: legacyCreated.id, userId: user.id, title: "reuse", body: "bad" }));
     stream.close();
     // Deleted historical content is not exposed by replay; clients bootstrap instead.
@@ -116,6 +124,43 @@ async function run() {
     assert.equal((await connect(other.id, deletion.id)).status, 403);
     assert.equal((await connect(user.id, encodeChatCursor({ kind: "feed", userId: user.id, sequence: 0 }))).status, 403);
     assert.equal((await connect(user.id, "bad")).status, 400);
+
+    // Both delete endpoints preserve unread source records without exposing
+    // their content through list/detail/read responses or replay delivery.
+    for (const path of ["/notification", "/notification/sync"]) {
+      const recipient = await newUser();
+      const [order] = await db.insert(schema.orderTable).values({ userId: recipient.id, subTotal: 50, totalAmount: 50 }).returning();
+      const item = await createNotificationRecord({ userId: recipient.id, title: "歷史通知", body: "保留完整內文", type: "order_status", orderId: order.id, metadata: { nested: { amount: "50.00" } } });
+      assert.equal((await getSyncNotificationStats(recipient.id)).total, 1);
+      const beforeDelete = await db.query.userNotificationTable.findFirst({ where: eq(schema.userNotificationTable.id, item.id) });
+      const deletionResponse = await request(path, recipient.id, "DELETE", { notificationIds: [item.id] });
+      assert.equal(deletionResponse.status, 200);
+      if (path === "/notification") assert.equal(deletionResponse.body.data, "Deleted 1 notifications.");
+      else assert.deepEqual(deletionResponse.body.data.deleted, [{ id: item.id, version: 2 }]);
+      const stored = (await db.query.userNotificationTable.findFirst({ where: eq(schema.userNotificationTable.id, item.id) }))!;
+      assert.ok(stored.deletedAt); assert.equal(stored.version, 2); assert.equal(stored.isRead, false);
+      const { deletedAt: oldDeletedAt, updatedAt: oldUpdatedAt, version: oldVersion, ...originalContent } = beforeDelete!;
+      const { deletedAt, updatedAt, version, ...preservedContent } = stored;
+      assert.deepEqual(preservedContent, originalContent);
+      assert.equal((await getSyncNotificationStats(recipient.id)).total, 0);
+      assert.equal((await request("/notification/stats", recipient.id)).body.data.order_status ?? 0, 0);
+      for (const prefix of ["/notification", "/notification/sync"]) {
+        assert.equal((await request(`${prefix}/${item.id}`, recipient.id)).status, 404);
+        assert.equal((await request(`${prefix}/list`, recipient.id)).body.data.total, 0);
+      }
+      assert.deepEqual((await request("/notification/mark-as-read", recipient.id, "POST", { notificationIds: [item.id] })).body.data, []);
+      assert.deepEqual((await request("/notification/sync/mark-as-read", recipient.id, "POST", { notificationIds: [item.id] })).body.data.notifications, []);
+      const historicalEvents = await readNotificationFeed(recipient.id, 0);
+      assert.equal(await canDeliverNotificationEvent(historicalEvents.find(event => event.eventType === "notification.created")!), false);
+      const deletionEvent = historicalEvents.find(event => event.eventType === "notification.deleted")!;
+      assert.equal(await canDeliverNotificationEvent(deletionEvent), true);
+      for (const key of ["notification", "title", "body", "metadata", "orderId"]) assert.equal(key in deletionEvent.payload, false);
+      const checkpoint = await openNotificationFeed(recipient.id);
+      const retry = await request(path, recipient.id, "DELETE", { notificationIds: [item.id] });
+      assert.equal(retry.status, path === "/notification" ? 404 : 200);
+      assert.equal((await openNotificationFeed(recipient.id)).sequence, checkpoint.sequence);
+      assert.deepEqual(await db.query.userNotificationTable.findFirst({ where: eq(schema.userNotificationTable.id, item.id) }), stored);
+    }
 
     const owned = await write(user.id), foreign = await write(other.id);
     const beforeDenied = await openNotificationFeed(user.id);
