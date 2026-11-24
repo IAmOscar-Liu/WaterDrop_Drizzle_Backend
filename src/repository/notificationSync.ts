@@ -62,7 +62,7 @@ async function publishChanges(tx: Tx, userId: string, changes: Change[]) {
 export async function createNotificationRecord(data: schema.NewUserNotification) {
   return db.transaction(async (tx) => {
     await lockNotificationFeed(tx, data.userId);
-    // IDs cannot be reused: deletion keeps a scrubbed row with the original PK.
+    // IDs cannot be reused: deletion retains the original row for history.
     const [row] = await tx.insert(schema.userNotificationTable).values({ ...data, version: 1, deletedAt: null }).returning();
     await publishChanges(tx, data.userId, [{ kind: "created", row }]);
     return canonicalNotification(row);
@@ -103,7 +103,7 @@ export async function mutateNotifications(userId: string, notificationIds: strin
     const changeIds = owned.filter((row) => !row.deletedAt && (action === "delete" || !row.isRead)).map((row) => row.id);
     const changed = changeIds.length ? await tx.update(schema.userNotificationTable).set({
       version: sql`${schema.userNotificationTable.version} + 1`, updatedAt: new Date(),
-      ...(action === "read" ? { isRead: true } : { deletedAt: new Date(), title: "", body: "", metadata: null, orderId: null }),
+      ...(action === "read" ? { isRead: true } : { deletedAt: new Date() }),
     }).where(inArray(schema.userNotificationTable.id, changeIds)).returning() : [];
     const stats = await publishChanges(tx, userId, changed.map((row) => ({ row, kind: action === "read" ? "updated" : "deleted" })));
     const byId = new Map(changed.map((row) => [row.id, row]));

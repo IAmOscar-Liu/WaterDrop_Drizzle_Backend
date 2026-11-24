@@ -19,6 +19,10 @@ import { expireUserCoinLots } from "../repository/coinLedger";
 import { getCoinsExpireSoon } from "../repository/coinExpiry";
 import { runCoinExpiryNotificationJob } from "../lib/coinExpiryNotificationJob";
 import { createNotification } from "../repository/notification";
+import { clearDeviceToken } from "../repository/user";
+import { createAccount, createSubAccount } from "../repository/account";
+import { createAccountSession } from "../repository/accountSession";
+import { getActiveAdminAccount } from "../repository/adminScope";
 import ecpayService from "../services/ecpay";
 import { preparePayment } from "../repository/payment";
 
@@ -109,6 +113,82 @@ async function run() {
 
   try {
     const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    // The retired reset endpoint must not mutate either the caller's state or
+    // another user's state supplied in the old userId body field.
+    const resetCaller = await login(`reset-caller-${suffix}`);
+    const resetTarget = await login(`reset-target-${suffix}`);
+    const deviceA = `device-a-${suffix}`, deviceB = `device-b-${suffix}`, foreignDevice = `device-foreign-${suffix}`;
+    const tokenA = `fake-token-a-${suffix}`, tokenB = `fake-token-b-${suffix}`, tokenOnly = `fake-token-only-${suffix}`, foreignToken = `fake-token-foreign-${suffix}`;
+    const registerDevice = async (token: string, body: unknown) => expectSuccess(await request("/api/auth/device-token", { method: "POST", token, body }));
+    await registerDevice(resetCaller.token, { deviceId: deviceA, fcmToken: tokenA });
+    await registerDevice(resetCaller.token, { deviceId: deviceB, fcmToken: tokenB });
+    await registerDevice(resetCaller.token, { fcmToken: tokenOnly });
+    await registerDevice(resetTarget.token, { deviceId: foreignDevice, fcmToken: foreignToken });
+    const deviceRows = () => db.select().from(schema.deviceTokenTable)
+      .where(inArray(schema.deviceTokenTable.userId, [resetCaller.user.id, resetTarget.user.id])).orderBy(schema.deviceTokenTable.id);
+    const originalDevices = await deviceRows();
+    assert.equal((await request("/api/auth/device-token", { method: "DELETE", body: { deviceId: deviceA } })).status, 401);
+    for (const body of [undefined, {}, { deviceId: "" }, { deviceId: "   " }, { deviceId: null }, { deviceId: 1 }, { fcmToken: [] }, { fcmToken: "" }, { deviceId: deviceA, userId: resetTarget.user.id }]) {
+      assert.equal((await request("/api/auth/device-token", { method: "DELETE", token: resetCaller.token, body })).status, 400);
+    }
+    await assert.rejects(clearDeviceToken({ userId: resetCaller.user.id }), (error: any) => error.statusCode === 400);
+    assert.deepEqual(await deviceRows(), originalDevices, "Missing/invalid selectors must never clear all devices");
+    const removeDevice = async (body: unknown) => expectSuccess(await request("/api/auth/device-token", { method: "DELETE", token: resetCaller.token, body }));
+    for (const body of [{ deviceId: foreignDevice }, { fcmToken: foreignToken }, { deviceId: foreignDevice, fcmToken: foreignToken }, { deviceId: deviceA, fcmToken: foreignToken }]) {
+      assert.deepEqual(await removeDevice(body), []);
+    }
+    assert.deepEqual(await deviceRows(), originalDevices, "Foreign and mismatched selectors must not delete any token");
+    const removedA = await removeDevice({ deviceId: deviceA });
+    assert.equal(removedA.length, 1); assert.equal(removedA[0].fcmToken, tokenA);
+    assert.deepEqual(await removeDevice({ deviceId: deviceA }), []);
+    const removedTokenOnly = await removeDevice({ fcmToken: tokenOnly });
+    assert.equal(removedTokenOnly.length, 1); assert.equal(removedTokenOnly[0].deviceId, null);
+    const remainingDevices = await deviceRows();
+    assert.deepEqual(remainingDevices, originalDevices.filter(row => row.fcmToken === tokenB || row.fcmToken === foreignToken));
+    // A rotated token must match both supplied selectors; stale logout data
+    // must not remove its replacement or a binding moved to another user.
+    const rotatedToken = `fake-token-b-rotated-${suffix}`;
+    await registerDevice(resetCaller.token, { deviceId: deviceB, fcmToken: rotatedToken });
+    assert.deepEqual(await removeDevice({ deviceId: deviceB, fcmToken: tokenB }), []);
+    const transferredDevice = `device-transfer-${suffix}`, transferredToken = `fake-transfer-${suffix}`;
+    await registerDevice(resetCaller.token, { deviceId: transferredDevice, fcmToken: transferredToken });
+    await registerDevice(resetTarget.token, { deviceId: transferredDevice, fcmToken: transferredToken });
+    for (const body of [{ deviceId: transferredDevice }, { fcmToken: transferredToken }, { deviceId: transferredDevice, fcmToken: transferredToken }]) {
+      assert.deepEqual(await removeDevice(body), []);
+    }
+    const removedB = await removeDevice({ deviceId: deviceB, fcmToken: rotatedToken });
+    assert.equal(removedB.length, 1); assert.equal(removedB[0].fcmToken, rotatedToken);
+    const foreignDevices = await deviceRows();
+    assert.equal(foreignDevices.length, 2);
+    assert.ok(foreignDevices.every(row => row.userId === resetTarget.user.id));
+    assert.ok(foreignDevices.some(row => row.fcmToken === foreignToken));
+    assert.ok(foreignDevices.some(row => row.fcmToken === transferredToken));
+    const resetUserIds = [resetCaller.user.id, resetTarget.user.id];
+    await db.update(schema.userDailyStatTable).set({
+      totalViews: 20, remainingViews: 0, viewedAds: [randomUUID()],
+      treasureBoxesEarned: 10, nextTreasureBoxIn: 0, canWatchMore: false,
+    }).where(inArray(schema.userDailyStatTable.userId, resetUserIds));
+    await db.insert(schema.treasureBoxTable).values(resetUserIds.map(userId => ({
+      userId, coinsAwarded: 0, isActive: true, isOpened: false,
+    })));
+    const beforeStats = await db.select().from(schema.userDailyStatTable)
+      .where(inArray(schema.userDailyStatTable.userId, resetUserIds)).orderBy(schema.userDailyStatTable.userId);
+    const beforeBoxes = await db.select().from(schema.treasureBoxTable)
+      .where(inArray(schema.treasureBoxTable.userId, resetUserIds)).orderBy(schema.treasureBoxTable.id);
+    for (const options of [
+      {},
+      { token: resetCaller.token },
+      { token: resetCaller.token, body: { userId: resetTarget.user.id } },
+    ]) {
+      const removedReset = await request("/api/auth/reset/daily-stats", { method: "POST", ...options });
+      assert.equal(removedReset.status, 404);
+      assert.equal(removedReset.json.code, "RESOURCE_NOT_FOUND");
+    }
+    expectSuccess(await request("/api/auth/daily-stats", { token: resetCaller.token }));
+    assert.deepEqual(await db.select().from(schema.userDailyStatTable)
+      .where(inArray(schema.userDailyStatTable.userId, resetUserIds)).orderBy(schema.userDailyStatTable.userId), beforeStats);
+    assert.deepEqual(await db.select().from(schema.treasureBoxTable)
+      .where(inArray(schema.treasureBoxTable.userId, resetUserIds)).orderBy(schema.treasureBoxTable.id), beforeBoxes);
     // Fixed dates exercise the real login/profile routes and the same handler
     // used by cron; only Firebase delivery is replaced with a recording fake.
     const expiryLabel = `expiry-${suffix}`;
@@ -455,18 +535,87 @@ async function run() {
     });
     assert.equal(deletedSubProfile.status, 403);
 
+    // Account soft deletion permissions and seller-wide access revocation.
+    // Keep these fixtures separate from the seller used by later order tests.
+    const deletionSeller = await createAccount({ role: "seller", name: "Deletion Seller", realName: "測試商家", phone: "0912345678", email: `delete-seller-${suffix}@example.test`, password: "Password123!" });
+    await db.update(schema.accountTable).set({ emailVerifiedAt: new Date() }).where(eq(schema.accountTable.id, deletionSeller.id));
+    const deletionSellerToken = await fixtureToken(deletionSeller);
+    const deletionEmployees = await Promise.all([1, 2, 3].map(i => createSubAccount(admin.id, {
+      parentId: deletionSeller.id, name: `Deletion operator ${i}`, realName: "測試員工", phone: "0912345678",
+      email: `delete-employee-${i}-${suffix}@example.test`, password: "Password123!",
+    })));
+    const survivor = deletionEmployees[2];
+    const survivorToken = await fixtureToken(survivor);
+    const survivorSession = await createAccountSession(survivor.id, survivor.credentialVersion);
+    const sellerSession = await createAccountSession(deletionSeller.id, deletionSeller.credentialVersion);
+    await db.update(schema.accountTable).set({ status: "inactive" }).where(eq(schema.accountTable.id, deletionSeller.id));
+    assert.equal((await request("/api/admin/account/me", { token: survivorToken })).json.code, "ACCOUNT_PARENT_UNAVAILABLE");
+    assert.equal((await request("/api/admin/account/refresh-token", {
+      method: "POST", cookie: `${process.env.REFRESH_TOKEN_NAME}=${survivorSession.refreshToken}`,
+    })).json.code, "ACCOUNT_PARENT_UNAVAILABLE");
+    // Fixture-only restoration, before exercising the actual deletion API.
+    await db.update(schema.accountTable).set({ status: "active" }).where(eq(schema.accountTable.id, deletionSeller.id));
+    const deleteAccount = (id: string, token: string) => request(`/api/admin/account/${id}`, { method: "DELETE", token });
+    assert.equal((await deleteAccount(admin.id, adminToken)).status, 409);
+    assert.equal((await deleteAccount(deletionSeller.id, deletionSellerToken)).status, 403);
+    assert.equal((await deleteAccount(otherSeller.id, deletionSellerToken)).status, 403);
+    assert.equal((await deleteAccount(deletionEmployees[0].id, sellerToken)).status, 403);
+    assert.equal((await deleteAccount(deletionEmployees[0].id, employeeToken)).status, 403);
+    const sellerDeletedEmployee = expectSuccess(await deleteAccount(deletionEmployees[0].id, deletionSellerToken));
+    assert.equal(sellerDeletedEmployee.status, "inactive");
+    assert.equal(sellerDeletedEmployee.deletedByAccountId, deletionSeller.id);
+    assert.equal("password" in sellerDeletedEmployee, false);
+    assert.equal(expectSuccess(await deleteAccount(deletionEmployees[0].id, deletionSellerToken)).deletedAt, sellerDeletedEmployee.deletedAt);
+    const adminDeletedEmployee = expectSuccess(await deleteAccount(deletionEmployees[1].id, adminToken));
+    assert.equal(adminDeletedEmployee.deletedByAccountId, admin.id);
+    const [orphanEmployee] = await db.insert(schema.accountTable).values({ role: "employee", email: `delete-orphan-${suffix}@example.test`, password: "unused" }).returning();
+    assert.equal(expectSuccess(await deleteAccount(orphanEmployee.id, adminToken)).status, "inactive");
+    const [preservedSellerProduct] = await db.insert(schema.productTable).values({ sellerId: deletionSeller.id, name: "Preserved deletion fixture", description: "test" }).returning();
+    const [preservedSellerOrder] = await db.insert(schema.orderTable).values({ userId: resetCaller.user.id, accountId: deletionSeller.id, subTotal: 100, totalAmount: 100 }).returning();
+    const [deletionWallet] = await db.update(schema.accountWalletTable).set({ walletBalance: "25" }).where(eq(schema.accountWalletTable.accountId, deletionSeller.id)).returning();
+    const [preservedWalletTransaction] = await db.insert(schema.accountWalletTransactionTable).values({
+      walletId: deletionWallet.id, accountId: deletionSeller.id, actorAccountId: admin.id,
+      type: "admin_credit", amount: "25", balanceBefore: "0", balanceAfter: "25", idempotencyKey: randomUUID(),
+    }).returning();
+    const deletedSeller = expectSuccess(await deleteAccount(deletionSeller.id, adminToken));
+    assert.equal(deletedSeller.status, "inactive"); assert.ok(deletedSeller.deletedAt);
+    assert.equal(deletedSeller.deletedByAccountId, admin.id);
+    assert.equal("password" in deletedSeller, false);
+    assert.equal(expectSuccess(await deleteAccount(deletionSeller.id, adminToken)).deletedAt, deletedSeller.deletedAt);
+    assert.equal((await request("/api/admin/account/me", { token: deletionSellerToken })).status, 403);
+    const blockedEmployee = await request("/api/admin/account/me", { token: survivorToken });
+    assert.equal(blockedEmployee.status, 403); assert.equal(blockedEmployee.json.code, "ACCOUNT_PARENT_UNAVAILABLE");
+    for (const account of [deletionSeller, survivor]) {
+      assert.equal((await request("/api/admin/account/login", { method: "POST", body: { email: account.email, password: "Password123!" } })).status, 403);
+    }
+    for (const session of [sellerSession, survivorSession]) {
+      assert.equal((await request("/api/admin/account/refresh-token", { method: "POST", cookie: `${process.env.REFRESH_TOKEN_NAME}=${session.refreshToken}` })).status, 403);
+      const savedSession = await db.query.accountSessionTable.findFirst({ where: eq(schema.accountSessionTable.id, session.session.id) });
+      assert.ok(savedSession!.revokedAt);
+    }
+    await assert.rejects(createAccountSession(survivor.id, survivor.credentialVersion), (error: any) => error.code === "ACCOUNT_PARENT_UNAVAILABLE");
+    await assert.rejects(getActiveAdminAccount(survivor.id), (error: any) => error.code === "ACCOUNT_PARENT_UNAVAILABLE");
+    const preservedEmployee = (await db.query.accountTable.findFirst({ where: eq(schema.accountTable.id, survivor.id) }))!;
+    assert.equal(preservedEmployee.deletedAt, null); assert.equal(preservedEmployee.status, "active");
+    assert.deepEqual(await db.query.productTable.findFirst({ where: eq(schema.productTable.id, preservedSellerProduct.id) }), preservedSellerProduct);
+    assert.deepEqual(await db.query.orderTable.findFirst({ where: eq(schema.orderTable.id, preservedSellerOrder.id) }), preservedSellerOrder);
+    assert.deepEqual(await db.query.accountWalletTable.findFirst({ where: eq(schema.accountWalletTable.id, deletionWallet.id) }), deletionWallet);
+    assert.deepEqual(await db.query.accountWalletTransactionTable.findFirst({ where: eq(schema.accountWalletTransactionTable.id, preservedWalletTransaction.id) }), preservedWalletTransaction);
+    const deletionActivities = await db.select().from(schema.adminActivityEventTable)
+      .where(and(eq(schema.adminActivityEventTable.entityId, deletionSeller.id), eq(schema.adminActivityEventTable.eventType, "account.seller_deleted")));
+    assert.equal(deletionActivities.length, 1);
+    assert.equal((await deleteAccount(randomUUID(), adminToken)).status, 404);
+
     const sellerCategoryCreate = await request(
       "/api/admin/product/categories/create",
       { method: "POST", token: sellerToken, body: { name: `Seller ${suffix}` } },
     );
     assert.equal(sellerCategoryCreate.status, 403);
-    const category = expectSuccess(
-      await request("/api/admin/product/categories/create", {
-        method: "POST",
-        token: adminToken,
-        body: { name: `API Category ${suffix}` },
-      }),
-    );
+    const initialCreates = await Promise.all([`API Category ${suffix}`, ` API CATEGORY ${suffix} `].map(name =>
+      request("/api/admin/product/categories/create", { method: "POST", token: adminToken, body: { name } }),
+    ));
+    const category = expectSuccess(initialCreates[0]);
+    assert.equal(expectSuccess(initialCreates[1]).id, category.id);
     const renamedCategory = expectSuccess(
       await request(`/api/admin/product/categories/${category.id}`, {
         method: "PUT",
@@ -475,6 +624,11 @@ async function run() {
       }),
     );
     assert.equal(renamedCategory.name, `API Renamed Category ${suffix}`);
+    assert.equal(renamedCategory.deletedAt, null);
+    const duplicateCreates = await Promise.all([renamedCategory.name, `  ${renamedCategory.name.toUpperCase()}  `].map(name =>
+      request("/api/admin/product/categories/create", { method: "POST", token: adminToken, body: { name } }),
+    ));
+    for (const result of duplicateCreates) assert.equal(expectSuccess(result).id, category.id);
     const spareCategory = expectSuccess(
       await request("/api/admin/product/categories/create", {
         method: "POST",
@@ -497,6 +651,9 @@ async function run() {
         token: adminToken,
       }),
     );
+    assert.equal((await request(`/api/admin/product/categories/${category.id}`, {
+      method: "PUT", token: adminToken, body: { name: spareCategory.name.toUpperCase() },
+    })).status, 409, "A deleted category still reserves its unique name");
 
     const avatarUrl = "https://example.test/avatar.png";
     const updatedSeller = expectSuccess(
@@ -613,6 +770,8 @@ async function run() {
       productId: products[0].id,
       categoryId: category.id,
     });
+    const [productBeforeCategoryDelete] = await db.select({ updatedAt: schema.productTable.updatedAt })
+      .from(schema.productTable).where(eq(schema.productTable.id, products[0].id));
     const referencedCategoryDelete = expectSuccess(
       await request(`/api/admin/product/categories/${category.id}`, {
         method: "DELETE",
@@ -621,22 +780,59 @@ async function run() {
     );
     assert.equal(referencedCategoryDelete.id, category.id);
     assert.equal(referencedCategoryDelete.deleted, true);
-    assert.equal(referencedCategoryDelete.detachedProductCount, 1);
+    assert.equal(referencedCategoryDelete.detachedProductCount, 0);
+    assert.ok(referencedCategoryDelete.deletedAt);
     const [preservedProduct] = await db
-      .select({ id: schema.productTable.id })
+      .select({ id: schema.productTable.id, updatedAt: schema.productTable.updatedAt })
       .from(schema.productTable)
       .where(eq(schema.productTable.id, products[0].id));
     assert.equal(preservedProduct.id, products[0].id);
+    assert.deepEqual(preservedProduct.updatedAt, productBeforeCategoryDelete.updatedAt);
     const remainingCategoryLinks = await db
       .select()
       .from(schema.productsToCategoriesTable)
       .where(eq(schema.productsToCategoriesTable.categoryId, category.id));
-    assert.equal(remainingCategoryLinks.length, 0);
+    assert.equal(remainingCategoryLinks.length, 1);
     const [deletedCategory] = await db
-      .select({ id: schema.categoryTable.id })
+      .select()
       .from(schema.categoryTable)
       .where(eq(schema.categoryTable.id, category.id));
-    assert.equal(deletedCategory, undefined);
+    assert.equal(deletedCategory.id, category.id);
+    assert.equal(deletedCategory.deletedAt!.toISOString(), referencedCategoryDelete.deletedAt);
+    const repeatDelete = expectSuccess(await request(`/api/admin/product/categories/${category.id}`, {
+      method: "DELETE", token: adminToken,
+    }));
+    assert.equal(repeatDelete.deletedAt, referencedCategoryDelete.deletedAt);
+    for (const [path, token] of [["/api/admin/product/categories/list", adminToken], ["/api/product/categories/list", expiryUser.token]]) {
+      const visibleCategories = expectSuccess(await request(path, { token }));
+      assert.equal(visibleCategories.some((item: any) => item.id === category.id || item.id === spareCategory.id), false);
+    }
+    assert.equal((await request(`/api/admin/product/categories/${category.id}`, {
+      method: "PUT", token: adminToken, body: { name: "Should not rename a deleted category" },
+    })).status, 404);
+    // Deleted names remain globally reserved for their original category ID.
+    assert.equal((await request(`/api/admin/product/categories/${spareCategory.id}`, {
+      method: "DELETE", token: sellerToken,
+    })).status, 403);
+    assert.equal((await request("/api/admin/product/categories/create", {
+      method: "POST", token: adminToken, body: { name: "   " },
+    })).status, 400);
+    const restoreResults = await Promise.all([renamedCategory.name, ` ${renamedCategory.name.toUpperCase()} `].map(name =>
+      request("/api/admin/product/categories/create", { method: "POST", token: adminToken, body: { name } }),
+    ));
+    const restored = expectSuccess(restoreResults[0]);
+    assert.equal(expectSuccess(restoreResults[1]).id, category.id);
+    assert.equal(restored.id, category.id);
+    assert.equal(restored.name, renamedCategory.name);
+    assert.equal(restored.createdAt, renamedCategory.createdAt);
+    assert.equal(restored.deletedAt, null);
+    const restoredLinks = await db.select().from(schema.productsToCategoriesTable)
+      .where(eq(schema.productsToCategoriesTable.categoryId, category.id));
+    assert.deepEqual(restoredLinks, remainingCategoryLinks);
+    const activeCategories = expectSuccess(await request("/api/admin/product/categories/list", { token: adminToken }));
+    assert.equal(activeCategories.some((item: any) => item.id === category.id), true);
+    assert.equal(activeCategories.some((item: any) => item.id === spareCategory.id), false);
+    assert.equal(activeCategories.filter((item: any) => item.name.toLowerCase() === renamedCategory.name.toLowerCase()).length, 1);
 
     const employeeProducts = expectSuccess(
       await request("/api/admin/product/list?limit=100", {

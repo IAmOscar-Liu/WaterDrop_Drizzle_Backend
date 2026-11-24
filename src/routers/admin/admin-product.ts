@@ -32,6 +32,11 @@ const router = Router();
  *           type: string
  *           format: date-time
  *           description: The date and time the category was last updated.
+ *         deletedAt:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *           description: Null for active categories. Soft deletion preserves the category and existing product associations.
  *
  *     Product:
  *       type: object
@@ -194,12 +199,13 @@ const router = Router();
  * /api/admin/product/categories/list:
  *   get:
  *     tags: [Product]
- *     summary: List all product categories
+ *     summary: List non-deleted product categories
+ *     description: Returns only categories with deletedAt null, sorted by name. Deleted categories retain their product associations but are omitted from this selector list.
  *     security:
  *       - bearerAuth: []
  *     responses:
  *       '200':
- *         description: A list of categories.
+ *         description: A list of non-deleted categories.
  *         content:
  *           application/json:
  *             schema:
@@ -219,7 +225,8 @@ router.get("/categories/list", isAuth, ProductController.listCategory);
  * /api/admin/product/categories/create:
  *   post:
  *     tags: [Product]
- *     summary: Create a new product category
+ *     summary: Create or restore a product category by name
+ *     description: Platform admin only. Names are trimmed and unique case-insensitively across both active and deleted rows. A new name creates a category; an existing name returns the same ID and clears deletedAt. Existing spelling, createdAt and product associations are preserved. Repeated or concurrent requests do not create duplicates.
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -235,7 +242,7 @@ router.get("/categories/list", isAuth, ProductController.listCategory);
  *                 example: "Electronics"
  *     responses:
  *       '200':
- *         description: The created category.
+ *         description: The created, existing active, or restored category. deletedAt is null.
  *         content:
  *           application/json:
  *             schema:
@@ -260,6 +267,7 @@ router.post(
  *   put:
  *     tags: [Product]
  *     summary: Rename a category (platform admin only)
+ *     description: Renames only a non-deleted category. Deleted category names remain reserved; renaming another category to the same case-insensitive name returns 409. Restore a deleted category via the create endpoint instead.
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: path
@@ -278,10 +286,11 @@ router.post(
  *     responses:
  *       '200': { description: Category renamed. }
  *       '409': { description: A case-insensitive duplicate name exists. }
+ *       '404': { description: Category not found or soft-deleted. }
  *   delete:
  *     tags: [Product]
- *     summary: Delete a category (platform admin only)
- *     description: Atomically removes the category from every associated product, updates those products, and then deletes the category. Products are preserved.
+ *     summary: Soft-delete a category (platform admin only)
+ *     description: Sets deletedAt without removing the category, products or product-category associations. The category disappears from both admin and app category lists. Repeated deletion returns the original deletion timestamp without another activity event. Creating the same name restores the same ID and associations. No permanent-delete endpoint is provided.
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - in: path
@@ -290,7 +299,7 @@ router.post(
  *         schema: { type: string, format: uuid }
  *     responses:
  *       '200':
- *         description: Category deleted and product associations removed.
+ *         description: Category soft-deleted; existing product associations preserved.
  *         content:
  *           application/json:
  *             schema:
@@ -299,11 +308,12 @@ router.post(
  *                 success: { type: boolean, example: true }
  *                 data:
  *                   type: object
- *                   required: [id, deleted, detachedProductCount]
+ *                   required: [id, deleted, deletedAt, detachedProductCount]
  *                   properties:
  *                     id: { type: string, format: uuid }
  *                     deleted: { type: boolean, example: true }
- *                     detachedProductCount: { type: integer, example: 3 }
+ *                     deletedAt: { type: string, format: date-time }
+ *                     detachedProductCount: { type: integer, example: 0, deprecated: true, description: Always 0; soft deletion preserves associations. }
  *       '404': { description: Category not found. }
  */
 router.put(

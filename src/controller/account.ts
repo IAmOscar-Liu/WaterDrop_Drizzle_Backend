@@ -125,8 +125,8 @@ class AccountController {
     sendJsonResponse(res, accountResponse(result));
   }
 
-  async deleteSubAccount(req: RequestWithId, res: Response): Promise<any> {
-    const result = await accountService.deleteSubAccount(
+  async deleteAccount(req: RequestWithId, res: Response): Promise<any> {
+    const result = await accountService.deleteAccount(
       req.userId ?? "",
       req.params.id,
     );

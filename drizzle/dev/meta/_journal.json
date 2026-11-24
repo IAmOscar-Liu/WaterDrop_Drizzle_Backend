@@ -526,6 +526,13 @@
       "when": 1795506370604,
       "tag": "0074_sparkling_night_thrasher",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1795529897734,
+      "tag": "0075_glamorous_ironclad",
+      "breakpoints": true
     }
   ]
 }

@@ -1,6 +1,5 @@
 import * as schema from "../db/schema";
 import { handleServiceError } from "../lib/error";
-import { resetDailyStats } from "../repository/treasureBox";
 import {
   createUser,
   getDailyStatByUserId,
@@ -37,7 +36,8 @@ class AuthService {
 
   async clearDeviceToken(input: {
     userId: string;
-    deviceId?: string | null;
+    deviceId?: string;
+    fcmToken?: string;
   }): Promise<ServiceResponse<Awaited<ReturnType<typeof clearDeviceToken>>>> {
     try {
       const result = await clearDeviceToken(input);
@@ -151,17 +151,6 @@ class AuthService {
   > {
     try {
       const result = await joinGroupByReferralCode(referralCode, userId);
-      return { success: true, data: result };
-    } catch (error) {
-      return handleServiceError(error);
-    }
-  }
-
-  async resetDailyStats(
-    userId: string,
-  ): Promise<ServiceResponse<Awaited<ReturnType<typeof resetDailyStats>>>> {
-    try {
-      const result = await resetDailyStats(userId);
       return { success: true, data: result };
     } catch (error) {
       return handleServiceError(error);
