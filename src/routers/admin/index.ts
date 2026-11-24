@@ -1,3 +1,4 @@
+import SellerEarningsRouter from "./admin-seller-earnings";
 import { Router } from "express";
 import AccountRouter from "./admin-account";
 import AccountWalletRouter from "./admin-account-wallet";
@@ -14,6 +15,7 @@ import SidebarNotificationRouter from "./admin-sidebar-notification";
 
 const router = Router();
 
+router.use("/seller-earnings", SellerEarningsRouter);
 router.use("/account", AccountRouter);
 router.use("/account-wallet", AccountWalletRouter);
 router.use("/dashboard", DashboardRouter);

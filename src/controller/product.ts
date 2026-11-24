@@ -120,17 +120,6 @@ class ProductController {
     sendJsonResponse(res, result);
   }
 
-  async permanentlyDeleteProduct(
-    req: RequestWithId,
-    res: Response,
-  ): Promise<any> {
-    const result = await productService.permanentlyDeleteProduct(
-      req.params.id,
-      req.userId ?? "",
-    );
-    sendJsonResponse(res, result);
-  }
-
   async getProductSalesSummary(req: RequestWithId, res: Response): Promise<any> {
     const { id } = req.params;
     const { startAt, endAt } = req.query;

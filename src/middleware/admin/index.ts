@@ -1,3 +1,4 @@
+import { sellerEarningsValidation } from "./sellerEarnings";
 import { adminChatroomSyncValidation } from "./chatroomSync";
 import { accountValidation } from "./account";
 import { accountWalletValidation } from "./accountWallet";
@@ -13,6 +14,7 @@ import { dashboardValidation } from "./dashboard";
 import { sidebarNotificationValidation } from "./sidebarNotification";
 
 export const adminValidation = {
+  sellerEarnings: sellerEarningsValidation,
   account: accountValidation,
   accountWallet: accountWalletValidation,
   advertisement: advertisementValidation,

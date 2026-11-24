@@ -70,6 +70,8 @@ class RefundController {
     const result = await refundService.updateRefundItemStatus(
       refundItemId,
       {
+        ...(req.body.reimburseOriginalShipping !== undefined ? { reimburseOriginalShipping: req.body.reimburseOriginalShipping } : {}),
+        ...(req.body.otherExtraRefundAmount !== undefined ? { otherExtraRefundAmount: req.body.otherExtraRefundAmount } : {}),
         ...(req.body.rejectionReason !== undefined ? { rejectionReason: req.body.rejectionReason } : {}),
         ...(req.body.agreement !== undefined ? { agreement: req.body.agreement } : {}),
         ...(status ? { status: status as schema.RefundItem["status"] } : {}),

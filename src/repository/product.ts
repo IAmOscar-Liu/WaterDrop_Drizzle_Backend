@@ -18,7 +18,6 @@ import * as schema from "../db/schema";
 import { getEcpayLength, hasSpecialChars } from "../lib/ecpayValidation";
 import { CustomError } from "../lib/error";
 import db from "../lib/initDB";
-import { isAccountAdmin } from "./account";
 import { recordAdminActivityWithTx } from "./adminActivity";
 import { getActiveAdminAccount, resolveAdminSellerScope } from "./adminScope";
 import {
@@ -287,8 +286,8 @@ export async function softDeleteProduct(
   actorAccountId: string,
 ) {
   const actor = await getActiveAdminAccount(actorAccountId);
-  if (actor.role === "employee") {
-    throw new CustomError("Employees cannot delete products", 403);
+  if (actor.role !== "admin") {
+    throw new CustomError("Only a platform admin can soft-delete products", 403);
   }
   return db.transaction(async (tx) => {
     const [product] = await tx
@@ -297,9 +296,6 @@ export async function softDeleteProduct(
       .where(eq(schema.productTable.id, productId))
       .for("update");
     if (!product) throw new CustomError("Product not found", 404);
-    if (actor.role !== "admin" && product.sellerId !== actor.id) {
-      throw new CustomError("You cannot delete another seller's product", 403);
-    }
     if (!product.deletedAt) {
       await tx
         .update(schema.productTable)
@@ -357,60 +353,6 @@ export async function softDeleteProduct(
     if (!deletedProduct) return deletedProduct;
     const { refundWindowDays: _legacyProductPolicy, ...publicProduct } = deletedProduct;
     return (await withCurrentAdvertisements([publicProduct], tx, true))[0];
-  });
-}
-
-export async function permanentlyDeleteProduct(
-  productId: string,
-  actorAccountId: string,
-) {
-  if (!(await isAccountAdmin(actorAccountId))) {
-    throw new CustomError("Only a platform admin can permanently delete products", 403);
-  }
-  return db.transaction(async (tx) => {
-    const [product] = await tx
-      .select()
-      .from(schema.productTable)
-      .where(eq(schema.productTable.id, productId))
-      .for("update");
-    if (!product) throw new CustomError("Product not found", 404);
-
-    const [[orders], [advertisements], [cartItems], [collections], [chatrooms]] =
-      await Promise.all([
-        tx.select({ total: count() }).from(schema.orderItemTable).where(eq(schema.orderItemTable.productId, productId)),
-        tx.select({ total: count() }).from(schema.advertisementTable).where(eq(schema.advertisementTable.productId, productId)),
-        tx.select({ total: count() }).from(schema.cartItemTable).where(eq(schema.cartItemTable.productId, productId)),
-        tx.select({ total: count() }).from(schema.collectionTable).where(eq(schema.collectionTable.productId, productId)),
-        tx.select({ total: count() }).from(schema.chatRoomTable).where(eq(schema.chatRoomTable.productId, productId)),
-      ]);
-    const blockers = {
-      orderItems: orders.total,
-      advertisements: advertisements.total,
-      cartItems: cartItems.total,
-      collections: collections.total,
-      chatrooms: chatrooms.total,
-    };
-    if (Object.values(blockers).some((value) => value > 0)) {
-      throw new CustomError(
-        `Product has business references: ${JSON.stringify(blockers)}`,
-        409,
-      );
-    }
-    await tx
-      .delete(schema.productsToCategoriesTable)
-      .where(eq(schema.productsToCategoriesTable.productId, productId));
-    await tx
-      .delete(schema.productVariantTable)
-      .where(eq(schema.productVariantTable.productId, productId));
-    await tx.delete(schema.productTable).where(eq(schema.productTable.id, productId));
-    await recordAdminActivityWithTx(tx, {
-      actorAccountId,
-      sellerId: product.sellerId,
-      eventType: "product.permanently_deleted",
-      entityType: "product",
-      entityId: productId,
-    });
-    return { id: productId, deleted: true, permanent: true };
   });
 }
 

@@ -26,7 +26,7 @@ export async function runCoinExpiryNotificationJob(
         const time = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
         return `您於${year}年${month}月獲得的金幣尚有${deadline.amount}金幣未使用，將於 ${date} ${time}（台北時間）過期。`;
       }).join("\n") + "快把握時間使用您的金幣吧!";
-      await dependencies.createNotification({
+      const notification = await dependencies.createNotification({
         userId: summary.userId, type: "system_alert", title, body,
       });
       const tokens = await dependencies.getFcmTokensInUserIds([summary.userId]);
@@ -34,7 +34,7 @@ export async function runCoinExpiryNotificationJob(
         await dependencies.sendMulticastPushNotification({
           tokens: tokens.slice(offset, offset + 100),
           notification: { title, body },
-          data: { command: "message" },
+          data: { command: "message", notificationId: notification.id },
         }, summary.userId);
       }
     }));

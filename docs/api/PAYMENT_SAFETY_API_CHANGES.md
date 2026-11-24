@@ -2,7 +2,30 @@
 
 Date: 2026-11-04
 
+### Cart removal correction — 2026-11-17
+
+Credit-card checkout items remain in the cart until confirmed payment successfully settles to `paid`. Failed credit-card payments retain cart items; settlement rollback also rolls back removal.
+
+For ATM, verified successful account issuance (`RtnCode=2` on `/api/ecpay/paymentInfo`) removes the checkout variants from that buyer's cart while the order remains `payment-processing`. Choosing ATM or merely opening checkout does not remove them. Stock is already reserved when the order is created, and coin reservations are maintained during payment processing; account issuance must not reserve stock again. Issuance is not paid revenue. Failure/expiry continues to use existing reservation-release rules; this change adds no automatic cart restoration after ATM issuance.
+
+Cart removal and saved ATM information commit atomically. Replayed issuance notifications and later payment confirmation must not remove items added again after issuance. If payment confirmation arrives before account issuance, successful settlement removes items normally.
+
+App order-history filtering is unchanged: it continues to include only `paid` and `payment-processing`, excluding failed orders. No request/response fields change. The App should refresh the cart from the API and must not independently clear it when opening checkout or receiving a failed payment result. This source fix needs deployment; it does not restore items already removed by the previous behavior.
+
 Implemented in source; local, development and staging migrations applied (verified 2026-11-11). Production migration/deployment requires its established migration baseline; this checkout does not contain one. Apply migrations before starting the updated server.
+
+## ATM expiry reconciliation — 2026-11-17
+
+Implemented in source; deployment is required. No schema migration, new API, or new cron job is added. The existing payment reconciliation job handles ATM expiry alongside missed successful payment callbacks.
+
+- Use `paymentInfo.ExpireDate` from verified ATM account issuance, not order creation time. Interpret `yyyy/MM/dd` as inclusive through that Taiwan calendar day; also accept an explicit `yyyy/MM/dd HH:mm:ss` in Taiwan time. Missing or invalid deadlines retain reservations for review rather than guessing a deadline.
+- After the deadline, a signed and trade/merchant/amount-matched query with `TradeStatus=0` records a first unpaid check. A subsequent matched unpaid query at least 10 minutes later expires the order. This two-check delay is our operational safeguard, not an ECPay guarantee of finality. Query errors, invalid signatures, mismatched details or unknown statuses do not release funds. The existing query queue is bounded, so expiry may be later than the deadline plus 10 minutes.
+- Under order and payment-attempt locks, set the order to `expired`, release its remaining stock reservations and coin holds, and finish its payment/idempotency records in one transaction. Retries cannot release twice. No seller sales revenue is posted.
+- Valid coins become available again. Coins whose original validity has ended are expired under existing ledger rules, not granted a new validity period. Stock release makes units available for sale; it does not increase stock already on hand.
+- A recorded successful callback takes precedence over a stale unpaid query. If an exceptional late success arrives after resources were released, persist the verified payment for reconciliation; existing settlement checks return `PAYMENT_REVIEW_REQUIRED` rather than consuming unreserved stock/coins. Such a payment needs manual review and is not silently discarded.
+- ATM cart items removed at issuance are not automatically re-added on expiry. App order-history filters and response fields remain unchanged; expired orders remain excluded from the existing history list.
+
+Provider references: [ECPay order query](https://developers.ecpay.com.tw/2890/) defines paid/unpaid status and distinguishes offline payments; [ATM code retrieval query](https://developers.ecpay.com.tw/16594/) documents the expiry-date field. Do not interpret a single unpaid response before the deadline as permission to release an ATM reservation.
 
 ## Problem and resulting flow
 

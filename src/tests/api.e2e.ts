@@ -24,6 +24,7 @@ import { preparePayment } from "../repository/payment";
 
 type ApiEnvelope = {
   success: boolean;
+  code?: string;
   statusCode?: number;
   message?: unknown;
   data?: any;
@@ -136,7 +137,7 @@ async function run() {
       { ...expiryLot, originalAmount: "50.00", availableAmount: "50.00", earningLocalMonth: "2026-10", expiresAt: new Date("2026-11-30T16:00:00Z") },
       { ...expiryLot, userId: fallbackUser.user.id, originalAmount: "1.25", availableAmount: "1.25" },
     ]);
-    const pushed: Array<{ tokens: string[]; notification?: { title?: string; body?: string } }> = [];
+    const pushed: Array<{ tokens: string[]; notification?: { title?: string; body?: string }; data?: Record<string, string> }> = [];
     const expiryJobDependencies = {
       createNotification,
       getFcmTokensInUserIds: async (ids: string[]) => ids
@@ -172,6 +173,14 @@ async function run() {
       assert.match(push.notification!.body!, /2026\/11\/01 00:00（台北時間）/);
       const saved = await db.query.userNotificationTable.findFirst({ where: eq(schema.userNotificationTable.userId, expiryUser.user.id) });
       assert.equal(saved?.body, push.notification!.body);
+      assert.ok(saved);
+      assert.equal(push.data?.command, "message");
+      assert.equal(push.data?.notificationId, saved.id);
+      const notificationDetail = expectSuccess(await request(`/api/notification/sync/${push.data.notificationId}`, {
+        token: octoberLogin.token,
+      }));
+      assert.equal(notificationDetail.id, saved.id);
+      assert.equal(notificationDetail.body, push.notification!.body);
       // Saving the in-app message must not depend on a registered push token.
       const savedWithoutPush = await db.query.userNotificationTable.findFirst({
         where: eq(schema.userNotificationTable.userId, fallbackUser.user.id),
@@ -541,48 +550,21 @@ async function run() {
     );
     assert.equal(feeSettings.homeDeliveryRefrig, 100);
 
-    const sellerCredit = expectSuccess(
-      await request(`/api/admin/account-wallet/${seller.id}/credit`, {
-        method: "POST",
-        token: adminToken,
-        body: {
-          amount: "500.00",
-          idempotencyKey: `api-wallet-credit-${suffix}`,
-          reason: "Disposable API funding fixture",
-        },
-      }),
-    );
-    assert.equal(sellerCredit.wallet.walletBalance, "500.00");
-    assert.equal(sellerCredit.transaction.type, "admin_credit");
-    assert.equal(sellerCredit.transaction.balanceBefore, "0.00");
-    assert.equal(sellerCredit.transaction.balanceAfter, "500.00");
-
-    const replayedSellerCredit = expectSuccess(
-      await request(`/api/admin/account-wallet/${seller.id}/credit`, {
-        method: "POST",
-        token: adminToken,
-        body: {
-          amount: 500,
-          idempotencyKey: `api-wallet-credit-${suffix}`,
-          reason: "This metadata does not change the financial payload",
-        },
-      }),
-    );
-    assert.equal(replayedSellerCredit.idempotentReplay, true);
-    assert.equal(replayedSellerCredit.wallet.walletBalance, "500.00");
-
-    const conflictingCredit = await request(
-      `/api/admin/account-wallet/${seller.id}/credit`,
-      {
-        method: "POST",
-        token: adminToken,
-        body: {
-          amount: "501.00",
-          idempotencyKey: `api-wallet-credit-${suffix}`,
-        },
-      },
-    );
-    assert.equal(conflictingCredit.status, 409);
+    const retiredCredit = await request(`/api/admin/account-wallet/${seller.id}/credit`, {
+      method: "POST", token: adminToken, body: { amount: "500", idempotencyKey: `retired-${suffix}` },
+    });
+    assert.equal(retiredCredit.status, 410);
+    const depositRequest = expectSuccess(await request("/api/admin/seller-earnings/requests", {
+      method: "POST", token: sellerToken, body: { wallet: "advertising", direction: "deposit", cash: "500", coins: "0", idempotencyKey: `deposit-${suffix}` },
+    }));
+    const sellerCredit = expectSuccess(await request(`/api/admin/seller-earnings/requests/${depositRequest.id}`, {
+      method: "PATCH", token: adminToken, body: { action: "completed", reason: "Bank receipt confirmed" },
+    }));
+    assert.equal(sellerCredit.status, "completed");
+    const replayedSellerCredit = expectSuccess(await request(`/api/admin/seller-earnings/requests/${depositRequest.id}`, {
+      method: "PATCH", token: adminToken, body: { action: "completed", reason: "Bank receipt confirmed" },
+    }));
+    assert.equal(replayedSellerCredit.id, sellerCredit.id);
     const forbiddenSellerCredit = await request(
       `/api/admin/account-wallet/${seller.id}/credit`,
       {
@@ -606,7 +588,7 @@ async function run() {
         },
       },
     );
-    assert.equal(nonSellerCredit.status, 409);
+    assert.equal(nonSellerCredit.status, 410);
 
     const products = await db
       .insert(schema.productTable)
@@ -687,20 +669,35 @@ async function run() {
       { method: "DELETE", token: employeeToken },
     );
     assert.equal(employeeProductDelete.status, 403);
+    const sellerProductDelete = await request(
+      `/api/admin/product/${disposableProduct.id}`,
+      { method: "DELETE", token: sellerToken },
+    );
+    assert.equal(sellerProductDelete.status, 403);
+    const productAfterDeniedDelete = await db.query.productTable.findFirst({
+      where: eq(schema.productTable.id, disposableProduct.id),
+    });
+    assert.equal(productAfterDeniedDelete?.deletedAt, null);
+    assert.equal(productAfterDeniedDelete?.status, "active");
     const softDeletedProduct = expectSuccess(
       await request(`/api/admin/product/${disposableProduct.id}`, {
-        method: "DELETE",
-        token: sellerToken,
-      }),
-    );
-    assert.equal(softDeletedProduct.status, "inactive");
-    assert.ok(softDeletedProduct.deletedAt);
-    expectSuccess(
-      await request(`/api/admin/product/${disposableProduct.id}/permanent`, {
         method: "DELETE",
         token: adminToken,
       }),
     );
+    assert.equal(softDeletedProduct.status, "inactive");
+    assert.ok(softDeletedProduct.deletedAt);
+    const permanentDeletion = await fetch(`${baseUrl}/api/admin/product/${disposableProduct.id}/permanent`, {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    assert.equal(permanentDeletion.status, 404);
+    const retainedProduct = await db.query.productTable.findFirst({
+      where: eq(schema.productTable.id, disposableProduct.id),
+      with: { variants: true },
+    });
+    assert.ok(retainedProduct?.deletedAt);
+    assert.equal(retainedProduct.variants.length, 1);
 
     expectSuccess(await request("/api/test"));
     const unauthenticatedProfile = await request("/api/auth/profile");
@@ -786,11 +783,11 @@ async function run() {
         }),
       );
     }
-    const referencedProductPermanentDelete = await request(
-      `/api/admin/product/${products[0].id}/permanent`,
-      { method: "DELETE", token: adminToken },
+    const referencedProductPermanentDelete = await fetch(
+      `${baseUrl}/api/admin/product/${products[0].id}/permanent`,
+      { method: "DELETE", headers: { authorization: `Bearer ${adminToken}` } },
     );
-    assert.equal(referencedProductPermanentDelete.status, 409);
+    assert.equal(referencedProductPermanentDelete.status, 404);
 
     const sellerWallet = expectSuccess(
       await request("/api/admin/account-wallet/me", { token: sellerToken }),
@@ -819,7 +816,8 @@ async function run() {
       }),
     );
     assert.equal(walletSummary.openingBalance, "0.00");
-    assert.equal(walletSummary.adminCredits, "500.00");
+    assert.equal(walletSummary.adminCredits, "0.00");
+    assert.equal(walletSummary.sellerDeposits, "500.00");
     assert.equal(walletSummary.advertisementFundingDebits, "-400.00");
     assert.equal(walletSummary.closingBalance, "100.00");
 
@@ -1921,7 +1919,7 @@ async function run() {
     expectSuccess(
       await request(`/api/admin/product/${variantCartProduct.id}`, {
         method: "DELETE",
-        token: sellerToken,
+        token: adminToken,
       }),
     );
     const cartAfterProductSoftDelete = expectSuccess(
@@ -2196,7 +2194,7 @@ async function run() {
       method: "PUT", token: sellerToken, body: { status: "archived" },
     }));
     const deletedWithAdHistory = expectSuccess(await request(`/api/admin/product/${products[0].id}`, {
-      method: "DELETE", token: sellerToken,
+      method: "DELETE", token: adminToken,
     }));
     assert.equal(deletedWithAdHistory.advertisement, null);
     const retainedAds = await db.select({ id: schema.advertisementTable.id }).from(schema.advertisementTable)

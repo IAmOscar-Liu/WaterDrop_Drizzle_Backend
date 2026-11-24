@@ -1,3 +1,7 @@
+import { earningsLaunchAt } from "./lib/earningsMoney";
+import { recoverAutoRefillEvents } from "./repository/adAutomation";
+import { sellerEarningsReleaseTask } from "./lib/scheduler";
+import { releaseSellerEarnings } from "./repository/sellerEarnings";
 // Environment variables must load before modules that read them at import time.
 import "./lib/env";
 
@@ -25,6 +29,10 @@ import {
 
 const PORT = process.env.PORT ?? 4000;
 
+earningsLaunchAt(); // Validate an explicitly configured launch timestamp before serving requests.
+sellerEarningsReleaseTask.start();
+if (process.env.NO_CRON !== "true") recoverAutoRefillEvents().catch(error => console.error("Auto-refill startup recovery failed", error));
+if (process.env.NO_CRON !== "true") releaseSellerEarnings().catch(error => console.error("Earnings release catch-up failed", error));
 paymentReconciliationTask.start();
 appBadgeTask.start();
 accountRecoveryCleanupTask.start();

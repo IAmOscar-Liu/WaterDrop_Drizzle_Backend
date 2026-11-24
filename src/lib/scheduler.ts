@@ -1,3 +1,4 @@
+import { releaseSellerEarnings } from "../repository/sellerEarnings";
 import { reconcileRecordedPayments } from "../services/payment";
 import { runBadgeWorker } from "../services/appBadge";
 import { cleanupEmailVerification } from "../repository/accountEmailVerification";
@@ -494,3 +495,10 @@ export const paymentReconciliationTask = cron.schedule("* * * * *", async () => 
   try { await withPostgresAdvisoryLock("waterdrop:payment-reconciliation", () => reconcileRecordedPayments()); }
   catch (error) { console.error("Payment reconciliation failed:", error); }
 }, { noOverlap: true });
+
+
+export const sellerEarningsReleaseTask = cron.schedule("0 3 * * *", async () => {
+  if (process.env.NO_CRON === "true") return;
+  try { await releaseSellerEarnings(); }
+  catch (error) { console.error("Seller earnings release failed", error); }
+}, { timezone: "Asia/Taipei" });

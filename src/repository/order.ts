@@ -1,3 +1,4 @@
+import { postPaidOrderRevenue } from "./sellerEarnings";
 import { refundEligibility } from "../lib/refundEligibility";
 import { paymentProcessingExpiryCutoff } from "../lib/orderExpiry";
 import {
@@ -446,7 +447,9 @@ export async function updateOrderStatusWithTx(tx: OrderTx, {
             throw new CustomError("Order item productVariantId is required", 400);
           }
 
-          if (order.orderStatus === "pending") {
+          const cartRemovedAtAtmIssuance = order.orderPayment === "ATM"
+            && (order.paymentInfo as Record<string, unknown> | null)?.RtnCode === "2";
+          if ((order.orderStatus === "pending" || order.orderStatus === "payment-processing") && !cartRemovedAtAtmIssuance) {
             promises.push(
               tx
                 .delete(schema.cartItemTable)
@@ -553,27 +556,7 @@ export async function updateOrderStatusWithTx(tx: OrderTx, {
       await Promise.all(promises);
     } else if (status === "payment-processing") {
       const promises: Promise<any>[] = [];
-      if (order.items.length > 0) {
-        for (let item of order.items) {
-          if (!item.productVariantId) {
-            throw new CustomError("Order item productVariantId is required", 400);
-          }
-
-          promises.push(
-            tx
-              .delete(schema.cartItemTable)
-              .where(
-                and(
-                  eq(schema.cartItemTable.userId, order.userId),
-                  eq(
-                    schema.cartItemTable.productVariantId,
-                    item.productVariantId,
-                  ),
-                ),
-              ),
-          );
-        }
-      }
+      // Keep checkout items in the cart until payment is confirmed.
       if (
         order.orderStatus === "pending" &&
         order.discountCoin &&
@@ -732,6 +715,8 @@ export async function updateOrderStatusWithTx(tx: OrderTx, {
           : {}),
       })
       .where(eq(schema.orderTable.id, orderId));
+
+    if (status === "paid") await postPaidOrderRevenue(tx, orderId);
 
     if (status === "paid" && !order.completedAt) {
       await sendOrderFulfillmentFollowups(tx, order);
