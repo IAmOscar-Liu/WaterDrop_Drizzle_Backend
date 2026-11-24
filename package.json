@@ -19,8 +19,6 @@
     "pm2:dev": "pm2 start npm --name \"water-drop-server-dev\" -- run start:dev",
     "pm2:stg": "pm2 start npm --name \"water-drop-server-stg\" -- run start:stg",
     "pm2": "pm2 start npm --name \"water-drop-server\" -- start",
-    "db:push": "NODE_TLS_REJECT_UNAUTHORIZED=0 npx drizzle-kit push",
-    "db:pull": "NODE_TLS_REJECT_UNAUTHORIZED=0 npx drizzle-kit pull",
     "db:generate": "npm run db:generate:local",
     "db:generate:local": "DRIZZLE_ENV=local npx drizzle-kit generate",
     "db:generate:development": "DRIZZLE_ENV=development npx drizzle-kit generate",

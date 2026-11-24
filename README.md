@@ -119,6 +119,10 @@ Select the environment explicitly with the matching `db:generate:*`,
 `db:migrate:*`, or `db:studio:*` command. The unsuffixed command defaults to
 local.
 
+Schema updates use the `db:generate:*` and `db:migrate:*` workflow. The old
+`db:push` and `db:pull` package shortcuts have been removed; migration files and
+`src/db/schema.ts` remain the sources for tracked schema changes.
+
 Advertisement-assignment cleanup accepts these optional environment settings:
 
 ```txt

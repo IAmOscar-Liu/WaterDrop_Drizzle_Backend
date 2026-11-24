@@ -430,7 +430,8 @@ async function main(){
   assert.equal(spec.components.schemas.ListAdvertisementsResponse.properties.advertisements.items.allOf[1].properties.allowFunding.type,"boolean");
   await assert.rejects(depositAdBalance({advertisementId:pausedAd.id,requesterId:admin.id,amount:"1",idempotencyKey:randomUUID()}),/Archived or financially closed/);
   await db.update(s.advertisementTable).set({financiallyClosedAt:null}).where(eq(s.advertisementTable.id,pausedAd.id));
-  const [employee] = await db.insert(s.accountTable).values({role:"employee",email:`${randomUUID()}@test.invalid`,password:"unused",realName:"test",phone:"0900000000"}).returning();
+  const [employeeGroup] = await db.insert(s.accountGroupTable).values({parentId:seller.id}).returning();
+  const [employee] = await db.insert(s.accountTable).values({role:"employee",accountGroupId:employeeGroup.id,email:`${randomUUID()}@test.invalid`,password:"unused",realName:"test",phone:"0900000000"}).returning();
   await assert.rejects(depositAdBalance({advertisementId:pausedAd.id,requesterId:employee.id,amount:"1",idempotencyKey:randomUUID()}),/Only the owning seller/);
   await assert.rejects(setAutoRefill(employee.id,pausedAd.id,{enabled:false}),/owning/);
   await assert.rejects(depositAdBalance({advertisementId:pausedAd.id,requesterId:other.id,amount:"1",idempotencyKey:randomUUID()}),/Only the owning seller/);

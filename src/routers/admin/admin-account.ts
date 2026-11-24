@@ -101,15 +101,6 @@ import { adminValidation } from "../../middleware/admin";
  *           type: string
  *           format: date-time
  *           description: The date and time the account was last updated.
- *         deletedAt:
- *           type: string
- *           format: date-time
- *           nullable: true
- *           description: Employee soft-deletion time.
- *         deletedByAccountId:
- *           type: string
- *           format: uuid
- *           nullable: true
  *
  *     AccountWithParent:
  *       allOf:

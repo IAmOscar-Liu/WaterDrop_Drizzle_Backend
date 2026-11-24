@@ -27,7 +27,7 @@
 - 管理員 DELETE 只設定 `deletedAt`，保留分類、商品及所有商品分類關聯，不更新商品時間。重複刪除保留原時間，不重複寫活動紀錄。`detachedProductCount` 為相容舊 FE 保留，固定為 0。
 - PUT 只允許改名未刪除分類；刪除分類須先用同名建立恢復。改名仍不得使用任何已存在（含刪除）的分類名稱。
 - 商品既有分類關聯及歷史讀取保留；這不是新增交易當時分類快照，也不修改一般商品編輯 API 明確替換分類的既有行為。
-- 已產生 local/dev/stg migration；local 與 dev 已套用，stg 仍須於部署本分支前執行對應 migration。未在共享資料庫刪除或恢復任何分類。
+- 已產生 local/dev/stg migration；local、dev 及 stg 均已套用。未在共享資料庫刪除或恢復任何分類。
 - 詳細 FE 合約見 [分類軟刪除與恢復](../api/FE-confirmation/CATEGORY_SOFT_DELETE_AND_RESTORE.md)。
 
 ## 已實作：通知只隱藏，保留歷史內容
@@ -113,4 +113,4 @@
 
 ## 合併與 migration 狀態
 
-修正 commit `5836c16` 已合併至本機 `development`。本次執行 `db:migrate:local` 與 `db:migrate:development`，均成功；local 已先前套用，development 套用新增 categories.deleted_at 的 `0075_glamorous_ironclad`。唯讀 catalog 檢查確認 local/dev schema 定義一致，最新 migration SQL hash／時間已記錄且無待執行項目。Staging 本次未執行 migration。Build 通過；先前修正的 API、notification SSE、app badge、account sessions、onboarding 測試均使用 disposable DB。未部署或重啟 API。
+修正 commit `5836c16` 已合併至本機 `development`。本次執行 `db:migrate:local` 與 `db:migrate:development`，均成功；local 已先前套用，development 套用新增 categories.deleted_at 的 `0075_glamorous_ironclad`。唯讀 catalog 檢查確認 local/dev schema 定義一致，最新 migration SQL hash／時間已記錄且無待執行項目。後續已合併至 stage 並套用 staging `0023_fuzzy_doctor_faustus`；local/dev/stg 實際 schema 一致且無待執行 migration。Build 通過；先前修正的 API、notification SSE、app badge、account sessions、onboarding 測試均使用 disposable DB。未部署或重啟 API。
