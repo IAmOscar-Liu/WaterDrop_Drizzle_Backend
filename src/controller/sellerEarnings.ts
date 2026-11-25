@@ -8,7 +8,7 @@ export default {
   async summary(req:RequestWithId,res:Response){const q=query(req);sendJsonResponse(res,await service.summary(req.userId!,q.sellerId,q.startAt,q.endAt));},
   async history(req:RequestWithId,res:Response){sendJsonResponse(res,await service.history(req.userId!,query(req)));},
   async adjust(req:RequestWithId,res:Response){sendJsonResponse(res,await service.adjust(req.userId!,req.params.sellerId,req.body));},
-  async requests(req:RequestWithId,res:Response){sendJsonResponse(res,await service.requests(req.userId!,{...query(req),status:req.query.status as "pending"|"processing"|"completed"|"cancelled"|"rejected"|undefined}));},
+  async requests(req:RequestWithId,res:Response){sendJsonResponse(res,await service.requests(req.userId!,{...query(req),status:req.query.status as "pending"|"processing"|"completed"|"cancelled"|"rejected"|undefined,wallet:req.query.wallet as "advertising"|"revenue"|undefined}));},
   async create(req:RequestWithId,res:Response){sendJsonResponse(res,await service.create(req.userId!,req.body));},
   async review(req:RequestWithId,res:Response){sendJsonResponse(res,await service.review(req.userId!,req.params.id,req.body));},
 };

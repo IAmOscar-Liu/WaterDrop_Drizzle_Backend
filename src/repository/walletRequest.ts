@@ -1,4 +1,4 @@
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, SQL } from "drizzle-orm";
 import * as s from "../db/schema";
 import db from "../lib/initDB";
 import { CustomError } from "../lib/error";
@@ -105,9 +105,17 @@ export async function reviewWalletRequest(actorId:string,id:string,input:{action
     const [updated]=await tx.update(s.sellerWalletRequestTable).set({cash,coins,status:input.action,reason:input.reason,actorAccountId:actorId,updatedAt:new Date(),history:[...r.history,{status:input.action,cash,coins,reason:input.reason,actorId,at:new Date().toISOString()}]}).where(eq(s.sellerWalletRequestTable.id,id)).returning();return updated;
   });
 }
-export async function listWalletRequests(actorId:string,input:{sellerId?:string;page?:number;limit?:number;status?:RequestRow["status"]}) {
-  const sellerId=await earningsScope(actorId,input.sellerId),page=input.page??1,limit=input.limit??20;
-  const where=and(eq(s.sellerWalletRequestTable.sellerId,sellerId),input.status?eq(s.sellerWalletRequestTable.status,input.status):undefined);
+export async function listWalletRequests(actorId:string,input:{sellerId?:string;page?:number;limit?:number;status?:RequestRow["status"];wallet?:RequestRow["wallet"]}) {
+  const actor = await getActiveAdminAccount(actorId);
+  const sellerId = actor.role === "admin" && !input.sellerId
+    ? undefined
+    : await earningsScope(actorId, input.sellerId);
+  const page = input.page ?? 1, limit = input.limit ?? 20;
+  const conditions: SQL[] = [];
+  if (sellerId) conditions.push(eq(s.sellerWalletRequestTable.sellerId, sellerId));
+  if (input.status) conditions.push(eq(s.sellerWalletRequestTable.status, input.status));
+  if (input.wallet) conditions.push(eq(s.sellerWalletRequestTable.wallet, input.wallet));
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
   const [requests,[total]]=await Promise.all([db.select().from(s.sellerWalletRequestTable).where(where).orderBy(desc(s.sellerWalletRequestTable.createdAt),desc(s.sellerWalletRequestTable.id)).limit(limit).offset((page-1)*limit),db.select({n:count()}).from(s.sellerWalletRequestTable).where(where)]);
   return {requests,total:total.n,page,limit,totalPages:Math.ceil(total.n/limit)};
 }

@@ -452,7 +452,7 @@ export default router;
  *         "Seller Earnings"
  *       ],
  *       "summary": "Wallet request history",
- *       "description": "Sellers read their own requests; admins specify sellerId; employees denied.",
+ *       "description": "Admins may omit sellerId to list requests across all sellers, or provide sellerId to filter one seller. Sellers read only their own requests and cannot select another seller; employees denied. Omit status to include all statuses; omit wallet to include both advertising and revenue wallets. Filters combine. Results are paginated, newest first.",
  *       "security": [
  *         {
  *           "bearerAuth": []
@@ -463,9 +463,20 @@ export default router;
  *           "name": "sellerId",
  *           "in": "query",
  *           "required": false,
+ *           "description": "Optional seller filter. Admins default to all sellers; sellers default to themselves.",
  *           "schema": {
  *             "type": "string",
  *             "format": "uuid"
+ *           }
+ *         },
+ *         {
+ *           "name": "wallet",
+ *           "in": "query",
+ *           "required": false,
+ *           "description": "Optional wallet type filter. Omit to include both wallet types.",
+ *           "schema": {
+ *             "type": "string",
+ *             "enum": ["advertising", "revenue"]
  *           }
  *         },
  *         {
@@ -493,6 +504,7 @@ export default router;
  *           "name": "status",
  *           "in": "query",
  *           "required": false,
+ *           "description": "Optional status filter. Omit to include all statuses.",
  *           "schema": {
  *             "type": "string",
  *             "enum": [

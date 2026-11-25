@@ -12,5 +12,5 @@ export const sellerEarningsValidation={
   adjustment:z.object({...amounts,direction:z.enum(["increase","decrease"]),reason:z.string().trim().min(1).max(2000),idempotencyKey:key}).strict().refine(v=>Number(v.cash)+Number(v.coins)>0,"Positive total required"),
   request:z.object({...amounts,wallet:z.enum(["advertising","revenue"]),direction:z.enum(["deposit","withdrawal"]),idempotencyKey:key,reason:z.string().max(2000).optional()}).strict(),
   review:z.object({action:z.enum(["processing","completed","cancelled","rejected"]),cash:money.optional(),coins:money.optional(),reason:z.string().trim().min(1).max(2000)}).strict(),
-  requestQuery:paging.extend({sellerId:uuid.optional(),status:z.enum(["pending","processing","completed","cancelled","rejected"]).optional()}),
+  requestQuery:paging.extend({sellerId:uuid.optional(),status:z.enum(["pending","processing","completed","cancelled","rejected"]).optional(),wallet:z.enum(["advertising","revenue"]).optional()}),
 };
