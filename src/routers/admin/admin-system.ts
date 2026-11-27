@@ -9,6 +9,46 @@ const router = Router();
 
 /**
  * @swagger
+ * /api/admin/system/bank-list:
+ *   get:
+ *     tags: [System]
+ *     summary: Get the bank list for the admin frontend
+ *     description: Available to authenticated active platform admins, sellers, and seller employees. Sellers require verified email and a completed profile; employees require an eligible parent seller. No request parameters or pagination. Uses the same bank data and response shape as the unchanged App endpoint GET /api/system/bank-list. App-user tokens cannot access this admin route.
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       '200':
+ *         description: Complete bank list. Codes are strings preserving leading zeros.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               required: [success, data]
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     required: [code, name]
+ *                     properties:
+ *                       code:
+ *                         type: string
+ *                         example: '004'
+ *                       name:
+ *                         type: string
+ *                         example: 臺灣銀行
+ *       '401':
+ *         description: Missing, invalid, expired, or revoked access token.
+ *       '403':
+ *         description: App-user identity, inactive account, or unmet seller/employee eligibility requirements.
+ */
+router.get("/bank-list", isAuth, SystemController.getBankList);
+
+/**
+ * @swagger
  * /api/admin/system/send-notification:
  *   post:
  *     tags: [System]

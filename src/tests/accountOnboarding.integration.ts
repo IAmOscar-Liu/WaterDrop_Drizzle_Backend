@@ -83,6 +83,7 @@ async function run() {
       ["/api/admin/chatroom/list", "GET"], ["/api/admin/chatroom/events", "GET"],
       ["/api/admin/chatroom/sync/list", "GET"], ["/api/admin/dashboard/kpi", "GET"],
       ["/api/admin/sidebar-notifications/summary", "GET"], ["/api/admin/account/list", "GET"],
+      ["/api/admin/system/bank-list", "GET"],
       ["/api/admin/account/update", "PUT"], ["/api/admin/account/sub-account", "POST"],
       ["/api/file/image/upload", "POST"],
     ]) {
@@ -130,6 +131,24 @@ async function run() {
     assert.equal((await request("/api/admin/account/me", "GET", undefined, token)).body.data.companyInfo.companyName, "更新公司");
     const [companyAdmin] = await db.insert(schema.accountTable).values({ email: `${randomUUID()}@example.test`, password: "unused", role: "admin" }).returning();
     const companyAdminToken = await fixtureToken(companyAdmin);
+    // FE uses the admin bank-list route; existing App requests retain their contract.
+    const [bankUser] = await db.insert(schema.userTable).values({ email: `${randomUUID()}@example.test`, oauthProvider: "google", oauthId: randomUUID(), referralCode: randomUUID() }).returning();
+    const appBankToken = generateToken({ id: bankUser.id })!;
+    const appBanks = await request("/api/system/bank-list", "GET", undefined, appBankToken);
+    assert.equal(appBanks.status, 200, JSON.stringify(appBanks.body));
+    assert.equal(appBanks.body.success, true);
+    assert.ok(appBanks.body.data.length > 0);
+    assert.deepEqual(appBanks.body.data[0], { code: "004", name: "臺灣銀行" });
+    assert.ok(appBanks.body.data.every((bank: any) => typeof bank.code === "string" && typeof bank.name === "string"));
+    for (const access of [token, companyAdminToken, employeeToken]) {
+      const banks = await request("/api/admin/system/bank-list", "GET", undefined, access);
+      assert.equal(banks.status, 200, JSON.stringify(banks.body));
+      assert.deepEqual(banks.body, appBanks.body);
+    }
+    assert.equal((await request("/api/admin/system/bank-list", "GET", undefined, appBankToken)).status, 403);
+    assert.equal((await request("/api/admin/system/bank-list")).status, 401);
+    assert.equal((await request("/api/system/bank-list")).status, 401);
+    assert.ok((swaggerSpec as any).paths["/api/admin/system/bank-list"].get);
     const adminDetail = await request(`/api/admin/account/${id}`, "GET", undefined, companyAdminToken);
     assert.equal(adminDetail.status, 200);
     assert.equal(adminDetail.body.data.companyInfo.bankAccount, companyInfo.bankAccount);

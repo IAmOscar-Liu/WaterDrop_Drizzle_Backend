@@ -37,6 +37,29 @@ All editable fields are optional, nullable strings. Strings are trimmed; empty s
 
 Saved records also return the server-managed `sellerId`, `createdAt`, and `updatedAt`. These fields cannot be supplied inside an update's `companyInfo` object. Unknown nested fields are rejected.
 
+## Bank list for FE
+
+```http
+GET /api/admin/system/bank-list
+Authorization: Bearer <access_token>
+```
+
+Returns the complete bank list without request parameters or pagination. Requires an admin-side account access token. Active platform admins, eligible sellers, and seller employees may access it. Sellers require verified email and a completed profile; employees require an eligible parent seller.
+
+Response excerpt:
+
+```json
+{
+  "success": true,
+  "data": [
+    { "code": "004", "name": "臺灣銀行" },
+    { "code": "005", "name": "臺灣土地銀行" }
+  ]
+}
+```
+
+Map `code` to `companyInfo.bankCode` and `name` to `companyInfo.bankName`. Keep bank codes as strings.
+
 ## Save or update company info
 
 ```http
