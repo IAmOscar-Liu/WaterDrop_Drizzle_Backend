@@ -105,6 +105,42 @@ async function run() {
     assert.equal((await request("/api/admin/account/update", "PUT", { id, role: "employee" }, token)).status, 403);
     assert.equal((await request("/api/admin/account/update", "PUT", { id, phone: null }, token)).status, 400);
 
+    // Company/bank data is private to the seller and platform admins.
+    assert.equal((await request("/api/admin/account/me", "GET", undefined, token)).body.data.companyInfo, null);
+    const companyInfo = { companyName: "測試公司", contactName: "王小明", contactPhone: "+886-2-12345678 ext 9", bankName: "測試銀行", bankCode: "004", bankAccount: "001234567890", bankAccountName: "測試公司" };
+    const companyUpdate = await request("/api/admin/account/update", "PUT", { id, companyInfo }, token);
+    assert.equal(companyUpdate.status, 200, JSON.stringify(companyUpdate.body));
+    assert.equal(companyUpdate.body.data.companyInfo.bankAccount, companyInfo.bankAccount);
+    assert.equal((await request(`/api/admin/account/${id}`, "GET", undefined, token)).status, 200);
+    assert.equal((await request(`/api/admin/account/${id}`, "GET", undefined, fullToken)).status, 403);
+    assert.equal((await request("/api/admin/account/update", "PUT", { id, companyInfo: { bankName: "Unauthorized" } }, fullToken)).status, 403);
+    const employeeToken = await fixtureToken(employee);
+    assert.equal((await request(`/api/admin/account/${id}`, "GET", undefined, employeeToken)).status, 403);
+    const employeeMe = await request("/api/admin/account/me", "GET", undefined, employeeToken);
+    assert.equal(employeeMe.body.data.companyInfo, null);
+    assert.equal(employeeMe.body.data.parent.companyInfo, undefined);
+    assert.equal((await request("/api/admin/account/update", "PUT", { id: employee.id, companyInfo }, employeeToken)).status, 400);
+    for (const invalid of [{ bankCode: "4" }, { bankAccount: 123 }, { bankAccount: "abc" }, {}, { sellerId: fullId }]) {
+      assert.equal((await request("/api/admin/account/update", "PUT", { id, companyInfo: invalid }, token)).status, 400);
+    }
+    const patched = await request("/api/admin/account/update", "PUT", { id, companyInfo: { contactName: null, companyName: "更新公司" } }, token);
+    assert.equal(patched.status, 200);
+    assert.equal(patched.body.data.companyInfo.contactName, null);
+    assert.equal(patched.body.data.companyInfo.bankCode, "004");
+    assert.equal((await request("/api/admin/account/me", "GET", undefined, token)).body.data.companyInfo.companyName, "更新公司");
+    const [companyAdmin] = await db.insert(schema.accountTable).values({ email: `${randomUUID()}@example.test`, password: "unused", role: "admin" }).returning();
+    const companyAdminToken = await fixtureToken(companyAdmin);
+    const adminDetail = await request(`/api/admin/account/${id}`, "GET", undefined, companyAdminToken);
+    assert.equal(adminDetail.status, 200);
+    assert.equal(adminDetail.body.data.companyInfo.bankAccount, companyInfo.bankAccount);
+    const accountList = await request(`/api/admin/account/list?search=${encodeURIComponent(input.email)}`, "GET", undefined, companyAdminToken);
+    assert.equal(accountList.status, 200);
+    assert.equal(accountList.body.data.accounts.find((account: any) => account.id === id).companyInfo.bankCode, "004");
+    assert.equal((await request(`/api/admin/account/${randomUUID()}`, "GET", undefined, companyAdminToken)).status, 404);
+    assert.equal((await request("/api/admin/account/update", "PUT", { id, companyInfo: null }, companyAdminToken)).status, 200);
+    assert.equal((await request("/api/admin/account/me", "GET", undefined, token)).body.data.companyInfo, null);
+    assert.equal((await db.select().from(schema.sellerCompanyInfoTable).where(eq(schema.sellerCompanyInfoTable.sellerId, id))).length, 0);
+
     for (const callbackUrl of ["https://evil.example/reset-password", "https://seller.example.test/reset-password?next=evil", "https://seller.example.test/reset-password#bad", "https://user@seller.example.test/reset-password"]) {
       assert.equal((await request("/api/admin/account/forgot-password", "POST", { email: input.email, callbackUrl })).status, 400);
     }

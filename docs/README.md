@@ -4,6 +4,7 @@
 
 - [FE confirmation package](api/FE-confirmation/README.md)
 - [Backend API specification](api/API_SPEC.md)
+- [Seller company info and account access changes](api/SELLER_COMPANY_INFO_API_CHANGES.md)
 - [Product variants API changes](api/PRODUCT_VARIANTS_API_CHANGES.md)
 - [Product variants frontend changes](api/PRODUCT_VARIANTS_FRONTEND_API_CHANGES.md)
 - [Refund Swagger update](api/swagger-update-2026-05-05.md)

@@ -20,6 +20,18 @@ const profile = z.object({
   address: z.string().optional(),
 });
 
+const companyInfo = z.object({
+  companyName: nonEmptyString.max(200).nullable().optional(),
+  taxId: nonEmptyString.max(32).nullable().optional(),
+  companyAddress: nonEmptyString.max(500).nullable().optional(),
+  contactName: nonEmptyString.max(100).nullable().optional(),
+  contactPhone: nonEmptyString.max(50).nullable().optional(),
+  bankName: nonEmptyString.max(100).nullable().optional(),
+  bankCode: z.string().trim().regex(/^\d{3}$/, "Bank code must contain three digits").nullable().optional(),
+  bankAccount: z.string().trim().regex(/^\d{1,32}$/, "Bank account must contain 1-32 digits").nullable().optional(),
+  bankAccountName: nonEmptyString.max(200).nullable().optional(),
+}).strict().refine((value) => Object.keys(value).length > 0, "Provide at least one company info field");
+
 export const accountValidation = {
   resendVerificationBody: z.object({ callbackUrl: z.url().max(2048).optional() }).strict().default({}),
   verifyEmailBody: z.object({ token: z.string().max(256) }).strict(),
@@ -49,6 +61,7 @@ export const accountValidation = {
   updateBody: requireAtLeastOneUpdateField(
     z.object({
       id: uuid,
+      companyInfo: companyInfo.nullable().optional(),
       name: nonEmptyString.optional(),
       realName: nonEmptyString.optional(),
       email: z.email().optional(),

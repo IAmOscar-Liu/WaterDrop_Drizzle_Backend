@@ -251,6 +251,7 @@ export async function softDeleteAccount(
 
 export async function getAccountById(accountId: string): Promise<
   Omit<schema.Account, "password"> & {
+    companyInfo: schema.SellerCompanyInfo | null;
     isProfileComplete: boolean;
     missingProfileFields: string[];
     parent?: Omit<schema.Account, "password"> | null;
@@ -259,6 +260,7 @@ export async function getAccountById(accountId: string): Promise<
   const account = await db.query.accountTable.findFirst({
     where: eq(schema.accountTable.id, accountId),
     with: {
+      companyInfo: true,
       group: {
         with: {
           parent: true,
@@ -276,6 +278,7 @@ export async function getAccountById(accountId: string): Promise<
   const { password: __, ...parentInfo } = account.group?.parent ?? {};
   return {
     ...accountInfo,
+    companyInfo: accountInfo.role === "seller" ? accountInfo.companyInfo : null,
     ...profileState(accountInfo),
     parent:
       Object.keys(parentInfo).length > 0
@@ -304,12 +307,22 @@ export async function isAccountAdmin(accountId: string): Promise<boolean> {
  */
 export async function updateAccount(
   accountId: string,
-  updates: Partial<Pick<schema.Account, "name" | "realName" | "phone" | "email" | "address" | "avatar_url" | "role" | "status">>
+  updates: Partial<Pick<schema.Account, "name" | "realName" | "phone" | "email" | "address" | "avatar_url" | "role" | "status">> & { companyInfo?: Partial<Omit<schema.NewSellerCompanyInfo, "sellerId" | "createdAt" | "updatedAt">> | null }
 ) {
+  const { companyInfo, ...accountUpdates } = updates;
   await db.transaction(async (tx) => {
     const [account] = await tx.select().from(schema.accountTable).where(eq(schema.accountTable.id, accountId)).for("update");
     if (!account) throw new CustomError("Account not found", 404);
-    const merged = { ...account, ...updates };
+    const merged = { ...account, ...accountUpdates };
+    if (companyInfo !== undefined && merged.role !== "seller") {
+      throw new CustomError("Company info is only available for seller accounts", 400);
+    }
+    if (companyInfo === null) {
+      await tx.delete(schema.sellerCompanyInfoTable).where(eq(schema.sellerCompanyInfoTable.sellerId, accountId));
+    } else if (companyInfo !== undefined) {
+      await tx.insert(schema.sellerCompanyInfoTable).values({ sellerId: accountId, ...companyInfo })
+        .onConflictDoUpdate({ target: schema.sellerCompanyInfoTable.sellerId, set: { ...companyInfo, updatedAt: new Date() } });
+    }
     if (merged.role === "seller" && (account.profileCompletedAt || updates.role === "seller")) requireValidProfile(merged);
     if (updates.email !== undefined && updates.email !== account.email) {
       throw new CustomError("Use the verified email-change workflow", 409, "ACCOUNT_EMAIL_CHANGE_REQUIRES_VERIFICATION");
@@ -317,7 +330,7 @@ export async function updateAccount(
     if ((updates.status !== undefined && updates.status !== account.status) || (updates.role !== undefined && updates.role !== account.role)) {
       await revokeEmailVerificationWithTx(tx, accountId);
     }
-    await tx.update(schema.accountTable).set({ ...updates, updatedAt: new Date(),
+    await tx.update(schema.accountTable).set({ ...accountUpdates, updatedAt: new Date(),
       ...(updates.role === "seller" && !account.profileCompletedAt ? { profileCompletedAt: new Date() } : {}) })
       .where(eq(schema.accountTable.id, accountId));
   });
@@ -463,7 +476,7 @@ export async function listAccountEmployees(accountId: string) {
       ),
     );
 
-  return employees.map(({ password, ...accountInfo }) => ({ ...accountInfo, ...profileState(accountInfo) }));
+  return employees.map(({ password, ...accountInfo }) => ({ ...accountInfo, companyInfo: null, ...profileState(accountInfo) }));
 }
 
 /**
@@ -576,6 +589,7 @@ export async function listAccounts({
   const accountsWithPassword = await db.query.accountTable.findMany({
     where: whereClause,
     with: {
+      companyInfo: true,
       group: {
         with: {
           parent: true,
@@ -592,6 +606,7 @@ export async function listAccounts({
       const { password: __, ...parentInfo } = group?.parent ?? {};
       return {
         ...accountInfo,
+        companyInfo: accountInfo.role === "seller" ? accountInfo.companyInfo : null,
         ...profileState(accountInfo),
         parent:
           Object.keys(parentInfo).length > 0

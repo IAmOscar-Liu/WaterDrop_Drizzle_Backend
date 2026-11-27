@@ -1,12 +1,13 @@
 import { prepareSellerRegistration, sendRegistrationVerification } from "./accountEmailVerification";
 import * as schema from "../db/schema";
-import { handleServiceError } from "../lib/error";
+import { CustomError, handleServiceError } from "../lib/error";
 import {
   completeAccountProfile,
   changeAccountPassword,
   createAccount,
   getAccountByEmailAndPassword,
   getAccountById,
+  isAccountAdmin,
   updateAccount,
   listAccounts,
   ListAccountsParams,
@@ -77,8 +78,12 @@ class AdminService {
 
   async getAdminAccountById(
     accountId: string,
+    requesterId: string,
   ): Promise<ServiceResponse<Awaited<ReturnType<typeof getAccountById>>>> {
     try {
+      if (!requesterId || (requesterId !== accountId && !(await isAccountAdmin(requesterId)))) {
+        throw new CustomError("You are not authorized to view this account", 403);
+      }
       const account = await getAccountById(accountId); // Replace with real data fetching logic
       if (account) {
         return { success: true, data: account };

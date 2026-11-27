@@ -171,7 +171,7 @@ class AccountController {
   }
 
   async getCurrentUser(req: RequestWithId, res: Response): Promise<any> {
-    const result = await accountService.getAdminAccountById(req.userId ?? "");
+    const result = await accountService.getAdminAccountById(req.userId ?? "", req.userId ?? "");
     sendJsonResponse(res, result.success ? { ...result, data: publicAccount(result.data) } : result);
   }
 
@@ -194,6 +194,7 @@ class AccountController {
       email,
       phone,
       address,
+      companyInfo,
       avatarUrl,
       avatar_url,
       role,
@@ -244,6 +245,7 @@ class AccountController {
     const result = await accountService.updateAdminAccount({
       accountId: id,
       update: {
+        ...(companyInfo !== undefined ? { companyInfo } : {}),
         ...(name ? { name: String(name) } : {}),
         ...(realName ? { realName: String(realName) } : {}),
         ...(email ? { email: String(email) } : {}),
@@ -319,9 +321,9 @@ class AccountController {
     sendJsonResponse(res, accountResponse(result));
   }
 
-  async getAccount(req: Request, res: Response): Promise<any> {
+  async getAccount(req: RequestWithId, res: Response): Promise<any> {
     const { id } = req.params;
-    const result = await accountService.getAdminAccountById(id);
+    const result = await accountService.getAdminAccountById(id, req.userId ?? "");
     sendJsonResponse(res, accountResponse(result));
   }
 

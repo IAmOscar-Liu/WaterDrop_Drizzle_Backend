@@ -19,6 +19,130 @@ import { adminValidation } from "../../middleware/admin";
  *       bearerFormat: JWT
  *       description: Business APIs require verified seller email (403 ACCOUNT_EMAIL_UNVERIFIED) and then a completed seller profile (403 ACCOUNT_PROFILE_INCOMPLETE). Employee access also requires an eligible parent seller. Admin access JWTs require the admin_access purpose, waterdrop issuer, waterdrop-admin audience and an active session. Legacy admin tokens require a new login. Password changes invalidate old access/refresh tokens.
  *   schemas:
+ *     SellerCompanyInfoInput:
+ *       type: object
+ *       additionalProperties: false
+ *       minProperties: 1
+ *       description: Partial update. Omitted fields retain their values; null clears a field. All fields are optional.
+ *       properties:
+ *         companyName:
+ *           type: string
+ *           nullable: true
+ *           minLength: 1
+ *           maxLength: 200
+ *           description: Registered company name.
+ *         taxId:
+ *           type: string
+ *           nullable: true
+ *           minLength: 1
+ *           maxLength: 32
+ *           description: Company tax identifier; stored as a string.
+ *         companyAddress:
+ *           type: string
+ *           nullable: true
+ *           minLength: 1
+ *           maxLength: 500
+ *           description: Company address.
+ *         contactName:
+ *           type: string
+ *           nullable: true
+ *           minLength: 1
+ *           maxLength: 100
+ *           description: Company contact person.
+ *         contactPhone:
+ *           type: string
+ *           nullable: true
+ *           minLength: 1
+ *           maxLength: 50
+ *           description: Company contact phone, including international prefixes or extensions.
+ *         bankName:
+ *           type: string
+ *           nullable: true
+ *           minLength: 1
+ *           maxLength: 100
+ *           description: Bank name.
+ *         bankCode:
+ *           type: string
+ *           nullable: true
+ *           minLength: 1
+ *           maxLength: 3
+ *           description: Three-digit bank code; send a string to preserve leading zeros.
+ *           pattern: '^\d{3}$'
+ *         bankAccount:
+ *           type: string
+ *           nullable: true
+ *           minLength: 1
+ *           maxLength: 32
+ *           description: Bank account number, 1-32 digits; send a string to preserve leading zeros.
+ *           pattern: '^\d{1,32}$'
+ *         bankAccountName:
+ *           type: string
+ *           nullable: true
+ *           minLength: 1
+ *           maxLength: 200
+ *           description: Bank account holder name.
+ *     SellerCompanyInfo:
+ *       type: object
+ *       properties:
+ *         companyName:
+ *           type: string
+ *           nullable: true
+ *           minLength: 1
+ *           maxLength: 200
+ *           description: Registered company name.
+ *         taxId:
+ *           type: string
+ *           nullable: true
+ *           minLength: 1
+ *           maxLength: 32
+ *           description: Company tax identifier; stored as a string.
+ *         companyAddress:
+ *           type: string
+ *           nullable: true
+ *           minLength: 1
+ *           maxLength: 500
+ *           description: Company address.
+ *         contactName:
+ *           type: string
+ *           nullable: true
+ *           minLength: 1
+ *           maxLength: 100
+ *           description: Company contact person.
+ *         contactPhone:
+ *           type: string
+ *           nullable: true
+ *           minLength: 1
+ *           maxLength: 50
+ *           description: Company contact phone, including international prefixes or extensions.
+ *         bankName:
+ *           type: string
+ *           nullable: true
+ *           minLength: 1
+ *           maxLength: 100
+ *           description: Bank name.
+ *         bankCode:
+ *           type: string
+ *           nullable: true
+ *           minLength: 1
+ *           maxLength: 3
+ *           description: Three-digit bank code; send a string to preserve leading zeros.
+ *           pattern: '^\d{3}$'
+ *         bankAccount:
+ *           type: string
+ *           nullable: true
+ *           minLength: 1
+ *           maxLength: 32
+ *           description: Bank account number, 1-32 digits; send a string to preserve leading zeros.
+ *           pattern: '^\d{1,32}$'
+ *         bankAccountName:
+ *           type: string
+ *           nullable: true
+ *           minLength: 1
+ *           maxLength: 200
+ *           description: Bank account holder name.
+ *         sellerId: { type: string, format: uuid }
+ *         createdAt: { type: string, format: date-time }
+ *         updatedAt: { type: string, format: date-time }
  *     Account:
  *       type: object
  *       properties:
@@ -51,6 +175,11 @@ import { adminValidation } from "../../middleware/admin";
  *           format: uri
  *           nullable: true
  *           description: The account avatar URL.
+ *         companyInfo:
+ *           allOf:
+ *             - $ref: '#/components/schemas/SellerCompanyInfo'
+ *           nullable: true
+ *           description: Seller company and bank details; null when unsaved or for non-seller accounts. Never included on the nested parent account.
  *         role:
  *           type: string
  *           enum: [admin, seller, employee]
@@ -634,8 +763,8 @@ router.get("/me", isAccountAuthenticated, AccountController.getCurrentUser);
  * /api/admin/account/update:
  *   put:
  *     tags: [Account]
- *     description: Requires verified seller email and completed seller profile. Only platform admins may change role or status. Required completed profile fields cannot be cleared. Direct email changes return 409 ACCOUNT_EMAIL_CHANGE_REQUIRES_VERIFICATION, including platform-admin edits; use request-email-change and confirm-email-change for the authenticated account. Sending the unchanged email remains allowed.
- *     summary: Update the current authenticated user's profile
+ *     description: Requires verified seller email and completed seller profile. Only platform admins may change role or status. Required completed profile fields cannot be cleared. Direct email changes return 409 ACCOUNT_EMAIL_CHANGE_REQUIRES_VERIFICATION, including platform-admin edits; use request-email-change and confirm-email-change for the authenticated account. Sending the unchanged email remains allowed. Only platform admins or the account owner may update an account. companyInfo is seller-only and optional; an object patches supplied fields, field-level null clears that field, and companyInfo null removes the record. Company info is not an onboarding prerequisite. Non-seller targets return 400 for companyInfo.
+ *     summary: Update an account profile (platform admin or owner)
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -649,6 +778,10 @@ router.get("/me", isAccountAuthenticated, AccountController.getCurrentUser);
  *               id:
  *                 type: string
  *                 description: The user's ID
+ *               companyInfo:
+ *                 allOf:
+ *                   - $ref: '#/components/schemas/SellerCompanyInfoInput'
+ *                 nullable: true
  *               name:
  *                 type: string
  *               realName:
@@ -941,7 +1074,7 @@ router.delete(
  *   get:
  *     tags: [Account]
  *     summary: Get a single account by ID
- *     description: Retrieves the details of a specific account by its unique identifier. This is an admin-only endpoint.
+ *     description: Retrieves the details of a specific account by its unique identifier. Only platform admins or the account owner may access this endpoint; other accounts, including employees viewing their parent seller, receive 403. Seller companyInfo includes bank details. Requires verified seller email and completed seller profile.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -965,6 +1098,8 @@ router.delete(
  *                   example: true
  *                 data:
  *                   $ref: '#/components/schemas/AccountWithParent'
+ *       '403':
+ *         description: Only platform admins or the account owner may view this account.
  *       '404':
  *         description: Account not found.
  *         content:

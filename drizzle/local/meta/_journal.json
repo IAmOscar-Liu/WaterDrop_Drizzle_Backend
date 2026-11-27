@@ -883,6 +883,13 @@
       "when": 1795529897784,
       "tag": "0125_deep_captain_universe",
       "breakpoints": true
+    },
+    {
+      "idx": 126,
+      "version": "7",
+      "when": 1795764283505,
+      "tag": "0126_military_captain_universe",
+      "breakpoints": true
     }
   ]
 }

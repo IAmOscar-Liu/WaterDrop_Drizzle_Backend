@@ -456,6 +456,32 @@ export const accountTable = pgTable("accounts", {
     .notNull(),
 }, (t) => [check("accounts_credential_version_nonnegative", sql`${t.credentialVersion} >= 0`)]);
 
+// One optional company profile per seller account.
+export const sellerCompanyInfoTable = pgTable("seller_company_info", {
+  sellerId: uuid("seller_id").primaryKey().references(() => accountTable.id, { onDelete: "cascade" }),
+  companyName: text("company_name"),
+  taxId: text("tax_id"),
+  companyAddress: text("company_address"),
+  contactName: text("contact_name"),
+  contactPhone: text("contact_phone"),
+  bankName: text("bank_name"),
+  bankCode: text("bank_code"),
+  bankAccount: text("bank_account"),
+  bankAccountName: text("bank_account_name"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().$onUpdate(() => new Date()).notNull(),
+});
+
+export const sellerCompanyInfoRelations = relations(sellerCompanyInfoTable, ({ one }) => ({
+  seller: one(accountTable, {
+    fields: [sellerCompanyInfoTable.sellerId],
+    references: [accountTable.id],
+  }),
+}));
+
+export type SellerCompanyInfo = typeof sellerCompanyInfoTable.$inferSelect;
+export type NewSellerCompanyInfo = typeof sellerCompanyInfoTable.$inferInsert;
+
 export const accountSessionTable = pgTable("account_sessions", {
   id: uuid("id").defaultRandom().primaryKey(),
   accountId: uuid("account_id").notNull().references(() => accountTable.id, { onDelete: "cascade" }),
@@ -2433,6 +2459,7 @@ export const coinLedgerBackfillCheckpointTable = pgTable(
 
 // Relations
 export const accountRelations = relations(accountTable, ({ one, many }) => ({
+  companyInfo: one(sellerCompanyInfoTable),
   products: many(productTable),
   chatRooms: many(chatRoomTable),
   group: one(accountGroupTable, {
